@@ -1,42 +1,28 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
-# Prevent Python from buffering stdout/stderr
-ENV PYTHONUNBUFFERED=1
+WORKDIR /code
 
-# Cloud Run requires PORT
-ENV PORT=8080
-
-WORKDIR /app
-
-# Install system deps required for Playwright and OCR tooling
-RUN apt-get update && apt-get install -y \
-    curl \
-    wget \
-    git \
-    libglib2.0-0 \
-    libnss3 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libxkbcommon0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxrandr2 \
-    libgbm1 \
-    libasound2 \
-    libpangocairo-1.0-0 \
-    libgtk-3-0 \
-    fonts-liberation \
+# Install system dependencies required by Python packages (e.g. lxml) and clean up apt cache.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libxml2 libxslt1.1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy repo
-COPY . .
-
-# Install Python deps
+# Install Python dependencies. Requirements are kept minimal and support OCR and Playwright.
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright browsers (required for screenshot stage)
-RUN pip install playwright && playwright install --with-deps chromium
+# Copy application code into the container image
+COPY app/ ./app/
+COPY utils/ ./utils/
+COPY pipeline/ ./pipeline/
 
-# Default command
+# Install Playwright browsers and their native dependencies. This step must run after
+# copying the code because `playwright install` downloads large browser binaries.
+RUN playwright install --with-deps
+
+# Ensure Python output is flushed immediately
+ENV PYTHONUNBUFFERED=1
+
+# Run the deterministic CLI pipeline by default. The pipeline crawls a website,
+# performs OCR on screenshots and writes a report to output/issues.json.
 CMD ["python", "pipeline/pipeline_runner.py"]
