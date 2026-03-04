@@ -1,0 +1,38 @@
+steps:
+  # Build container image
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-t"
+      - "${_IMAGE}"
+      - "."
+
+  # Push image to Artifact Registry
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "push"
+      - "${_IMAGE}"
+
+  # Deploy to Cloud Run
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: gcloud
+    args:
+      - "run"
+      - "deploy"
+      - "${_SERVICE_NAME}"
+      - "--image=${_IMAGE}"
+      - "--region=${_REGION}"
+      - "--platform=managed"
+      - "--allow-unauthenticated"
+      - "--memory=1Gi"
+      - "--timeout=900"
+      - "--port=8080"
+      - "--min-instances=0"
+
+images:
+  - "${_IMAGE}"
+
+substitutions:
+  _REGION: "europe-west1"
+  _SERVICE_NAME: "polyglot-watchdog"
+  _IMAGE: "europe-west1-docker.pkg.dev/$PROJECT_ID/polyglot-watchdog/polyglot-watchdog"
