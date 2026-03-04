@@ -13,31 +13,59 @@ steps:
       - 'push'
       - '${_IMAGE}'
 
-  # Deploy the image to Cloud Run. The service runs the CLI pipeline when executed.
+  # Create or update a Cloud Run Job for one-off CLI execution.
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: gcloud
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+          if [ -z "${_TARGET_URL}" ] || [ "${_TARGET_URL}" = "https://example.invalid" ]; then
+            echo "ERROR: _TARGET_URL is not set. Override substitution _TARGET_URL."
+            exit 1
+          fi
+
+          if gcloud run jobs describe "${_JOB_NAME}" --region="${_REGION}" >/dev/null 2>&1; then
+            gcloud run jobs update "${_JOB_NAME}" \
+              --image="${_IMAGE}" \
+              --region="${_REGION}" \
+              --command=python \
+              --args=pipeline/pipeline_runner.py,--url,${_TARGET_URL} \
+              --set-secrets="OCR_SPACE_API_KEY=OCR_SPACE_API_KEY:latest" \
+              --memory=512Mi \
+              --cpu=1 \
+              --task-timeout=300s \
+              --max-retries=0
+          else
+            gcloud run jobs create "${_JOB_NAME}" \
+              --image="${_IMAGE}" \
+              --region="${_REGION}" \
+              --command=python \
+              --args=pipeline/pipeline_runner.py,--url,${_TARGET_URL} \
+              --set-secrets="OCR_SPACE_API_KEY=OCR_SPACE_API_KEY:latest" \
+              --memory=512Mi \
+              --cpu=1 \
+              --task-timeout=300s \
+              --max-retries=0
+          fi
+
+  # Execute the job after deployment.
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     args:
       - 'run'
-      - 'deploy'
-      - '${_SERVICE_NAME}'
-      - '--image=${_IMAGE}'
+      - 'jobs'
+      - 'execute'
+      - '${_JOB_NAME}'
       - '--region=${_REGION}'
-      - '--platform=managed'
-      - '--allow-unauthenticated'
-      - '--update-secrets=OCR_SPACE_API_KEY=OCR_SPACE_API_KEY:latest'
-      - '--memory=512Mi'
-      - '--cpu=1'
-      - '--timeout=300'
-      - '--concurrency=1'
-      - '--max-instances=1'
+      - '--wait'
 
 images:
   - '${_IMAGE}'
 
 substitutions:
   _REGION: 'europe-west1'
-  _SERVICE_NAME: 'polyglot-watchdog'
+  _JOB_NAME: 'polyglot-watchdog'
   _IMAGE: 'europe-west1-docker.pkg.dev/$PROJECT_ID/polyglot-watchdog/polyglot-watchdog'
+  _TARGET_URL: 'https://example.invalid'
 
 options:
   logging: 'CLOUD_LOGGING_ONLY'
