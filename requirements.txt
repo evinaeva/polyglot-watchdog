@@ -1,6 +1,5 @@
+# Minimal dependencies required for the CLI pipeline.
 playwright
-beautifulsoup4
-requests
-lxml
-pydantic
-python-dotenv
+httpx
+google-cloud-vision
+Pillow
