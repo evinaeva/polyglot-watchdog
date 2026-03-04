@@ -1,38 +1,43 @@
 steps:
-  # Build container image
-  - name: "gcr.io/cloud-builders/docker"
+  # Build the container image for the CLI pipeline.
+  - name: 'gcr.io/cloud-builders/docker'
     args:
-      - "build"
-      - "-t"
-      - "${_IMAGE}"
-      - "."
+      - 'build'
+      - '-t'
+      - '${_IMAGE}'
+      - '.'
 
-  # Push image to Artifact Registry
-  - name: "gcr.io/cloud-builders/docker"
+  # Push the image to Artifact Registry.
+  - name: 'gcr.io/cloud-builders/docker'
     args:
-      - "push"
-      - "${_IMAGE}"
+      - 'push'
+      - '${_IMAGE}'
 
-  # Deploy to Cloud Run
-  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+  # Deploy the image to Cloud Run. The service runs the CLI pipeline when executed.
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
-      - "run"
-      - "deploy"
-      - "${_SERVICE_NAME}"
-      - "--image=${_IMAGE}"
-      - "--region=${_REGION}"
-      - "--platform=managed"
-      - "--allow-unauthenticated"
-      - "--memory=1Gi"
-      - "--timeout=900"
-      - "--port=8080"
-      - "--min-instances=0"
+      - 'run'
+      - 'deploy'
+      - '${_SERVICE_NAME}'
+      - '--image=${_IMAGE}'
+      - '--region=${_REGION}'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--update-secrets=OCR_SPACE_API_KEY=OCR_SPACE_API_KEY:latest'
+      - '--memory=512Mi'
+      - '--cpu=1'
+      - '--timeout=300'
+      - '--concurrency=1'
+      - '--max-instances=1'
 
 images:
-  - "${_IMAGE}"
+  - '${_IMAGE}'
 
 substitutions:
-  _REGION: "europe-west1"
-  _SERVICE_NAME: "polyglot-watchdog"
-  _IMAGE: "europe-west1-docker.pkg.dev/$PROJECT_ID/polyglot-watchdog/polyglot-watchdog"
+  _REGION: 'europe-west1'
+  _SERVICE_NAME: 'polyglot-watchdog'
+  _IMAGE: 'europe-west1-docker.pkg.dev/$PROJECT_ID/polyglot-watchdog/polyglot-watchdog'
+
+options:
+  logging: 'CLOUD_LOGGING_ONLY'
