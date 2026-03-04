@@ -64,7 +64,7 @@ images:
 substitutions:
   _REGION: 'europe-west1'
   _JOB_NAME: 'polyglot-watchdog'
-  _IMAGE: 'europe-west1-docker.pkg.dev/$PROJECT_ID/polyglot-watchdog/polyglot-watchdog'
+  _IMAGE: 'europe-west1-docker.pkg.dev/${PROJECT_ID}/polyglot-watchdog/polyglot-watchdog'
   _TARGET_URL: 'https://example.invalid'
 
 options:
