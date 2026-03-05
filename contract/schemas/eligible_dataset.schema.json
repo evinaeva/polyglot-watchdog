@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://polyglot-watchdog/contract/schemas/eligible_dataset.schema.json",
+  "title": "Eligible Dataset",
+  "description": "Phase 3 filtered dataset for downstream OCR/normalization/QA processing.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "item_id",
+      "url",
+      "language",
+      "text"
+    ],
+    "properties": {
+      "item_id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "page_id": {
+        "type": ["string", "null"]
+      },
+      "url": {
+        "type": "string",
+        "format": "uri"
+      },
+      "language": {
+        "type": "string",
+        "minLength": 2
+      },
+      "element_type": {
+        "type": ["string", "null"]
+      },
+      "text": {
+        "type": "string"
+      },
+      "mask_applied": {
+        "type": "boolean"
+      }
+    }
+  }
+}
