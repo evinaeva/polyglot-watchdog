@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://polyglot-watchdog/contract/schemas/collected_items.schema.json",
+  "title": "Collected Items",
+  "description": "Phase 1 collected element/image items grouped by URL/page context. Screenshot ownership is URL-level and external via page_screenshots artifact.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "item_id",
+      "url",
+      "language",
+      "element_type",
+      "text",
+      "visible"
+    ],
+    "properties": {
+      "item_id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "page_id": {
+        "type": ["string", "null"]
+      },
+      "url": {
+        "type": "string",
+        "format": "uri"
+      },
+      "language": {
+        "type": "string",
+        "minLength": 2
+      },
+      "state": {
+        "type": "string",
+        "enum": ["guest", "auth"]
+      },
+      "user_tier": {
+        "type": ["string", "null"]
+      },
+      "page_title": {
+        "type": ["string", "null"]
+      },
+      "element_type": {
+        "type": "string",
+        "minLength": 1
+      },
+      "text": {
+        "type": "string"
+      },
+      "element_identity": {
+        "type": ["object", "null"]
+      },
+      "css_selector": {
+        "type": ["string", "null"]
+      },
+      "visible": {
+        "type": "boolean"
+      }
+    },
+    "allOf": [
+      {
+        "not": {
+          "required": ["screenshotId"]
+        }
+      },
+      {
+        "not": {
+          "required": ["element_screenshot"]
+        }
+      }
+    ]
+  }
+}
