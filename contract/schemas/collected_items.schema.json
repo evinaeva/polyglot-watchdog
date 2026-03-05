@@ -2,16 +2,22 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://polyglot-watchdog/contract/schemas/collected_items.schema.json",
   "title": "Collected Items",
-  "description": "Phase 1 collected element/image items grouped by URL/page context. Screenshot ownership is URL-level and external via page_screenshots artifact.",
+  "description": "Phase 1 collected element/image items. Items reference page_id (page capture context), not screenshots. Per-element screenshot fields are forbidden.",
   "type": "array",
   "items": {
     "type": "object",
     "additionalProperties": false,
     "required": [
       "item_id",
+      "page_id",
       "url",
       "language",
+      "viewport_kind",
+      "state",
+      "user_tier",
       "element_type",
+      "css_selector",
+      "bbox",
       "text",
       "visible"
     ],
@@ -21,7 +27,8 @@
         "minLength": 1
       },
       "page_id": {
-        "type": ["string", "null"]
+        "type": "string",
+        "minLength": 1
       },
       "url": {
         "type": "string",
@@ -29,44 +36,112 @@
       },
       "language": {
         "type": "string",
-        "minLength": 2
+        "minLength": 2,
+        "description": "Language code or subdomain token (e.g., en, fr, el)."
+      },
+      "viewport_kind": {
+        "type": "string",
+        "enum": [
+          "desktop",
+          "mobile",
+          "responsive"
+        ]
       },
       "state": {
         "type": "string",
-        "enum": ["guest", "auth"]
+        "enum": [
+          "guest",
+          "user"
+        ]
       },
       "user_tier": {
-        "type": ["string", "null"]
-      },
-      "page_title": {
-        "type": ["string", "null"]
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "Required when state=user; null when state=guest."
       },
       "element_type": {
         "type": "string",
         "minLength": 1
       },
+      "css_selector": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Best-effort stable selector key used for identity and rescans."
+      },
+      "bbox": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "x",
+          "y",
+          "width",
+          "height"
+        ],
+        "properties": {
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "width": {
+            "type": "number",
+            "minimum": 0
+          },
+          "height": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      },
       "text": {
         "type": "string"
       },
-      "element_identity": {
-        "type": ["object", "null"]
-      },
-      "css_selector": {
-        "type": ["string", "null"]
-      },
       "visible": {
         "type": "boolean"
+      },
+      "tag": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "attributes": {
+        "type": [
+          "object",
+          "null"
+        ]
       }
     },
     "allOf": [
       {
         "not": {
-          "required": ["screenshotId"]
+          "required": [
+            "screenshotId"
+          ]
         }
       },
       {
         "not": {
-          "required": ["element_screenshot"]
+          "required": [
+            "element_screenshot"
+          ]
+        }
+      },
+      {
+        "not": {
+          "required": [
+            "elementScreenshot"
+          ]
+        }
+      },
+      {
+        "not": {
+          "required": [
+            "screenshot_id"
+          ]
         }
       }
     ]

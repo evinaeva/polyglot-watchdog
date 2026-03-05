@@ -1,29 +1,32 @@
-# Traceability Matrix — INPUT DOCUMENTS to Contract v1.0
+# Traceability Matrix — Sources to Contract v1.0
 
-## Source Authority Statement
-- **Source of requirements:** provided System Design text (INPUT DOCUMENTS in task prompt).
-- Repository implementation artifacts do not override these requirements; they only implement and constrain them.
+This matrix maps high-level requirement statements to normative clauses and schemas.
+
+## Source Authority
+Normative authority is:
+- `contract/watchdog_contract_v1.0.md`
+- `contract/schemas/*.json`
+
+Sources used for requirement intent:
+- **CHAT AGREEMENTS 2026-03-05** (this conversation)
+- **SYSTEM DESIGN PDF** (`Системный дизайн_ Многопоточный QA-пайплайн для мультиязычной локализации UI.pdf`) (high-level architecture intent)
 
 ## Requirement Mapping
 
-| Requirement ID | Source Doc | Source Section/Page | Source Statement (INPUT DOCUMENTS) | Contract Section | Schema Reference |
+| Requirement ID | Source Doc | Source Section/Page | Source Statement | Contract Clause | Schema(s) |
 |---|---|---|---|---|---|
-| R-001 | SystemDesignPDF | Architecture Overview / p.1 | Separate descriptive overview, normative contract, and strict AI protocol | §0 Authority and Precedence | N/A |
-| R-002 | ContractExample | Authority section / p.1 | Contract is normative source of truth; overview cannot override | §0 Authority and Precedence | N/A |
-| R-003 | Alignment | Determinism alignment / p.2 | Deterministic terminology and structure; explicit testable rules | §1 Determinism Requirements; §4 Artifact Contracts | All schemas under `contract/schemas/` |
-| R-004 | SystemDesignPDF | Phase model / p.2 | Phase model fixed (0..6) | §2 Phase Model (Normative) | N/A |
-| R-005 | Alignment | OCR status note / p.3 | Phase 4 OCR must remain explicitly incomplete/open | §4 PHASE 4 — OCR EXTRACTION (STATUS: OPEN / DEFERRED) | N/A |
-| R-006 | SystemDesignPDF | Data collection model / p.3 | Screenshot model: 1 URL = 1 screenshot | §3.1 Core Rules; §4 Phase 1 | `contract/schemas/page_screenshots.schema.json` |
-| R-007 | SystemDesignPDF | Data grouping / p.3 | Elements grouped by URL | §3.1 Core Rules; §4 Phase 1 rules | `contract/schemas/collected_items.schema.json` |
-| R-008 | Alignment | Screenshot constraints / p.3 | Elements must NOT reference individual screenshots | §3.1 Core Rules; §3.2 Phase 1 Required Artifacts | `contract/schemas/collected_items.schema.json` |
-| R-009 | Alignment | Artifact requirements / p.3 | Phase 1 must define separate page_screenshots artifact | §3.2 Phase 1 Required Artifacts; §4 Phase 1 | `contract/schemas/page_screenshots.schema.json` |
-| R-010 | Alignment | Schema constraints / p.3 | No schema may assume per-element screenshots | §3.1 Core Rules; §3.2 prohibited fields | `contract/schemas/collected_items.schema.json` (`not` constraints) |
-| R-011 | SystemDesignPDF | URL discovery / p.2 | URL inventory contract required | §4 Phase 0 — URL Discovery | `contract/schemas/url_inventory.schema.json` |
-| R-012 | SystemDesignPDF | Annotation / p.2 | Template rule contract required | §4 Phase 2 — Annotation UI | `contract/schemas/template_rules.schema.json` |
-| R-013 | SystemDesignPDF | Rescan / p.2 | Eligible dataset contract required | §4 Phase 3 — Filtered Rescan | `contract/schemas/eligible_dataset.schema.json` |
-| R-014 | SystemDesignPDF | QA output / p.4 | Issues contract required | §4 Phase 6 — Localization QA | `contract/schemas/issues.schema.json` |
-| R-015 | SpecLockExample | Strict mode / p.1 | AI execution must be strict and contract-locked | `spec/SPEC_LOCK_EXECUTION_PROTOCOL.md` §§0-4 | N/A |
-| R-016 | Alignment | Scope semantics / p.3 | Template rule scope semantics must be explicit and testable | §4 Phase 2 — Annotation UI | `contract/schemas/template_rules.schema.json` (`scope` enum) |
+| R-001 | CHAT AGREEMENTS 2026-03-05 | Flow | EN crawl → EN pull → manual EN labeling → EN reference → pull target subdomain(s) → pairing → translator cascade → issues | Contract §2, §6 | (phase artifacts) |
+| R-002 | CHAT AGREEMENTS 2026-03-05 | UI | UI pages: /crawler, /pulling, / (issues on demand), /about glossary | Overview.md + Architecture.md (non-normative) | — |
+| R-003 | CHAT AGREEMENTS 2026-03-05 | Screenshots | 1 URL = 1 full-page screenshot (no per-element screenshots) | Contract §3.1 | page_screenshots, collected_items |
+| R-004 | CHAT AGREEMENTS 2026-03-05 | Viewports | Must support desktop/mobile/responsive | Contract §3.2 | page_screenshots, collected_items |
+| R-005 | CHAT AGREEMENTS 2026-03-05 | State | Must support guest and user tiers | Contract §3.3 | page_screenshots, collected_items |
+| R-006 | CHAT AGREEMENTS 2026-03-05 | IDs | Stable item_id based on domain+url+selector+bbox+type, not text; rescan shows NOT FOUND and continues | Contract §3.4–§3.5 | collected_items, template_rules |
+| R-007 | CHAT AGREEMENTS 2026-03-05 | URL rules | Ignore pagination only for specified URL patterns (e.g., /all-models/*?page=) and manage rules via UI | Contract §4.2 | url_rules, url_inventory |
+| R-008 | CHAT AGREEMENTS 2026-03-05 | Canon | Merge http/https to https; remove fragments; do not globally strip query | Contract §4.1 | url_inventory |
+| R-009 | CHAT AGREEMENTS 2026-03-05 | Annotation | No global precedence: manual labels are per element per URL | Contract §6 Phase 2 | template_rules |
+| R-010 | CHAT AGREEMENTS 2026-03-05 | Universal | Collapse identical header/footer across URLs into universal sections | Contract §5 | universal_sections |
+| R-011 | CHAT AGREEMENTS 2026-03-05 | Numbers | Do not blanket-exclude numbers/prices; may affect grammar/pluralization | Contract §6 Phase 1 | collected_items |
+| R-012 | CHAT AGREEMENTS 2026-03-05 | Spaces | Do not normalize double spaces away | Contract §6 Phase 1, Phase 5 | — |
+| R-013 | CHAT AGREEMENTS 2026-03-05 | Issues | Issues by categories with evidence (url + screenshot reference + bbox) | Contract §6 Phase 6 | issues |
+| R-014 | SYSTEM DESIGN PDF | High-level | Multi-phase pipeline with persistent storage and UI for review | Contract §2, Overview.md | (phase artifacts) |
 
-## Coverage Conclusion
-All mandatory requirements from the provided INPUT DOCUMENTS are mapped to a contract clause and, where applicable, a schema artifact.

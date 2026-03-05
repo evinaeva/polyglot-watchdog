@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://polyglot-watchdog/contract/schemas/issues.schema.json",
   "title": "Localization Issues",
-  "description": "Phase 6 QA issues artifact.",
+  "description": "Phase 6 QA issues artifact. Evidence must include at least url + bbox + screenshot storage reference.",
   "type": "array",
   "items": {
     "type": "object",
@@ -21,7 +21,14 @@
       },
       "category": {
         "type": "string",
-        "enum": ["SPELLING", "GRAMMAR", "MEANING", "PLACEHOLDER", "OCR_NOISE", "OTHER"]
+        "enum": [
+          "SPELLING",
+          "GRAMMAR",
+          "MEANING",
+          "PLACEHOLDER",
+          "OCR_NOISE",
+          "OTHER"
+        ]
       },
       "confidence": {
         "type": "number",
@@ -33,7 +40,10 @@
         "minLength": 1
       },
       "suggestion": {
-        "type": ["string", "null"]
+        "type": [
+          "string",
+          "null"
+        ]
       },
       "evidence": {
         "type": "object"

@@ -2,46 +2,30 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://polyglot-watchdog/contract/schemas/template_rules.schema.json",
   "title": "Template Rules",
-  "description": "Phase 2 annotation/template rule definitions. Scope semantics are strict and enumerable.",
+  "description": "Phase 2 manual annotation output. Rules are per element per URL (no GLOBAL/DOMAIN/PATH scopes).",
   "type": "array",
   "items": {
     "type": "object",
     "additionalProperties": false,
     "required": [
       "rule_id",
-      "scope",
-      "url_pattern",
-      "selector",
-      "rule_type"
+      "item_id",
+      "url",
+      "rule_type",
+      "created_at"
     ],
     "properties": {
       "rule_id": {
         "type": "string",
         "minLength": 1
       },
-      "scope": {
-        "type": "string",
-        "description": "Deterministic template scope. Allowed values: GLOBAL, DOMAIN, PATH, PAGE.",
-        "enum": [
-          "GLOBAL",
-          "DOMAIN",
-          "PATH",
-          "PAGE"
-        ]
-      },
-      "user_tier": {
-        "type": [
-          "string",
-          "null"
-        ]
-      },
-      "url_pattern": {
+      "item_id": {
         "type": "string",
         "minLength": 1
       },
-      "selector": {
+      "url": {
         "type": "string",
-        "minLength": 1
+        "format": "uri"
       },
       "rule_type": {
         "type": "string",
@@ -49,6 +33,16 @@
           "IGNORE_ENTIRE_ELEMENT",
           "MASK_VARIABLE",
           "ALWAYS_COLLECT"
+        ]
+      },
+      "created_at": {
+        "type": "string",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+      },
+      "note": {
+        "type": [
+          "string",
+          "null"
         ]
       }
     }

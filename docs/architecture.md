@@ -1,37 +1,29 @@
-# Polyglot Watchdog — Architecture (Descriptive)
+# Polyglot Watchdog — Architecture (Non‑normative)
 
-## Document Status
-- **Type:** Architecture description
-- **Normativity:** Non-normative
-- **Authority:** Contract-first. This document MUST NOT override `contract/watchdog_contract_v1.0.md`.
+**Normative behavior is defined only in** `contract/watchdog_contract_v1.0.md`.
 
-## Component View
-- **URL Discovery component:** produces canonical URL inventory.
-- **Collection component:** extracts page-level element records and URL-level screenshot artifacts.
-- **Annotation UI component:** captures reusable include/exclude/masking templates.
-- **Filtered Rescan component:** applies template rules to produce eligible dataset.
-- **OCR boundary component (deferred internals):** consumes image/page context and emits OCR-related outputs once defined.
-- **Normalization component:** canonicalizes text form.
-- **Localization QA component:** runs checks and generates issue artifacts.
+## Core components (conceptual)
+- **Crawler**: discovers EN URLs and writes URL inventory.
+- **Puller (Playwright)**: visits pages to extract visible text elements and `<img>` elements, and captures full-page screenshots.
+- **Annotation UI**: lets a human label EN collected items (ignore / mask variable / always collect) with bulk actions + undo.
+- **Reference builder**: creates EN reference dataset (filter-only mode or re-pull mode).
+- **Pairing + Checks**: pairs EN items with target-language items and produces issues.
+- **Storage**: persistent GCP storage for all artifacts (URL inventories, pulls, annotations, references, issues, screenshots).
 
-## Artifact Flow (Conceptual)
-1. URL inventory is generated.
-2. Data collection produces two artifacts:
-   - `page_screenshots`
-   - `collected_items`
-3. Annotation rules are created.
-4. Filtered rescan creates eligible dataset.
-5. OCR phase boundary receives eligible data (internals intentionally deferred).
-6. Normalization processes text.
-7. QA emits issues.
+## Artifact flow (phases 0–6)
+- Phase 0: `url_inventory` (canonical EN URLs) + `url_rules` (UI-managed drops)
+- Phase 1: `page_screenshots`, `collected_items`, `universal_sections` (EN only)
+- Phase 2: `template_rules` (manual labels)
+- Phase 3: `eligible_dataset` (EN reference build)
+- Phase 4: OCR extraction (open/deferred in v1.0 contract)
+- Phase 5: normalization (deterministic; no double-space normalization)
+- Phase 6: `issues` (category-based suspicious findings + evidence)
 
-## Deterministic Principles
-- Stable ordering of records.
-- Stable IDs for equivalent inputs.
-- Reproducible outputs for identical inputs.
+## Universal sections (header/footer)
+After EN pull, repeating identical sections across many URLs (e.g., header/footer) can be collapsed into `universal_sections` to reduce redundancy and annotation load.
 
-## Modeling Constraint
-Architecture assumes URL-level screenshot ownership:
-- Screenshot belongs to URL/page context.
-- Element-level records reference URL/page context only.
-- No per-element screenshot model is part of architecture intent.
+## Pagination avoidance
+Pagination URL drops are not global canonicalization. They are controlled by UI-managed rules (e.g., drop `?page=` only under `/all-models/`).
+
+## Viewports and states
+Architecture supports multiple viewport kinds (desktop/mobile/responsive) and user states (guest/user tiers). Each page capture context has one screenshot.
