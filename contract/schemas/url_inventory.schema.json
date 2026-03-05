@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://polyglot-watchdog/contract/schemas/url_inventory.schema.json",
+  "title": "URL Inventory",
+  "description": "Canonical URL inventory for Phase 0 output.",
+  "type": "array",
+  "items": {
+    "type": "string",
+    "format": "uri"
+  },
+  "uniqueItems": true
+}
