@@ -53,3 +53,10 @@ or retrieve it with:
 ```bash
 gcloud run services describe polyglot-watchdog --region=europe-west1 --format='value(status.url)'
 ```
+
+
+## Internal testbench
+
+- Manual module playground: `/testbench`
+- Preferred test data format: universal suite files (`*.suite.json`, `*.tests.json`, `suite.json`)
+- Setup and extension guide: `docs/testbench.md`
