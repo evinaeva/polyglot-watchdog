@@ -27,6 +27,7 @@ from app.testbench import get_modules, run_module_test
 
 TEMPLATES_DIR = BASE_DIR / "web" / "templates"
 STATIC_DIR = BASE_DIR / "web" / "static"
+FIXTURE_DIR = STATIC_DIR / "watchdog-fixture"
 
 MOCK_DOMAINS = ["de.example.com", "en.example.com", "fr.example.com"]
 MOCK_URL_INVENTORY = {
@@ -131,6 +132,10 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         if parsed.path in {"/", "/crawler", "/pulling", "/about", "/testbench"}:
             template_name = "index.html" if parsed.path == "/" else f"{parsed.path.strip('/')}.html"
             self._serve_template(template_name)
+            return
+        if parsed.path == "/watchdog-fixture" or parsed.path.startswith("/watchdog-fixture/"):
+            fixture_relative = parsed.path.removeprefix("/watchdog-fixture").lstrip("/")
+            self._serve_fixture(fixture_relative)
             return
         if parsed.path.startswith("/static/"):
             self._serve_static(parsed.path.removeprefix("/static/"))
@@ -300,14 +305,35 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         if not path.exists() or not path.is_file():
             self.send_error(HTTPStatus.NOT_FOUND, "Static file not found")
             return
+        content_type = self._get_content_type(path)
+        self._send_file(path, content_type)
+
+    def _serve_fixture(self, relative_path: str) -> None:
+        normalized = relative_path.strip("/")
+        if not normalized:
+            normalized = "index.html"
+        elif not Path(normalized).suffix:
+            normalized = f"{normalized}/index.html"
+
+        path = FIXTURE_DIR / normalized
+        if not path.exists() or not path.is_file():
+            self.send_error(HTTPStatus.NOT_FOUND, "Fixture file not found")
+            return
+        self._send_file(path, self._get_content_type(path))
+
+    def _get_content_type(self, path: Path) -> str:
         content_type = "text/plain; charset=utf-8"
-        if path.suffix == ".css":
+        if path.suffix == ".html":
+            content_type = "text/html; charset=utf-8"
+        elif path.suffix == ".css":
             content_type = "text/css; charset=utf-8"
         elif path.suffix == ".js":
             content_type = "application/javascript; charset=utf-8"
         elif path.suffix == ".svg":
             content_type = "image/svg+xml"
-        self._send_file(path, content_type)
+        elif path.suffix == ".json":
+            content_type = "application/json; charset=utf-8"
+        return content_type
 
     def _send_file(self, path: Path, content_type: str) -> None:
         data = path.read_bytes()
