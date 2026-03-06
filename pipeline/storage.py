@@ -9,6 +9,9 @@ Artifact layout in GCS:
   gs://{bucket}/{domain}/{run_id}/page_screenshots.json
   gs://{bucket}/{domain}/{run_id}/collected_items.json
   gs://{bucket}/{domain}/{run_id}/universal_sections.json
+  gs://{bucket}/{domain}/{run_id}/template_rules.json
+  gs://{bucket}/{domain}/{run_id}/eligible_dataset.json
+  gs://{bucket}/{domain}/{run_id}/phase3_created_at.txt
   gs://{bucket}/{domain}/{run_id}/screenshots/{page_id}.png
 
 All JSON artifacts are serialized with sort_keys=True and ensure_ascii=False
@@ -58,6 +61,18 @@ def write_json_artifact(
     blob = bucket.blob(path)
     content = json.dumps(data, ensure_ascii=False, sort_keys=True, indent=2)
     blob.upload_from_string(content, content_type="application/json; charset=utf-8")
+    return f"gs://{BUCKET_NAME}/{path}"
+
+
+def write_text_artifact(
+    domain: str, run_id: str, filename: str, text: str
+) -> str:
+    """Write plain text artifact to GCS. Returns gs:// URI."""
+    client = _gcs_client()
+    bucket = client.bucket(BUCKET_NAME)
+    path = artifact_path(domain, run_id, filename)
+    blob = bucket.blob(path)
+    blob.upload_from_string(text.encode("utf-8"), content_type="text/plain; charset=utf-8")
     return f"gs://{BUCKET_NAME}/{path}"
 
 
