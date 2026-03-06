@@ -1,0 +1,184 @@
+"""Minimal deterministic skeleton UI server for Polyglot Watchdog."""
+
+from __future__ import annotations
+
+import json
+import os
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+TEMPLATES_DIR = BASE_DIR / "web" / "templates"
+STATIC_DIR = BASE_DIR / "web" / "static"
+
+MOCK_DOMAINS = ["de.example.com", "en.example.com", "fr.example.com"]
+MOCK_URL_INVENTORY = {
+    "en.example.com": [
+        "https://en.example.com/",
+        "https://en.example.com/catalog",
+        "https://en.example.com/contact",
+    ],
+    "fr.example.com": [
+        "https://fr.example.com/",
+        "https://fr.example.com/catalog",
+    ],
+}
+
+MOCK_PULLS = [
+    {
+        "item_id": f"item-{index:04d}",
+        "url": f"https://en.example.com/catalog/item-{index:04d}",
+        "element_type": "img" if index % 4 == 0 else "button" if index % 4 == 1 else "input" if index % 4 == 2 else "text",
+        "text": f"Sample content line  {index:04d}",
+        "screenshot_thumbnail": "/static/mock-screenshot.svg",
+        "screenshot_full": "/static/mock-screenshot.svg",
+        "decision": "",
+    }
+    for index in range(1, 46)
+]
+
+MOCK_ISSUES = [
+    {
+        "id": "issue-0001",
+        "category": "SPELLING",
+        "message": "Potential typo in CTA button.",
+        "url": "https://fr.example.com/catalog",
+    },
+    {
+        "id": "issue-0002",
+        "category": "GRAMMAR",
+        "message": "Sentence agreement mismatch in product details.",
+        "url": "https://de.example.com/catalog",
+    },
+]
+
+RULE_DECISIONS: dict[str, str] = {}
+
+
+class SkeletonHandler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:  # noqa: N802
+        parsed = urlparse(self.path)
+        if parsed.path in {"/", "/crawler", "/pulling", "/about"}:
+            template_name = "index.html" if parsed.path == "/" else f"{parsed.path.strip('/')}.html"
+            self._serve_template(template_name)
+            return
+        if parsed.path.startswith("/static/"):
+            self._serve_static(parsed.path.removeprefix("/static/"))
+            return
+        if parsed.path == "/healthz":
+            self._json_response({"status": "ok"})
+            return
+        if parsed.path == "/api/domains":
+            self._json_response({"items": sorted(MOCK_DOMAINS)})
+            return
+        if parsed.path == "/api/url-inventory":
+            domain = parse_qs(parsed.query).get("domain", ["en.example.com"])[0]
+            urls = sorted(MOCK_URL_INVENTORY.get(domain, []))
+            self._json_response({"domain": domain, "urls": urls})
+            return
+        if parsed.path == "/api/pulls":
+            rows = []
+            for row in sorted(MOCK_PULLS, key=lambda item: item["item_id"]):
+                merged = dict(row)
+                merged["decision"] = RULE_DECISIONS.get(row["item_id"], row["decision"])
+                rows.append(merged)
+            self._json_response({"rows": rows})
+            return
+        if parsed.path == "/api/rules":
+            rules = [
+                {
+                    "rule_id": f"rule-{item_id}",
+                    "item_id": item_id,
+                    "rule_type": rule_type,
+                    "url": next((row["url"] for row in MOCK_PULLS if row["item_id"] == item_id), ""),
+                }
+                for item_id, rule_type in sorted(RULE_DECISIONS.items(), key=lambda item: item[0])
+            ]
+            self._json_response({"rules": rules})
+            return
+        if parsed.path == "/api/issues":
+            query = parse_qs(parsed.query)
+            has_filters = any(value for values in query.values() for value in values if value.strip())
+            issues = sorted(MOCK_ISSUES, key=lambda issue: issue["id"]) if has_filters else []
+            self._json_response({"issues": issues})
+            return
+
+        self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
+
+    def do_POST(self) -> None:  # noqa: N802
+        if self.path == "/api/rules":
+            payload = self._read_json_payload()
+            item_id = payload.get("item_id", "")
+            rule_type = payload.get("rule_type", "")
+            allowed = {"IGNORE_ENTIRE_ELEMENT", "MASK_VARIABLE", "ALWAYS_COLLECT"}
+            if item_id and rule_type in allowed:
+                RULE_DECISIONS[item_id] = rule_type
+                self._json_response({"status": "ok", "item_id": item_id, "rule_type": rule_type})
+                return
+            self._json_response({"status": "error", "message": "invalid payload"}, status=HTTPStatus.BAD_REQUEST)
+            return
+
+        self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
+
+    def _serve_template(self, name: str) -> None:
+        path = TEMPLATES_DIR / name
+        if not path.exists():
+            self.send_error(HTTPStatus.NOT_FOUND, "Template not found")
+            return
+        self._send_file(path, "text/html; charset=utf-8")
+
+    def _serve_static(self, relative_path: str) -> None:
+        path = STATIC_DIR / relative_path
+        if not path.exists() or not path.is_file():
+            self.send_error(HTTPStatus.NOT_FOUND, "Static file not found")
+            return
+        content_type = "text/plain; charset=utf-8"
+        if path.suffix == ".css":
+            content_type = "text/css; charset=utf-8"
+        elif path.suffix == ".js":
+            content_type = "application/javascript; charset=utf-8"
+        elif path.suffix == ".svg":
+            content_type = "image/svg+xml"
+        self._send_file(path, content_type)
+
+    def _send_file(self, path: Path, content_type: str) -> None:
+        data = path.read_bytes()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _json_response(self, payload: object, status: HTTPStatus = HTTPStatus.OK) -> None:
+        raw = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def _read_json_payload(self) -> dict[str, str]:
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0:
+            return {}
+        raw = self.rfile.read(length)
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except json.JSONDecodeError:
+            return {}
+        if not isinstance(payload, dict):
+            return {}
+        return payload
+
+
+def run(host: str = "0.0.0.0", port: int = 8080) -> None:
+    server = ThreadingHTTPServer((host, port), SkeletonHandler)
+    print(f"Skeleton UI running on http://{host}:{port}")
+    server.serve_forever()
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", "8080"))
+    run(port=port)

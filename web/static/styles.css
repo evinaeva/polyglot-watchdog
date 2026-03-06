@@ -1,0 +1,20 @@
+body { font-family: Arial, sans-serif; margin: 0; background: #f8f9fb; }
+nav { background: #1e293b; padding: 12px; }
+nav a { color: #fff; margin-right: 12px; text-decoration: none; }
+main { padding: 18px; }
+.controls, .filters { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+table { width: 100%; border-collapse: collapse; background: #fff; }
+th, td { border: 1px solid #d1d5db; padding: 8px; font-size: 14px; text-align: left; vertical-align: top; }
+.hidden { display: none; }
+.thumb { width: 80px; cursor: pointer; }
+.pagination { margin-top: 10px; display: flex; gap: 10px; align-items: center; }
+.modal { position: fixed; inset: 0; z-index: 99; }
+.modal-overlay { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.7); }
+#modalImage {
+  position: absolute;
+  left: 30px;
+  top: 50%;
+  transform-origin: left center;
+  max-width: calc(100vw - 60px);
+  max-height: calc(100vh - 40px);
+}
