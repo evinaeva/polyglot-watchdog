@@ -1,0 +1,160 @@
+{
+  "fixture_name": "polyglot-watchdog-test-site",
+  "version": "1.1.0",
+  "pages": [
+    {
+      "language": "en",
+      "path": "/watchdog-fixture/index.html",
+      "source_en_path": "/watchdog-fixture/index.html",
+      "has_intentional_issues": false,
+      "issue_categories": [],
+      "note": "English source homepage."
+    },
+    {
+      "language": "en",
+      "path": "/watchdog-fixture/pricing.html",
+      "source_en_path": "/watchdog-fixture/pricing.html",
+      "has_intentional_issues": false,
+      "issue_categories": [],
+      "note": "English source pricing page."
+    },
+    {
+      "language": "en",
+      "path": "/watchdog-fixture/contact.html",
+      "source_en_path": "/watchdog-fixture/contact.html",
+      "has_intentional_issues": false,
+      "issue_categories": [],
+      "note": "English source contact form page."
+    },
+    {
+      "language": "en",
+      "path": "/watchdog-fixture/products.html",
+      "source_en_path": "/watchdog-fixture/products.html",
+      "has_intentional_issues": false,
+      "issue_categories": [],
+      "note": "English source products page 1."
+    },
+    {
+      "language": "en",
+      "path": "/watchdog-fixture/products-page-2.html",
+      "source_en_path": "/watchdog-fixture/products-page-2.html",
+      "has_intentional_issues": false,
+      "issue_categories": [],
+      "note": "English source products page 2."
+    },
+    {
+      "language": "en",
+      "path": "/watchdog-fixture/about.html",
+      "source_en_path": "/watchdog-fixture/about.html",
+      "has_intentional_issues": false,
+      "issue_categories": [],
+      "note": "English source about page."
+    },
+    {
+      "language": "fr",
+      "path": "/watchdog-fixture/fr/index.html",
+      "source_en_path": "/watchdog-fixture/index.html",
+      "has_intentional_issues": false,
+      "issue_categories": [],
+      "note": "Clean French localization."
+    },
+    {
+      "language": "fr",
+      "path": "/watchdog-fixture/fr/pricing.html",
+      "source_en_path": "/watchdog-fixture/pricing.html",
+      "has_intentional_issues": true,
+      "issue_categories": [
+        "GRAMMAR",
+        "PLACEHOLDER",
+        "OTHER"
+      ],
+      "note": "Plural mismatch, malformed placeholder token, and odd punctuation/spacing."
+    },
+    {
+      "language": "fr",
+      "path": "/watchdog-fixture/fr/contact.html",
+      "source_en_path": "/watchdog-fixture/contact.html",
+      "has_intentional_issues": false,
+      "issue_categories": [],
+      "note": "Clean French contact page."
+    },
+    {
+      "language": "fr",
+      "path": "/watchdog-fixture/fr/products.html",
+      "source_en_path": "/watchdog-fixture/products.html",
+      "has_intentional_issues": false,
+      "issue_categories": [],
+      "note": "Clean French products page 1."
+    },
+    {
+      "language": "fr",
+      "path": "/watchdog-fixture/fr/products-page-2.html",
+      "source_en_path": "/watchdog-fixture/products-page-2.html",
+      "has_intentional_issues": false,
+      "issue_categories": [],
+      "note": "Clean French products page 2."
+    },
+    {
+      "language": "fr",
+      "path": "/watchdog-fixture/fr/about.html",
+      "source_en_path": "/watchdog-fixture/about.html",
+      "has_intentional_issues": false,
+      "issue_categories": [],
+      "note": "Clean French about page."
+    },
+    {
+      "language": "es",
+      "path": "/watchdog-fixture/es/index.html",
+      "source_en_path": "/watchdog-fixture/index.html",
+      "has_intentional_issues": false,
+      "issue_categories": [],
+      "note": "Clean Spanish localization."
+    },
+    {
+      "language": "es",
+      "path": "/watchdog-fixture/es/pricing.html",
+      "source_en_path": "/watchdog-fixture/pricing.html",
+      "has_intentional_issues": false,
+      "issue_categories": [],
+      "note": "Clean Spanish pricing page."
+    },
+    {
+      "language": "es",
+      "path": "/watchdog-fixture/es/contact.html",
+      "source_en_path": "/watchdog-fixture/contact.html",
+      "has_intentional_issues": true,
+      "issue_categories": [
+        "PLACEHOLDER",
+        "OTHER"
+      ],
+      "note": "Malformed placeholder and untranslated CTA button text."
+    },
+    {
+      "language": "es",
+      "path": "/watchdog-fixture/es/products.html",
+      "source_en_path": "/watchdog-fixture/products.html",
+      "has_intentional_issues": false,
+      "issue_categories": [],
+      "note": "Clean Spanish products page 1."
+    },
+    {
+      "language": "es",
+      "path": "/watchdog-fixture/es/products-page-2.html",
+      "source_en_path": "/watchdog-fixture/products-page-2.html",
+      "has_intentional_issues": true,
+      "issue_categories": [
+        "SPELLING",
+        "MEANING"
+      ],
+      "note": "Spelling issue in 'Envia' and mixed-language phrase in one sentence."
+    },
+    {
+      "language": "es",
+      "path": "/watchdog-fixture/es/about.html",
+      "source_en_path": "/watchdog-fixture/about.html",
+      "has_intentional_issues": false,
+      "issue_categories": [],
+      "note": "Clean Spanish about page."
+    }
+  ]
+}
