@@ -1,0 +1,32 @@
+{
+  "suite_version": "1.0",
+  "phase": "phase0",
+  "module_id": "phase0_url_discovery",
+  "module_title": "Phase 0 — URL Discovery",
+  "description": "Contract-compliance tests for canonicalization and url_rules.",
+  "source": "generated",
+  "test_cases": [
+    {
+      "id": "TC-001",
+      "title": "Remove fragment from single URL",
+      "priority": "high",
+      "tags": ["canonicalization", "fragment", "https"],
+      "input": {
+        "urls": ["http://example.com/news#top"],
+        "url_rules": null,
+        "validate_artifact": "url_inventory",
+        "artifact_data": ["https://example.com/news"]
+      },
+      "expected": {
+        "url_inventory": ["https://example.com/news"]
+      },
+      "assertions": [
+        {
+          "kind": "custom_message_only",
+          "message": "Phase 0 runner is pending; this suite documents expected canonicalization behavior."
+        }
+      ],
+      "notes": "Baseline fragment removal and http→https normalization."
+    }
+  ]
+}

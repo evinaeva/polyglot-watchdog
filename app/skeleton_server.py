@@ -17,10 +17,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+
 # Ensure project root is on sys.path for pipeline imports
 BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from app.testbench import get_modules, run_module_test
 
 TEMPLATES_DIR = BASE_DIR / "web" / "templates"
 STATIC_DIR = BASE_DIR / "web" / "static"
@@ -125,7 +128,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             self._json_response({"status": "ok"})
             return
 
-        if parsed.path in {"/", "/crawler", "/pulling", "/about"}:
+        if parsed.path in {"/", "/crawler", "/pulling", "/about", "/testbench"}:
             template_name = "index.html" if parsed.path == "/" else f"{parsed.path.strip('/')}.html"
             self._serve_template(template_name)
             return
@@ -165,6 +168,9 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             has_filters = any(value for values in query.values() for value in values if value.strip())
             issues = sorted(MOCK_ISSUES, key=lambda issue: issue["id"]) if has_filters else []
             self._json_response({"issues": issues})
+            return
+        if parsed.path == "/api/testbench/modules":
+            self._json_response({"modules": get_modules()})
             return
         # Job status endpoint
         if parsed.path == "/api/job":
@@ -249,6 +255,19 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self._json_response({"status": "ok", "rule": rule})
             except Exception as exc:
                 self._json_response({"status": "error", "message": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        # Testbench module run endpoint
+        if self.path == "/api/testbench/run":
+            payload = self._read_json_payload()
+            module_id = str(payload.get("module_id", "")).strip()
+            case_key = payload.get("case_key") or payload.get("case_id")
+            inline_payload = payload.get("input") if isinstance(payload.get("input"), dict) else None
+            if not module_id:
+                self._json_response({"status": "error", "message": "module_id required"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            result = run_module_test(module_id, case_key if isinstance(case_key, str) else None, inline_payload)
+            self._json_response(result)
             return
 
         # Phase 3 trigger — EN Reference Build

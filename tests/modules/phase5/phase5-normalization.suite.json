@@ -1,0 +1,48 @@
+{
+  "suite_version": "1.0",
+  "phase": "phase5",
+  "module_id": "phase5_normalization",
+  "module_title": "Phase 5 — Normalization",
+  "description": "Deterministic normalization checks.",
+  "source": "generated",
+  "test_cases": [
+    {
+      "id": "TC-001",
+      "title": "Remove zero-width and normalize line endings",
+      "priority": "high",
+      "tags": ["normalization", "unicode"],
+      "input": {
+        "text": "Hello\u200B\r\nWorld"
+      },
+      "expected": {
+        "normalized_text": "Hello\nWorld"
+      },
+      "assertions": [
+        {
+          "kind": "equals",
+          "path": "normalized_text"
+        }
+      ],
+      "notes": "Ensures deterministic normalization while preserving visible spacing."
+    },
+    {
+      "id": "TC-002",
+      "title": "Keep double spaces intact",
+      "priority": "medium",
+      "tags": ["spacing"],
+      "input": {
+        "text": "Keep  double  spaces"
+      },
+      "expected": {
+        "normalized_text": "Keep  double  spaces"
+      },
+      "assertions": [
+        {
+          "kind": "equals",
+          "path": "normalized_text"
+        }
+      ],
+      "notes": "Contract requires preserving user-visible double spaces."
+    }
+  ]
+}

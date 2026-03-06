@@ -1,0 +1,47 @@
+{
+  "suite_version": "1.0",
+  "phase": "phase6",
+  "module_id": "phase6_localization_qa",
+  "module_title": "Phase 6 — Localization QA",
+  "description": "Issue artifact contract checks.",
+  "source": "generated",
+  "test_cases": [
+    {
+      "id": "TC-001",
+      "title": "issues payload aligns with schema",
+      "priority": "high",
+      "tags": ["issues", "schema"],
+      "input": {
+        "validate_artifact": "issues",
+        "artifact_data": [
+          {
+            "id": "issue-1",
+            "category": "MEANING",
+            "confidence": 0.75,
+            "message": "Target text appears untranslated (identical to EN)",
+            "evidence": {
+              "url": "https://fr.example.com/catalog",
+              "bbox": {"x": 10, "y": 20, "width": 30, "height": 15},
+              "storage_uri": "gs://example/screenshot.png",
+              "item_id": "item-0001"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "issues": [
+          {
+            "id": "issue-1"
+          }
+        ]
+      },
+      "assertions": [
+        {
+          "kind": "custom_message_only",
+          "message": "Phase 6 runner wiring pending; suite declares expected schema-compliant shape."
+        }
+      ],
+      "notes": "Useful for generator-produced datasets and future adapter wiring."
+    }
+  ]
+}
