@@ -1,8 +1,9 @@
 steps:
-  # Build the container image.
+  # Build the container image (no-cache ensures fresh copy of all source files).
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
+      - '--no-cache'
       - '-t'
       - '${_IMAGE}'
       - '.'
