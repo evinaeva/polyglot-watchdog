@@ -1,7 +1,8 @@
 """Minimal deterministic skeleton UI server for Polyglot Watchdog.
 
 Phase 0 and Phase 1 are wired to real pipeline modules.
-All other phases remain as stubs or mock data.
+Phase 2 (template_rules) and Phase 3 (eligible_dataset) are wired to real pipeline modules.
+Other phases remain as stubs or mock data.
 """
 
 from __future__ import annotations
@@ -97,6 +98,18 @@ def _run_phase1_async(job_id: str, domain: str, run_id: str, language: str,
             state=state,
             user_tier=user_tier,
         )
+        _jobs[job_id]["status"] = "done"
+    except Exception as exc:
+        _jobs[job_id]["status"] = "error"
+        _jobs[job_id]["error"] = str(exc)
+
+
+def _run_phase3_async(job_id: str, domain: str, run_id: str) -> None:
+    """Run Phase 3 in a background thread."""
+    _jobs[job_id] = {"status": "running", "phase": "3", "domain": domain, "run_id": run_id}
+    try:
+        from pipeline.run_phase3 import run as phase3_run
+        phase3_run(domain=domain, run_id=run_id)
         _jobs[job_id]["status"] = "done"
     except Exception as exc:
         _jobs[job_id]["status"] = "error"
@@ -207,6 +220,45 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 target=_run_phase1_async,
                 args=(job_id, domain, run_id, language, viewport_kind, state, user_tier),
                 daemon=True,
+            )
+            t.start()
+            self._json_response({"status": "started", "job_id": job_id, "run_id": run_id})
+            return
+
+        # Phase 2 — save a single template rule to GCS
+        if self.path == "/api/phase2/rule":
+            payload = self._read_json_payload()
+            domain = payload.get("domain", "").strip()
+            run_id = payload.get("run_id", "").strip()
+            item_id = payload.get("item_id", "").strip()
+            url = payload.get("url", "").strip()
+            rule_type = payload.get("rule_type", "").strip()
+            note = payload.get("note") or None
+            allowed = {"IGNORE_ENTIRE_ELEMENT", "MASK_VARIABLE", "ALWAYS_COLLECT"}
+            if not all([domain, run_id, item_id, url]) or rule_type not in allowed:
+                self._json_response({"status": "error", "message": "domain, run_id, item_id, url and valid rule_type required"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                from pipeline.run_phase2 import run as phase2_run
+                rule = phase2_run(domain=domain, run_id=run_id, item_id=item_id, url=url, rule_type=rule_type, note=note)
+                # Also update in-memory decisions for UI consistency
+                RULE_DECISIONS[item_id] = rule_type
+                self._json_response({"status": "ok", "rule": rule})
+            except Exception as exc:
+                self._json_response({"status": "error", "message": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        # Phase 3 trigger — EN Reference Build
+        if self.path == "/api/phase3/run":
+            payload = self._read_json_payload()
+            domain = payload.get("domain", "").strip()
+            run_id = payload.get("run_id", "").strip()
+            if not domain or not run_id:
+                self._json_response({"status": "error", "message": "domain and run_id required"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            job_id = f"phase3-{run_id}"
+            t = threading.Thread(
+                target=_run_phase3_async, args=(job_id, domain, run_id), daemon=True
             )
             t.start()
             self._json_response({"status": "started", "job_id": job_id, "run_id": run_id})
