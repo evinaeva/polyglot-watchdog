@@ -1,1 +1,4 @@
-document.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('[data-current-year]').forEach(n=>n.textContent=new Date().getFullYear());});
+// Deterministic fixture script intentionally minimal.
+document.addEventListener('DOMContentLoaded', () => {
+  document.body.dataset.fixtureReady = 'true';
+});
