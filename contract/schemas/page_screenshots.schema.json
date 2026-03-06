@@ -2,28 +2,60 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://polyglot-watchdog/contract/schemas/page_screenshots.schema.json",
   "title": "Page Screenshots",
-  "description": "Phase 1 URL-level screenshot artifact. Exactly one screenshot record is mapped per URL key.",
-  "type": "object",
-  "propertyNames": {
-    "type": "string",
-    "format": "uri"
-  },
-  "additionalProperties": {
+  "description": "Phase 1 page-level screenshot inventory. Exactly one full-page screenshot per (url, viewport_kind, state, user_tier) capture. No per-element screenshots.",
+  "type": "array",
+  "items": {
     "type": "object",
     "additionalProperties": false,
     "required": [
+      "page_id",
+      "url",
+      "viewport_kind",
+      "state",
+      "user_tier",
       "screenshot_id",
       "storage_uri",
       "captured_at"
     ],
     "properties": {
+      "page_id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "url": {
+        "type": "string",
+        "format": "uri"
+      },
+      "viewport_kind": {
+        "type": "string",
+        "enum": [
+          "desktop",
+          "mobile",
+          "responsive"
+        ]
+      },
+      "state": {
+        "type": "string",
+        "enum": [
+          "guest",
+          "user"
+        ]
+      },
+      "user_tier": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "description": "Required when state=user; null when state=guest."
+      },
       "screenshot_id": {
         "type": "string",
         "minLength": 1
       },
       "storage_uri": {
         "type": "string",
-        "minLength": 1
+        "minLength": 1,
+        "description": "Persistent storage URI (e.g., gs://bucket/path.png)."
       },
       "captured_at": {
         "type": "string",
@@ -35,6 +67,10 @@
           "null"
         ],
         "additionalProperties": false,
+        "required": [
+          "width",
+          "height"
+        ],
         "properties": {
           "width": {
             "type": "integer",
@@ -44,11 +80,7 @@
             "type": "integer",
             "minimum": 1
           }
-        },
-        "required": [
-          "width",
-          "height"
-        ]
+        }
       }
     }
   }

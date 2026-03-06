@@ -1,89 +1,39 @@
-# Polyglot Watchdog — System Overview (Descriptive)
+# Polyglot Watchdog — Overview (Non‑normative)
 
-## Document Status
-- **Type:** Descriptive
-- **Normativity:** Non-normative
-- **Authority:** This document MUST NOT override `contract/watchdog_contract_v1.0.md`.
+This document describes the intended product at a high level.  
+**Normative behavior is defined only in** `contract/watchdog_contract_v1.0.md`.
 
-## Purpose
-Polyglot Watchdog is a localization QA pipeline intended to identify translation quality problems in website UI text and text extracted from page imagery. The system supports deterministic re-runs and staged artifact handoffs.
+## Goal
+Continuously detect suspicious localization issues by comparing a saved **EN reference** against language subdomains (e.g., `fr.example.com`) using:
+- URL discovery (EN)
+- page pulling/extraction (text + images)
+- manual EN curation (ignore / always collect / mask variable)
+- EN reference build (filter-only or re-pull)
+- pairing EN ↔ target content
+- translator cascade + QA checks
+- issue review UI with evidence (screenshot + bbox)
 
-## System Goals
-- Discover canonical website URLs for analysis.
-- Collect user-visible UI content grouped by page URL.
-- Support manual annotation to separate relevant and irrelevant data.
-- Rescan with rule-based filtering for cleaner QA inputs.
-- Prepare OCR phase boundaries for image text extraction.
-- Normalize text for robust automated quality checks.
-- Emit localization issue records for QA review.
+## Target end-to-end flow (summary)
+1. Crawl URLs from EN base domain.
+2. Pull all EN URLs (extract visible text elements + `<img>` elements; capture full-page screenshots).
+3. Manual review/annotation of EN collected items.
+4. Build EN reference (filtered dataset or re-pull).
+5. Pull target language subdomain(s).
+6. Pair EN reference items with target items.
+7. Run translator cascade.
+8. Present suspicious pairs grouped by issue categories (query-driven; empty by default).
 
-## Phase Model (Descriptive)
-- **Phase 0 — URL Discovery**
-- **Phase 1 — Data Collection**
-- **Phase 2 — Annotation UI**
-- **Phase 3 — Filtered Rescan**
-- **Phase 4 — OCR Extraction**
-- **Phase 5 — Text Normalization**
-- **Phase 6 — Localization QA**
+## UI pages
+- `/crawler`: collect URLs for a base domain and persist them.
+- `/pulling`: pull content for EN/target subdomains, persist per-URL results incrementally, provide cross-filtering and annotation tools.
+- `/`: issues explorer (shows results only after user query).
+- `/about`: glossary of product terms (filled after implementation once term set is complete).
 
-## Screenshot Model (High-Level)
-The system uses URL-level screenshots as page artifacts:
-- 1 URL = 1 screenshot artifact.
-- Elements are grouped under a URL/page context.
-- Elements do not carry individual screenshot ownership.
+## Persistence
+All artifacts must be stored in persistent GCP storage so they remain available across rebuilds and support rescans months later.
 
-## Notes
-This overview explains intent and vocabulary only. All enforceable requirements, schema constraints, and testable rules are defined in the Contract.
-Это не нормативный документ.
-Он описывает систему, но не задаёт обязательные правила.
-
-Назначение системы
-
-Polyglot Watchdog — QA-пайплайн для обнаружения ошибок локализации в UI-тексте и текстах на изображениях.
-
-Система автоматически:
-
-обнаруживает URL сайта
-
-извлекает UI-элементы и изображения
-
-делает OCR
-
-нормализует текст
-
-выполняет автоматические проверки перевода
-
-выводит подозрительные случаи для QA
-
-Этот документ описывает общую архитектуру, а не строгие правила реализации.
-
-Фазы системы
-Фаза	Название	Назначение
-0	URL Discovery	сбор канонического списка страниц
-1	Data Collection	извлечение UI-элементов и изображений
-2	Annotation UI	ручная разметка Collect / Ignore
-3	Filtered Rescan	повторный сбор с учётом шаблонов
-4	OCR Extraction	распознавание текста на изображениях
-5	Text Normalization	унификация текста
-6	Localization QA	автоматические проверки качества перевода
-
-Каждая фаза производит строго определённый артефакт данных, который используется следующей фазой.
-
-Архитектура компонентов
-Компонент	Назначение
-Crawler	обнаружение URL
-Playwright extractor	извлечение DOM-элементов и изображений
-Storage layer	хранение скриншотов и данных
-Annotation UI	ручная фильтрация элементов
-OCR module	извлечение текста из изображений
-Normalization module	канонизация текста
-QA engine	проверка качества перевода
-Ключевые свойства системы
-
-детерминированность
-
-воспроизводимость
-
-возможность повторного сканирования
-
-автоматическое обнаружение ошибок перевода
+## Key product constraints
+- One full-page screenshot per URL capture context (not per element).
+- Avoid crawling pagination URLs only for explicitly configured patterns (UI-managed rules).
+- Double spaces are not normalized away (may indicate errors).
+- Numeric/price strings are not automatically excluded (may affect pluralization/grammar).
