@@ -119,15 +119,18 @@ def _run_phase3_async(job_id: str, domain: str, run_id: str) -> None:
 class SkeletonHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
+
+        # Health check — must be first to ensure it is always reachable.
+        if parsed.path == "/healthz":
+            self._json_response({"status": "ok"})
+            return
+
         if parsed.path in {"/", "/crawler", "/pulling", "/about"}:
             template_name = "index.html" if parsed.path == "/" else f"{parsed.path.strip('/')}.html"
             self._serve_template(template_name)
             return
         if parsed.path.startswith("/static/"):
             self._serve_static(parsed.path.removeprefix("/static/"))
-            return
-        if parsed.path == "/healthz":
-            self._json_response({"status": "ok"})
             return
         if parsed.path == "/api/domains":
             self._json_response({"items": sorted(MOCK_DOMAINS)})
