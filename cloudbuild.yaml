@@ -27,6 +27,7 @@ steps:
       - '--port=8080'
       - '--memory=1Gi'
       - '--cpu=1'
+      - '--service-account=polyglot-watchdog-sa@${PROJECT_ID}.iam.gserviceaccount.com'
       - '--set-env-vars=ARTIFACTS_BUCKET=polyglot-watchdog-artifacts-1018698441568'
 
 images:
