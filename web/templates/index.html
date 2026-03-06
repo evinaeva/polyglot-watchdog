@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Polyglot Watchdog - Issues</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <nav><a href="/">Issues</a> | <a href="/crawler">Crawler</a> | <a href="/pulling">Pulling</a> | <a href="/about">About</a></nav>
+  <main>
+    <h1>Issues Explorer</h1>
+    <p>Issues are shown only after applying a query.</p>
+    <div class="controls">
+      <input id="issueQuery" placeholder="Enter URL or keyword" />
+      <button id="applyIssueQuery">Apply Query</button>
+    </div>
+    <table id="issuesTable" class="hidden">
+      <thead><tr><th>ID</th><th>Category</th><th>URL</th><th>Message</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </main>
+  <script src="/static/index.js"></script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Polyglot Watchdog - Crawler</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <nav><a href="/">Issues</a> | <a href="/crawler">Crawler</a> | <a href="/pulling">Pulling</a> | <a href="/about">About</a></nav>
+  <main>
+    <h1>Crawler</h1>
+    <div class="controls">
+      <input id="domainInput" value="en.example.com" aria-label="domain" />
+      <button id="collectUrlsButton">Collect URLs</button>
+    </div>
+    <table>
+      <thead><tr><th>URL Inventory (placeholder)</th></tr></thead>
+      <tbody id="urlInventoryBody"></tbody>
+    </table>
+  </main>
+  <script src="/static/crawler.js"></script>
+</body>
+</html>

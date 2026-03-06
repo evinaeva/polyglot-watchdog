@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Polyglot Watchdog - Pulling</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <nav><a href="/">Issues</a> | <a href="/crawler">Crawler</a> | <a href="/pulling">Pulling</a> | <a href="/about">About</a></nav>
+  <main>
+    <h1>Pulling</h1>
+    <div class="controls">
+      <input id="languageSubdomain" value="fr.example.com" aria-label="language subdomain" />
+      <select id="domainDropdown"></select>
+      <button id="collectPullsButton">Collect</button>
+    </div>
+
+    <div class="filters">
+      <label>URL <input id="urlFilter" placeholder="Filter by URL text" /></label>
+      <label>Element Type <select id="elementTypeFilter"><option value="">All</option></select></label>
+      <label><input type="checkbox" id="imagesFilter" /> Images</label>
+      <label><input type="checkbox" id="buttonsFilter" /> Buttons</label>
+      <label><input type="checkbox" id="inputsFilter" /> Inputs</label>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>url</th><th>element_type</th><th>text</th><th>screenshot thumbnail</th><th>decision</th>
+        </tr>
+      </thead>
+      <tbody id="pullRows"></tbody>
+    </table>
+
+    <div class="pagination">
+      <button id="prevPage">Prev</button>
+      <span id="pageLabel">Page 1 / 1</span>
+      <button id="nextPage">Next</button>
+    </div>
+  </main>
+
+  <div id="screenshotModal" class="modal hidden">
+    <div class="modal-overlay"></div>
+    <img id="modalImage" alt="screenshot" />
+  </div>
+
+  <script src="/static/pulling.js"></script>
+</body>
+</html>
