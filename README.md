@@ -1,37 +1,55 @@
-# Polyglot Watchdog CLI Pipeline
+# Polyglot Watchdog — Skeleton UI
 
-This repository provides a minimal, deterministic command‑line pipeline for
-detecting localization issues on websites. The pipeline reuses proven OCR
-integrations and normalization logic from the `ai_ocr` project without
-introducing any web server or database components.
+Minimal skeleton web UI service for Polyglot Watchdog.
 
-## Overview
+This is an early-stage scaffold. No pipeline phases (0–6) are implemented yet.
+All data returned by the API endpoints is mock/static.
 
-The pipeline performs the following steps for a given starting URL:
+## Available routes
 
-1. **Crawl**: Recursively visits the starting page and any same‑domain
-   links discovered on each page. The URL queue is sorted to ensure
-   deterministic ordering.
-2. **Extract**: Retrieves visible text from each page’s DOM and captures
-   a full‑page screenshot at a fixed viewport (1920×1080), user‑agent
-   (`polyglot-watchdog/1.0`) and locale (`en‑US`).
-3. **OCR**: Runs one or more OCR engines (Google Vision, Azure Computer
-   Vision and OCR.Space) via the reused `app.ocr` module to extract
-   text from screenshots.
-4. **Normalize**: Normalizes both the DOM text and OCR output using
-   functions from `utils.normalizer` to remove punctuation, unify case
-   and collapse whitespace.
-5. **Detect Issues**: Flags any line of DOM text whose normalized form
-   does not appear in the normalized OCR output. Each issue records
-   the page URL, line number, original text and normalized text.
-6. **Export**: Writes a deterministic JSON report to
-   `output/issues.json`. Issues and page URLs are sorted for repeatable
-   results.
+| Route | Description |
+|---|---|
+| `/` | Issues explorer (returns results only when filters are applied) |
+| `/crawler` | URL crawler page |
+| `/pulling` | Content pulling and annotation page |
+| `/about` | Glossary (placeholder) |
+| `/healthz` | Health check — returns `{"status": "ok"}` |
 
-## Usage
+## What is NOT implemented yet
 
-Install the requirements in a clean Python environment:
+- Phase 0–6 pipeline logic (crawling, pulling, annotation persistence, OCR, normalization, QA)
+- Real GCP storage integration
+- Authentication / user tiers
+- Any production-ready data
+
+## Run locally
 
 ```bash
-pip install -r requirements.txt
-playwright install --with-deps
+PORT=8080 python app/skeleton_server.py
+```
+
+Verify:
+```bash
+curl http://localhost:8080/healthz
+# {"status": "ok"}
+```
+
+## Build and deploy to Cloud Run
+
+```bash
+gcloud builds submit \
+  --config=cloudbuild.yaml \
+  --substitutions=_SERVICE_NAME=polyglot-watchdog,_REGION=europe-west1
+```
+
+After deployment, verify:
+```bash
+curl https://<SERVICE_URL>/healthz
+# {"status": "ok"}
+```
+
+The service URL is printed at the end of `gcloud builds submit` output,
+or retrieve it with:
+```bash
+gcloud run services describe polyglot-watchdog --region=europe-west1 --format='value(status.url)'
+```
