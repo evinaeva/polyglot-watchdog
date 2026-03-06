@@ -25,8 +25,9 @@ steps:
       - '--platform=managed'
       - '--allow-unauthenticated'
       - '--port=8080'
-      - '--memory=512Mi'
+      - '--memory=1Gi'
       - '--cpu=1'
+      - '--set-env-vars=ARTIFACTS_BUCKET=polyglot-watchdog-artifacts-1018698441568'
 
 images:
   - '${_IMAGE}'

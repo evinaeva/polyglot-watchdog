@@ -1,15 +1,26 @@
-"""Minimal deterministic skeleton UI server for Polyglot Watchdog."""
+"""Minimal deterministic skeleton UI server for Polyglot Watchdog.
+
+Phase 0 and Phase 1 are wired to real pipeline modules.
+All other phases remain as stubs or mock data.
+"""
 
 from __future__ import annotations
 
 import json
 import os
+import sys
+import threading
+import uuid
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+# Ensure project root is on sys.path for pipeline imports
 BASE_DIR = Path(__file__).resolve().parent.parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
 TEMPLATES_DIR = BASE_DIR / "web" / "templates"
 STATIC_DIR = BASE_DIR / "web" / "static"
 
@@ -55,6 +66,41 @@ MOCK_ISSUES = [
 ]
 
 RULE_DECISIONS: dict[str, str] = {}
+
+# In-memory job status store (cleared on restart — for UI feedback only)
+_jobs: dict[str, dict] = {}
+
+
+def _run_phase0_async(job_id: str, domain: str, run_id: str) -> None:
+    """Run Phase 0 in a background thread."""
+    _jobs[job_id] = {"status": "running", "phase": "0", "domain": domain, "run_id": run_id}
+    try:
+        from pipeline.run_phase0 import run as phase0_run
+        phase0_run(domain=domain, run_id=run_id)
+        _jobs[job_id]["status"] = "done"
+    except Exception as exc:
+        _jobs[job_id]["status"] = "error"
+        _jobs[job_id]["error"] = str(exc)
+
+
+def _run_phase1_async(job_id: str, domain: str, run_id: str, language: str,
+                     viewport_kind: str, state: str, user_tier) -> None:
+    """Run Phase 1 in a background thread."""
+    _jobs[job_id] = {"status": "running", "phase": "1", "domain": domain, "run_id": run_id}
+    try:
+        from pipeline.run_phase1 import run as phase1_run
+        phase1_run(
+            domain=domain,
+            run_id=run_id,
+            language=language,
+            viewport_kind=viewport_kind,
+            state=state,
+            user_tier=user_tier,
+        )
+        _jobs[job_id]["status"] = "done"
+    except Exception as exc:
+        _jobs[job_id]["status"] = "error"
+        _jobs[job_id]["error"] = str(exc)
 
 
 class SkeletonHandler(BaseHTTPRequestHandler):
@@ -104,6 +150,14 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             issues = sorted(MOCK_ISSUES, key=lambda issue: issue["id"]) if has_filters else []
             self._json_response({"issues": issues})
             return
+        # Job status endpoint
+        if parsed.path == "/api/job":
+            job_id = parse_qs(parsed.query).get("id", [""])[0]
+            if job_id in _jobs:
+                self._json_response(_jobs[job_id])
+            else:
+                self._json_response({"status": "not_found"}, status=HTTPStatus.NOT_FOUND)
+            return
 
         self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
 
@@ -118,6 +172,44 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self._json_response({"status": "ok", "item_id": item_id, "rule_type": rule_type})
                 return
             self._json_response({"status": "error", "message": "invalid payload"}, status=HTTPStatus.BAD_REQUEST)
+            return
+
+        # Phase 0 trigger — real pipeline
+        if self.path == "/api/phase0/run":
+            payload = self._read_json_payload()
+            domain = payload.get("domain", "").strip()
+            if not domain:
+                self._json_response({"status": "error", "message": "domain required"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            run_id = payload.get("run_id") or str(uuid.uuid4())
+            job_id = f"phase0-{run_id}"
+            t = threading.Thread(
+                target=_run_phase0_async, args=(job_id, domain, run_id), daemon=True
+            )
+            t.start()
+            self._json_response({"status": "started", "job_id": job_id, "run_id": run_id})
+            return
+
+        # Phase 1 trigger — real pipeline
+        if self.path == "/api/phase1/run":
+            payload = self._read_json_payload()
+            domain = payload.get("domain", "").strip()
+            run_id = payload.get("run_id", "").strip()
+            if not domain or not run_id:
+                self._json_response({"status": "error", "message": "domain and run_id required"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            language = payload.get("language", "en")
+            viewport_kind = payload.get("viewport_kind", "desktop")
+            state = payload.get("state", "guest")
+            user_tier = payload.get("user_tier") or None
+            job_id = f"phase1-{run_id}-{language}-{viewport_kind}-{state}"
+            t = threading.Thread(
+                target=_run_phase1_async,
+                args=(job_id, domain, run_id, language, viewport_kind, state, user_tier),
+                daemon=True,
+            )
+            t.start()
+            self._json_response({"status": "started", "job_id": job_id, "run_id": run_id})
             return
 
         self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
@@ -172,10 +264,13 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             return {}
         return payload
 
+    def log_message(self, format, *args):  # noqa: A002
+        pass  # suppress default request logging for cleaner Cloud Run logs
+
 
 def run(host: str = "0.0.0.0", port: int = 8080) -> None:
     server = ThreadingHTTPServer((host, port), SkeletonHandler)
-    print(f"Skeleton UI running on http://{host}:{port}")
+    print(f"Polyglot Watchdog UI running on http://{host}:{port}")
     server.serve_forever()
 
 

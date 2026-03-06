@@ -1,6 +1,11 @@
-"""Pipeline package for the localization QA pipeline.
+"""Polyglot Watchdog pipeline package.
 
-This package contains the entry point for executing the end‑to‑end
-localization QA pipeline. Additional helper modules could be added
-here in future iterations.
+Phase order (Contract §2):
+  0 — URL Discovery
+  1 — Data Collection
+  2 — Annotation UI  (not implemented in this package)
+  3 — Filtered Rescan / EN Reference Build  (not implemented)
+  4 — OCR Extraction  (OPEN/DEFERRED)
+  5 — Text Normalization  (not implemented)
+  6 — Localization QA  (not implemented)
 """

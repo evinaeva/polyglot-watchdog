@@ -1,5 +1,26 @@
-# Minimal dependencies required for the CLI pipeline.
+# Runtime dependencies for Polyglot Watchdog.
+# Pinned to allow reproducible builds where possible.
+
+# HTTP server — stdlib only (no extra dep needed for skeleton_server.py)
+
+# Playwright for page pulling (Phase 1)
 playwright
+
+# HTTP client (used by pipeline_runner)
 httpx
+
+# Google Cloud Vision (OCR — Phase 4, OPEN/DEFERRED)
 google-cloud-vision
+
+# Google Cloud Storage — Phase 0/1 artifact persistence
+google-cloud-storage
+
+# JSON Schema validation
+jsonschema
+
+# HTML parsing for Phase 0 link extraction
+beautifulsoup4
+lxml
+
+# Image handling
 Pillow
