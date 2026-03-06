@@ -6,26 +6,11 @@ from __future__ import annotations
 import argparse
 import json
 import time
-from collections import deque
-from html.parser import HTMLParser
 from pathlib import Path
 from typing import Iterable
 from urllib import error, parse, request
+from xml.etree import ElementTree
 
-
-class LinkExtractor(HTMLParser):
-    """Extract href values from anchor tags."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.links: list[str] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag.lower() != "a":
-            return
-        for name, value in attrs:
-            if name.lower() == "href" and value:
-                self.links.append(value)
 
 
 def remove_fragment(url: str) -> str:
@@ -72,17 +57,29 @@ def normalized_netloc(parsed: parse.SplitResult) -> str:
     return f"{auth}{host}{port}"
 
 
-def fetch_links(url: str, timeout: float = 10.0) -> list[str]:
+def fetch_sitemap_urls(url: str, timeout: float = 10.0) -> list[str]:
     req = request.Request(url, headers={"User-Agent": "polyglot-watchdog-url-crawl-probe/1.0"})
     with request.urlopen(req, timeout=timeout) as response:
-        content_type = response.headers.get("Content-Type", "")
-        if "text/html" not in content_type:
-            return []
         payload = response.read().decode("utf-8", errors="ignore")
 
-    parser = LinkExtractor()
-    parser.feed(payload)
-    return parser.links
+    root = ElementTree.fromstring(payload)
+    loc_values: list[str] = []
+    for element in root.iter():
+        if element.tag.split("}")[-1] == "loc" and element.text:
+            loc_values.append(element.text.strip())
+    return loc_values
+
+
+def is_excluded_tag_path(url: str) -> bool:
+    parsed = parse.urlsplit(url)
+    excluded_prefixes = (
+        "/couples/tags/",
+        "/female/tags/",
+        "/male/tags/",
+        "/tags/",
+        "/trans/tags/",
+    )
+    return any(parsed.path.startswith(prefix) for prefix in excluded_prefixes)
 
 
 def canonicalize_url(url: str) -> str:
@@ -104,62 +101,34 @@ def crawl(
     max_pages: int,
     delay_s: float = 0.2,
 ) -> tuple[set[str], list[dict[str, str]]]:
-    start_url_no_fragment = remove_fragment(start_url)
-    start_allowed, start_drop = classify_url(start_url_no_fragment, base_domain)
-
-    queue: deque[str] = deque([start_url_no_fragment] if start_allowed else [])
-    enqueued: set[str] = {start_url_no_fragment} if start_allowed else set()
-    visited: set[str] = set()
     discovered: set[str] = set()
     strict_drop_map: dict[tuple[str, str, str, str, str], dict[str, str]] = {}
 
-    if start_drop is not None:
-        key = (
-            start_drop["url"],
-            start_drop["reason"],
-            start_drop["expected_host"],
-            start_drop["found_host"],
-            start_drop["found_scheme"],
-        )
-        strict_drop_map[key] = start_drop
+    sitemap_url = f"https://{base_domain.lower()}/basic-sitemap.xml"
+    try:
+        sitemap_urls = fetch_sitemap_urls(sitemap_url)
+    except (error.URLError, ValueError, TimeoutError, ElementTree.ParseError):
+        sitemap_urls = []
 
-    while queue and len(visited) < max_pages:
-        current = queue.popleft()
-        if current in visited:
-            continue
-        visited.add(current)
-
-        try:
-            links = fetch_links(current)
-        except (error.URLError, ValueError, TimeoutError):
-            time.sleep(delay_s)
+    for absolute in sitemap_urls[:max_pages]:
+        allowed, drop_entry = classify_url(absolute, base_domain)
+        if not allowed:
+            if drop_entry is not None:
+                key = (
+                    drop_entry["url"],
+                    drop_entry["reason"],
+                    drop_entry["expected_host"],
+                    drop_entry["found_host"],
+                    drop_entry["found_scheme"],
+                )
+                strict_drop_map[key] = drop_entry
             continue
 
-        for href in links:
-            absolute = parse.urljoin(current, href)
-            allowed, drop_entry = classify_url(absolute, base_domain)
-            if not allowed:
-                if drop_entry is not None:
-                    key = (
-                        drop_entry["url"],
-                        drop_entry["reason"],
-                        drop_entry["expected_host"],
-                        drop_entry["found_host"],
-                        drop_entry["found_scheme"],
-                    )
-                    strict_drop_map[key] = drop_entry
-                continue
-
-            no_fragment = remove_fragment(absolute)
-            discovered.add(no_fragment)
-            if no_fragment not in enqueued:
-                queue.append(no_fragment)
-                enqueued.add(no_fragment)
-
+        no_fragment = remove_fragment(absolute)
+        if is_excluded_tag_path(no_fragment):
+            continue
+        discovered.add(no_fragment)
         time.sleep(delay_s)
-
-    if start_allowed:
-        discovered.add(start_url_no_fragment)
 
     strict_dropped = sorted(
         strict_drop_map.values(),
