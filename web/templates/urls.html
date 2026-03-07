@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Polyglot Watchdog - Seed URLs</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <nav><a href="/">Issues</a> | <a href="/crawler">Crawler</a> | <a href="/pulling">Pulling</a> | <a href="/urls">URLs</a> | <a href="/about">About</a> | <a href="/testbench">Testbench</a></nav>
+  <main>
+    <h1>Seed URL Manager</h1>
+    <div class="controls">
+      <label>Domain <input id="domainInput" value="en.wikipedia.org" /></label>
+      <button id="loadButton">Load</button>
+    </div>
+    <div class="controls">
+      <button id="replaceButton">Replace list</button>
+      <button id="addButton">Add to list</button>
+      <button id="clearButton">Clear</button>
+    </div>
+    <p>Updated at: <span id="updatedAt">-</span></p>
+    <div id="errorBox" class="hidden" style="color:#b00020; margin-bottom: 8px;"></div>
+    <textarea id="urlsMultiline" rows="10" style="width: 100%;" placeholder="One URL per line"></textarea>
+
+    <h2>Current saved URLs</h2>
+    <table>
+      <thead><tr><th>URL</th><th>Action</th></tr></thead>
+      <tbody id="savedUrlsBody"></tbody>
+    </table>
+  </main>
+  <script src="/static/urls.js"></script>
+</body>
+</html>

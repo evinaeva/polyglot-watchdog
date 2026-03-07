@@ -17,12 +17,18 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-
 # Ensure project root is on sys.path for pipeline imports
 BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from app.seed_urls import (
+    normalize_seed_url,
+    parse_seed_urls,
+    read_seed_urls,
+    validate_domain,
+    write_seed_urls,
+)
 from app.testbench import get_modules, run_module_test
 
 TEMPLATES_DIR = BASE_DIR / "web" / "templates"
@@ -129,7 +135,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             self._json_response({"status": "ok"})
             return
 
-        if parsed.path in {"/", "/crawler", "/pulling", "/about", "/testbench"}:
+        if parsed.path in {"/", "/crawler", "/pulling", "/about", "/testbench", "/urls"}:
             template_name = "index.html" if parsed.path == "/" else f"{parsed.path.strip('/')}.html"
             self._serve_template(template_name)
             return
@@ -174,6 +180,20 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             issues = sorted(MOCK_ISSUES, key=lambda issue: issue["id"]) if has_filters else []
             self._json_response({"issues": issues})
             return
+        if parsed.path == "/api/seed-urls":
+            domain = parse_qs(parsed.query).get("domain", [""])[0]
+            try:
+                valid_domain = validate_domain(domain)
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                payload = read_seed_urls(valid_domain)
+            except Exception as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+            self._json_response(payload)
+            return
         if parsed.path == "/api/testbench/modules":
             self._json_response({"modules": get_modules()})
             return
@@ -188,7 +208,81 @@ class SkeletonHandler(BaseHTTPRequestHandler):
 
         self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
 
+    def do_PUT(self) -> None:  # noqa: N802
+        if self.path == "/api/seed-urls":
+            payload = self._read_json_payload()
+            domain = str(payload.get("domain", ""))
+            urls_multiline = str(payload.get("urls_multiline", ""))
+            try:
+                valid_domain = validate_domain(domain)
+                urls = parse_seed_urls(urls_multiline)
+                saved = write_seed_urls(valid_domain, urls)
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            except Exception as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+            self._json_response(saved)
+            return
+
+        self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
+
     def do_POST(self) -> None:  # noqa: N802
+        if self.path == "/api/seed-urls/add":
+            payload = self._read_json_payload()
+            domain = str(payload.get("domain", ""))
+            urls_multiline = str(payload.get("urls_multiline", ""))
+            try:
+                valid_domain = validate_domain(domain)
+                incoming = parse_seed_urls(urls_multiline)
+                existing = read_seed_urls(valid_domain)
+                merged = sorted(set(existing["urls"]) | set(incoming))
+                saved = write_seed_urls(valid_domain, merged)
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            except Exception as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+            self._json_response(saved)
+            return
+
+        if self.path == "/api/seed-urls/delete":
+            payload = self._read_json_payload()
+            domain = str(payload.get("domain", ""))
+            try:
+                valid_domain = validate_domain(domain)
+                normalized = normalize_seed_url(str(payload.get("url", "")))
+                if normalized is None:
+                    raise ValueError("url is required")
+                existing = read_seed_urls(valid_domain)
+                remaining = [url for url in existing["urls"] if url != normalized]
+                saved = write_seed_urls(valid_domain, remaining)
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            except Exception as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+            self._json_response(saved)
+            return
+
+        if self.path == "/api/seed-urls/clear":
+            payload = self._read_json_payload()
+            domain = str(payload.get("domain", ""))
+            try:
+                valid_domain = validate_domain(domain)
+                saved = write_seed_urls(valid_domain, [])
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            except Exception as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+            self._json_response(saved)
+            return
+
         if self.path == "/api/rules":
             payload = self._read_json_payload()
             item_id = payload.get("item_id", "")

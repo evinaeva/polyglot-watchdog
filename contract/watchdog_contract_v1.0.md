@@ -125,6 +125,7 @@ Rules:
 - Must apply UI-managed drops in §4.2.
 - Must remove duplicates.
 - Ordering MUST be deterministic.
+- For websites where crawler discovery is deferred, Phase 0 MAY consume a manual per-domain `seed_urls` artifact as input inventory for the next step.
 
 ---
 
