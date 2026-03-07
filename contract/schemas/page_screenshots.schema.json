@@ -36,17 +36,15 @@
       },
       "state": {
         "type": "string",
-        "enum": [
-          "guest",
-          "user"
-        ]
+        "pattern": "^(guest|user|[a-z0-9]+(?:_[a-z0-9]+)*)$"
       },
       "user_tier": {
         "type": [
           "string",
           "null"
         ],
-        "description": "Required when state=user; null when state=guest."
+        "minLength": 1,
+        "description": "Backward compatible: null allowed for legacy guest captures; string for tiered and baseline/scripted contexts."
       },
       "screenshot_id": {
         "type": "string",

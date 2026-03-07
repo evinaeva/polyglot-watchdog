@@ -22,12 +22,12 @@
       "category": {
         "type": "string",
         "enum": [
-          "SPELLING",
-          "GRAMMAR",
-          "MEANING",
-          "PLACEHOLDER",
-          "OCR_NOISE",
-          "OTHER"
+          "TRANSLATION_MISMATCH",
+          "MISSING_TRANSLATION",
+          "FORMATTING_MISMATCH",
+          "LAYOUT_OVERFLOW",
+          "MISSING_INTERACTIVE_STATE",
+          "OVERLAY_BLOCKED_CAPTURE"
         ]
       },
       "confidence": {
