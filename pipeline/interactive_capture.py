@@ -5,8 +5,7 @@ import json
 import re
 from dataclasses import dataclass
 from typing import Any, Protocol
-from urllib.parse import urlsplit, urlunsplit
-
+from pipeline.phase0_crawler import canonicalize_url
 from pipeline.schema_validator import validate
 
 STATE_PATTERN = re.compile(r"^[a-z0-9]+(?:_[a-z0-9]+)*$")
@@ -81,8 +80,8 @@ class ArtifactWriter(Protocol):
 
 
 def canonicalize_url_for_hash(url: str) -> str:
-    parts = urlsplit(url)
-    return urlunsplit(("https", parts.netloc, parts.path, parts.query, ""))
+    # Reuse the contract-authoritative canonicalization implementation from Phase 0.
+    return canonicalize_url(url)
 
 
 def deterministic_url_hash(url: str) -> str:
