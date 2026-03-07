@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://polyglot-watchdog/contract/schemas/interaction_recipe.schema.json",
+  "title": "Interaction Recipe",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "recipe_id",
+    "url_pattern",
+    "steps",
+    "capture_points"
+  ],
+  "properties": {
+    "recipe_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "url_pattern": {
+      "type": "string",
+      "minLength": 1
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "minLength": 1
+          },
+          "selector": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "wait_for": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "capture_points": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "state"
+        ],
+        "properties": {
+          "state": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$"
+          }
+        }
+      }
+    }
+  }
+}

@@ -34,7 +34,7 @@ class ContractPipelineTests(unittest.TestCase):
     def test_issues_schema_shape(self):
         issues = [{
             "id": "1",
-            "category": "OTHER",
+            "category": "MISSING_TRANSLATION",
             "confidence": 0.5,
             "message": "m",
             "evidence": {"url": "https://example.com", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}, "storage_uri": "gs://b/s.png"},

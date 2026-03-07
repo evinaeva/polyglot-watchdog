@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://polyglot-watchdog/contract/schemas/capture_review_status.schema.json",
+  "title": "Capture Review Status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "capture_context_id",
+    "status",
+    "reviewer",
+    "timestamp"
+  ],
+  "properties": {
+    "capture_context_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "valid",
+        "blocked_by_overlay",
+        "retry_requested"
+      ]
+    },
+    "reviewer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  }
+}

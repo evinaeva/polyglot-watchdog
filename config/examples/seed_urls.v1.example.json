@@ -1,0 +1,10 @@
+{
+  "domain": "example.com",
+  "urls": [
+    {
+      "url": "https://example.com/profile",
+      "description": "Profile page",
+      "recipe_ids": ["profile_interactions"]
+    }
+  ]
+}
