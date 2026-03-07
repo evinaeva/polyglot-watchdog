@@ -1,0 +1,14 @@
+{
+  "recipe_id": "profile_interactions",
+  "url_pattern": "/profile",
+  "steps": [
+    {
+      "action": "click",
+      "selector": "[data-testid='photos-tab']",
+      "wait_for": "[data-testid='photos-grid']"
+    }
+  ],
+  "capture_points": [
+    {"state": "gallery_photos_open"}
+  ]
+}

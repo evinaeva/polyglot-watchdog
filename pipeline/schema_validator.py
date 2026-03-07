@@ -29,6 +29,8 @@ ARTIFACT_SCHEMAS: dict[str, str] = {
     "eligible_dataset": "eligible_dataset.schema.json",
     "issues": "issues.schema.json",
     "seed_urls": "seed_urls.schema.json",
+    "interaction_recipe": "interaction_recipe.schema.json",
+    "capture_review_status": "capture_review_status.schema.json",
 }
 
 

@@ -49,17 +49,19 @@
       },
       "state": {
         "type": "string",
-        "enum": [
-          "guest",
-          "user"
-        ]
+        "pattern": "^(guest|user|[a-z0-9]+(?:_[a-z0-9]+)*)$"
       },
       "user_tier": {
-        "type": [
-          "string",
-          "null"
+        "anyOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "string",
+            "minLength": 1
+          }
         ],
-        "description": "Required when state=user; null when state=guest."
+        "description": "Backward compatible: null allowed for legacy guest captures; string for tiered and baseline/scripted contexts."
       },
       "element_type": {
         "type": "string",
