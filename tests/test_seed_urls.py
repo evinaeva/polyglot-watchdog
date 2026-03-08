@@ -1,4 +1,4 @@
-from app.seed_urls import normalize_seed_url, parse_seed_urls
+from app.seed_urls import _seed_payload, normalize_seed_url, parse_seed_urls
 
 
 def test_normalize_seed_url_rules() -> None:
@@ -21,3 +21,9 @@ http://Example.com/B
         "https://example.com/a",
         "https://example.com/z",
     ]
+
+
+def test_seed_payload_uses_schema_rows() -> None:
+    payload = _seed_payload("example.com", ["https://example.com/a"])
+    assert payload["domain"] == "example.com"
+    assert payload["urls"] == [{"url": "https://example.com/a", "description": None, "recipe_ids": []}]
