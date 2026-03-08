@@ -9,8 +9,13 @@ from __future__ import annotations
 
 import json
 import os
+import base64
+import hashlib
+import hmac
+import secrets
 import sys
 import threading
+import time
 import uuid
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -37,6 +42,12 @@ from pipeline.runtime_config import load_phase1_runtime_config
 TEMPLATES_DIR = BASE_DIR / "web" / "templates"
 STATIC_DIR = BASE_DIR / "web" / "static"
 FIXTURE_DIR = STATIC_DIR / "watchdog-fixture"
+
+SESSION_COOKIE = "pw_session"
+CSRF_COOKIE = "pw_csrf"
+LOGIN_PASSWORD_ENV = "LOGIN_PASSWORD"
+SESSION_SIGNING_SECRET_ENV = "SESSION_SIGNING_SECRET"
+SESSION_MAX_AGE_SECONDS = max(int(os.environ.get("SESSION_MAX_AGE_SECONDS", "28800")), 300)
 
 MOCK_DOMAINS = ["de.example.com", "en.example.com", "fr.example.com"]
 MOCK_URL_INVENTORY = {
@@ -209,6 +220,92 @@ def _run_phase3_async(job_id: str, domain: str, run_id: str) -> None:
 
 
 class SkeletonHandler(BaseHTTPRequestHandler):
+    def _is_production(self) -> bool:
+        return bool(os.environ.get("K_SERVICE")) or os.environ.get("ENV", "").lower() == "production"
+
+    def _get_cookie(self, key: str) -> str:
+        raw_cookie = self.headers.get("Cookie", "")
+        for chunk in raw_cookie.split(";"):
+            part = chunk.strip()
+            if not part or "=" not in part:
+                continue
+            name, value = part.split("=", 1)
+            if name.strip() == key:
+                return value.strip()
+        return ""
+
+    def _build_cookie_header(self, key: str, value: str, *, max_age: int, http_only: bool) -> str:
+        same_site = "Lax"
+        # Lax keeps normal same-site UX while reducing CSRF risks for cross-site requests.
+        parts = [f"{key}={value}", "Path=/", f"Max-Age={max_age}", f"SameSite={same_site}"]
+        if http_only:
+            parts.append("HttpOnly")
+        if self._is_production():
+            parts.append("Secure")
+        return "; ".join(parts)
+
+    def _expire_cookie_header(self, key: str, *, http_only: bool) -> str:
+        parts = [f"{key}=", "Path=/", "Max-Age=0", "SameSite=Lax"]
+        if http_only:
+            parts.append("HttpOnly")
+        if self._is_production():
+            parts.append("Secure")
+        return "; ".join(parts)
+
+    def _session_signing_secret(self) -> str:
+        return os.environ.get(SESSION_SIGNING_SECRET_ENV, "").strip()
+
+    def _login_password(self) -> str:
+        return os.environ.get(LOGIN_PASSWORD_ENV, "").strip()
+
+    def _generate_session_token(self) -> str:
+        secret = self._session_signing_secret().encode("utf-8")
+        nonce = secrets.token_urlsafe(24)
+        expires_at = int(time.time()) + SESSION_MAX_AGE_SECONDS
+        payload = f"{nonce}:{expires_at}".encode("utf-8")
+        sig = hmac.new(secret, payload, hashlib.sha256).hexdigest()
+        raw = f"{nonce}:{expires_at}:{sig}".encode("utf-8")
+        return base64.urlsafe_b64encode(raw).decode("utf-8")
+
+    def _is_authenticated(self) -> bool:
+        token = self._get_cookie(SESSION_COOKIE)
+        if not token:
+            return False
+        secret = self._session_signing_secret()
+        if not secret:
+            return False
+        try:
+            decoded = base64.urlsafe_b64decode(token.encode("utf-8")).decode("utf-8")
+            nonce, expires_raw, signature = decoded.split(":", 2)
+            expires_at = int(expires_raw)
+        except Exception:
+            return False
+        expected_sig = hmac.new(secret.encode("utf-8"), f"{nonce}:{expires_at}".encode("utf-8"), hashlib.sha256).hexdigest()
+        if not secrets.compare_digest(signature, expected_sig):
+            return False
+        return expires_at > int(time.time())
+
+    def _require_auth(self, *, api: bool) -> bool:
+        if self._is_authenticated():
+            return True
+        if api:
+            self._json_response({"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
+        else:
+            self.send_response(HTTPStatus.FOUND)
+            self.send_header("Location", "/login")
+            self.end_headers()
+        return False
+
+    def _ensure_csrf_cookie(self) -> str:
+        token = self._get_cookie(CSRF_COOKIE)
+        if token:
+            return token
+        return secrets.token_urlsafe(32)
+
+    def _validate_csrf(self, token: str) -> bool:
+        cookie_token = self._get_cookie(CSRF_COOKIE)
+        return bool(cookie_token and token and secrets.compare_digest(cookie_token, token))
+
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
 
@@ -217,7 +314,19 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             self._json_response({"status": "ok"})
             return
 
+        if parsed.path == "/login":
+            if self._is_authenticated():
+                self.send_response(HTTPStatus.FOUND)
+                self.send_header("Location", "/")
+                self.end_headers()
+                return
+            csrf_token = self._ensure_csrf_cookie()
+            self._serve_template("login.html", replacements={"{{error_block}}": "", "{{csrf_token}}": csrf_token}, extra_set_cookies=[self._build_cookie_header(CSRF_COOKIE, csrf_token, max_age=SESSION_MAX_AGE_SECONDS, http_only=False)])
+            return
+
         if parsed.path in {"/", "/crawler", "/pulling", "/about", "/testbench", "/urls"}:
+            if not self._require_auth(api=False):
+                return
             template_name = "index.html" if parsed.path == "/" else f"{parsed.path.strip('/')}.html"
             self._serve_template(template_name)
             return
@@ -229,14 +338,20 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             self._serve_static(parsed.path.removeprefix("/static/"))
             return
         if parsed.path == "/api/domains":
+            if not self._require_auth(api=True):
+                return
             self._json_response({"items": sorted(MOCK_DOMAINS)})
             return
         if parsed.path == "/api/url-inventory":
+            if not self._require_auth(api=True):
+                return
             domain = parse_qs(parsed.query).get("domain", ["en.example.com"])[0]
             urls = sorted(MOCK_URL_INVENTORY.get(domain, []))
             self._json_response({"domain": domain, "urls": urls})
             return
         if parsed.path == "/api/pulls":
+            if not self._require_auth(api=True):
+                return
             rows = []
             for row in sorted(MOCK_PULLS, key=lambda item: item["item_id"]):
                 merged = dict(row)
@@ -245,6 +360,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             self._json_response({"rows": rows})
             return
         if parsed.path == "/api/rules":
+            if not self._require_auth(api=True):
+                return
             rules = [
                 {
                     "rule_id": f"rule-{item_id}",
@@ -257,12 +374,16 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             self._json_response({"rules": rules})
             return
         if parsed.path == "/api/issues":
+            if not self._require_auth(api=True):
+                return
             query = parse_qs(parsed.query)
             has_filters = any(value for values in query.values() for value in values if value.strip())
             issues = sorted(MOCK_ISSUES, key=lambda issue: issue["id"]) if has_filters else []
             self._json_response({"issues": issues})
             return
         if parsed.path == "/api/seed-urls":
+            if not self._require_auth(api=True):
+                return
             domain = parse_qs(parsed.query).get("domain", [""])[0]
             try:
                 valid_domain = validate_domain(domain)
@@ -277,9 +398,13 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             self._json_response(payload)
             return
         if parsed.path == "/api/testbench/modules":
+            if not self._require_auth(api=True):
+                return
             self._json_response({"modules": get_modules()})
             return
         if parsed.path == "/api/recipes":
+            if not self._require_auth(api=True):
+                return
             domain = parse_qs(parsed.query).get("domain", [""])[0]
             try:
                 valid_domain = validate_domain(domain)
@@ -289,6 +414,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             return
         # Job status endpoint
         if parsed.path == "/api/job":
+            if not self._require_auth(api=True):
+                return
             job_id = parse_qs(parsed.query).get("id", [""])[0]
             if job_id in _jobs:
                 self._json_response(_jobs[job_id])
@@ -299,6 +426,13 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
 
     def do_PUT(self) -> None:  # noqa: N802
+        if not self._require_auth(api=True):
+            return
+        csrf_header = self.headers.get("X-CSRF-Token", "")
+        if not self._validate_csrf(csrf_header):
+            self._json_response({"error": "csrf validation failed"}, status=HTTPStatus.FORBIDDEN)
+            return
+
         if self.path == "/api/seed-urls":
             payload = self._read_json_payload()
             domain = str(payload.get("domain", ""))
@@ -319,6 +453,80 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
 
     def do_POST(self) -> None:  # noqa: N802
+        if self.path == "/login":
+            form = self._read_form_payload()
+            password = str(form.get("password", "")).strip()
+            csrf_token = str(form.get("csrf_token", "")).strip()
+
+            if not self._validate_csrf(csrf_token):
+                refreshed_csrf = self._ensure_csrf_cookie()
+                self._serve_template(
+                    "login.html",
+                    status=HTTPStatus.FORBIDDEN,
+                    replacements={
+                        "{{error_block}}": '<div class="error">❌ Security error (CSRF). Please try again.</div>',
+                        "{{csrf_token}}": refreshed_csrf,
+                    },
+                    extra_set_cookies=[self._build_cookie_header(CSRF_COOKIE, refreshed_csrf, max_age=SESSION_MAX_AGE_SECONDS, http_only=False)],
+                )
+                return
+
+            expected_password = self._login_password()
+            signing_secret = self._session_signing_secret()
+            if not expected_password or not signing_secret:
+                self._json_response(
+                    {
+                        "error": (
+                            f"missing required environment variable: {LOGIN_PASSWORD_ENV} or {SESSION_SIGNING_SECRET_ENV}"
+                        )
+                    },
+                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
+                return
+
+            if secrets.compare_digest(password, expected_password):
+                session_token = self._generate_session_token()
+                new_csrf = secrets.token_urlsafe(32)
+                self.send_response(HTTPStatus.FOUND)
+                self.send_header("Location", "/")
+                self.send_header("Set-Cookie", self._build_cookie_header(SESSION_COOKIE, session_token, max_age=SESSION_MAX_AGE_SECONDS, http_only=True))
+                self.send_header("Set-Cookie", self._build_cookie_header(CSRF_COOKIE, new_csrf, max_age=SESSION_MAX_AGE_SECONDS, http_only=False))
+                self.end_headers()
+                return
+
+            refreshed_csrf = self._ensure_csrf_cookie()
+            self._serve_template(
+                "login.html",
+                status=HTTPStatus.UNAUTHORIZED,
+                replacements={
+                    "{{error_block}}": '<div class="error">❌ Invalid password</div>',
+                    "{{csrf_token}}": refreshed_csrf,
+                },
+                extra_set_cookies=[self._build_cookie_header(CSRF_COOKIE, refreshed_csrf, max_age=SESSION_MAX_AGE_SECONDS, http_only=False)],
+            )
+            return
+
+        if self.path == "/logout":
+            if not self._require_auth(api=False):
+                return
+            csrf_header = self.headers.get("X-CSRF-Token", "")
+            if not self._validate_csrf(csrf_header):
+                self._json_response({"error": "csrf validation failed"}, status=HTTPStatus.FORBIDDEN)
+                return
+            self.send_response(HTTPStatus.FOUND)
+            self.send_header("Location", "/login")
+            self.send_header("Set-Cookie", self._expire_cookie_header(SESSION_COOKIE, http_only=True))
+            self.send_header("Set-Cookie", self._expire_cookie_header(CSRF_COOKIE, http_only=False))
+            self.end_headers()
+            return
+
+        if not self._require_auth(api=True):
+            return
+        csrf_header = self.headers.get("X-CSRF-Token", "")
+        if not self._validate_csrf(csrf_header):
+            self._json_response({"error": "csrf validation failed"}, status=HTTPStatus.FORBIDDEN)
+            return
+
         if self.path == "/api/seed-urls/add":
             payload = self._read_json_payload()
             domain = str(payload.get("domain", ""))
@@ -565,12 +773,31 @@ class SkeletonHandler(BaseHTTPRequestHandler):
 
         self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
 
-    def _serve_template(self, name: str) -> None:
+    def _serve_template(
+        self,
+        name: str,
+        *,
+        status: HTTPStatus = HTTPStatus.OK,
+        replacements: dict[str, str] | None = None,
+        extra_set_cookies: list[str] | None = None,
+    ) -> None:
         path = TEMPLATES_DIR / name
         if not path.exists():
             self.send_error(HTTPStatus.NOT_FOUND, "Template not found")
             return
-        self._send_file(path, "text/html; charset=utf-8")
+        html = path.read_text(encoding="utf-8")
+        if replacements:
+            for key, value in replacements.items():
+                html = html.replace(key, value)
+        data = html.encode("utf-8")
+        self.send_response(status)
+        if extra_set_cookies:
+            for set_cookie in extra_set_cookies:
+                self.send_header("Set-Cookie", set_cookie)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def _serve_static(self, relative_path: str) -> None:
         path = STATIC_DIR / relative_path
@@ -635,6 +862,14 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         if not isinstance(payload, dict):
             return {}
         return payload
+
+    def _read_form_payload(self) -> dict[str, str]:
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0:
+            return {}
+        raw = self.rfile.read(length).decode("utf-8")
+        parsed = parse_qs(raw)
+        return {key: values[0] for key, values in parsed.items() if values}
 
     def log_message(self, format, *args):  # noqa: A002
         pass  # suppress default request logging for cleaner Cloud Run logs
