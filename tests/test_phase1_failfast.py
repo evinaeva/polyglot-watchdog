@@ -36,3 +36,57 @@ class Phase1FailFastTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class _FailingBrowser:
+    async def new_context(self, **kwargs):
+        class _Ctx:
+            async def new_page(self):
+                return object()
+        return _Ctx()
+
+    async def close(self):
+        return None
+
+
+class _PlaywrightCM:
+    async def __aenter__(self):
+        class _P:
+            class chromium:
+                @staticmethod
+                async def launch():
+                    return _FailingBrowser()
+        return _P()
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+class Phase1RunFailFastTests(unittest.TestCase):
+    def test_phase1_main_fails_fast_on_pull_error(self):
+        from pipeline import run_phase1
+        from pipeline.interactive_capture import CaptureContext, CaptureJob
+        from unittest.mock import AsyncMock, patch
+
+        job = CaptureJob(
+            context=CaptureContext(
+                domain="example.com",
+                url="https://example.com/",
+                language="en",
+                viewport_kind="desktop",
+                state="baseline",
+                user_tier="guest",
+            ),
+            mode="baseline",
+        )
+
+        import types, sys
+        fake_playwright = types.SimpleNamespace(async_playwright=lambda: _PlaywrightCM())
+        with patch.dict(sys.modules, {"playwright.async_api": fake_playwright}), \
+             patch("pipeline.run_phase1.pull_page", new=AsyncMock(side_effect=RuntimeError("boom"))), \
+             patch("pipeline.run_phase1.write_json_artifact") as write_mock:
+            with self.assertRaises(SystemExit):
+                import asyncio
+                asyncio.run(run_phase1.main("example.com", "run-1", "en", "desktop", "baseline", "guest", jobs_override=[job]))
+
+        write_mock.assert_not_called()

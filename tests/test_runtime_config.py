@@ -32,6 +32,9 @@ class RuntimeConfigTests(unittest.TestCase):
         self.assertEqual(cfg2.state, "guest")
         self.assertIsNone(cfg2.user_tier)
 
+        baseline_cfg = load_phase1_runtime_config({"domain": "example.com", "run_id": "r3", "state": "baseline"})
+        self.assertEqual(baseline_cfg.state, "baseline")
+
     def test_load_phase1_runtime_config_validation(self):
         with self.assertRaisesRegex(ValueError, "domain is required"):
             load_phase1_runtime_config({"domain": "", "run_id": "x"})
@@ -39,8 +42,8 @@ class RuntimeConfigTests(unittest.TestCase):
             load_phase1_runtime_config({"domain": "example.com", "run_id": ""})
         with self.assertRaisesRegex(ValueError, "viewport_kind must be one of"):
             load_phase1_runtime_config({"domain": "example.com", "run_id": "x", "viewport_kind": "tv"})
-        with self.assertRaisesRegex(ValueError, "state must be one of"):
-            load_phase1_runtime_config({"domain": "example.com", "run_id": "x", "state": "baseline"})
+        with self.assertRaisesRegex(ValueError, "Invalid state name"):
+            load_phase1_runtime_config({"domain": "example.com", "run_id": "x", "state": "Bad State"})
 
 
 if __name__ == "__main__":
