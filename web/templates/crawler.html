@@ -10,6 +10,17 @@
   <nav><a href="/">Issues</a> | <a href="/crawler">Crawler</a> | <a href="/pulling">Pulling</a> | <a href="/urls">URLs</a> | <a href="/about">About</a> | <a href="/testbench">Testbench</a> | <button id="logoutButton" type="button">Logout</button></nav>
   <main>
     <h1>Crawler</h1>
+    <details class="page-help">
+      <summary>What does this page do?</summary>
+      <div class="page-help-content">
+        <p>Inspect URL inventory for a selected domain.</p>
+        <ul>
+          <li><strong>Collect URLs</strong> loads inventory rows into the table.</li>
+          <li>This page currently reads the mock inventory route from frontend JS.</li>
+          <li>Real pipeline Phase 0 endpoints exist separately.</li>
+        </ul>
+      </div>
+    </details>
     <div class="controls">
       <input id="domainInput" value="en.example.com" aria-label="domain" />
       <button id="collectUrlsButton">Collect URLs</button>
@@ -19,6 +30,7 @@
       <tbody id="urlInventoryBody"></tbody>
     </table>
   </main>
+  <script src="/static/tooltips.js"></script>
   <script src="/static/crawler.js"></script>
   <script src="/static/auth.js"></script>
 </body>

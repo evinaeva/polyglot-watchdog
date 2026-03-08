@@ -73,13 +73,13 @@ function renderRows() {
       <td>${row.url}</td>
       <td>${row.element_type}</td>
       <td>${row.text}</td>
-      <td><img class="thumb" src="${row.screenshot_thumbnail}" alt="thumbnail" data-full="${row.screenshot_full}" /></td>
+      <td><img class="thumb" src="${row.screenshot_thumbnail}" alt="thumbnail" data-full="${row.screenshot_full}" title="Open full screenshot preview." /></td>
       <td>
-        <select data-item-id="${row.item_id}" class="decision-select">
+        <select data-item-id="${row.item_id}" class="decision-select" title="Choose how this element should be treated in dataset building.">
           <option value="" ${decision === '' ? 'selected' : ''}>--</option>
-          <option value="IGNORE_ENTIRE_ELEMENT" ${decision === 'IGNORE_ENTIRE_ELEMENT' ? 'selected' : ''}>IGNORE_ENTIRE_ELEMENT</option>
-          <option value="MASK_VARIABLE" ${decision === 'MASK_VARIABLE' ? 'selected' : ''}>MASK_VARIABLE</option>
-          <option value="ALWAYS_COLLECT" ${decision === 'ALWAYS_COLLECT' ? 'selected' : ''}>ALWAYS_COLLECT</option>
+          <option value="IGNORE_ENTIRE_ELEMENT" ${decision === 'IGNORE_ENTIRE_ELEMENT' ? 'selected' : ''} title="Exclude this element from comparison.">IGNORE_ENTIRE_ELEMENT</option>
+          <option value="MASK_VARIABLE" ${decision === 'MASK_VARIABLE' ? 'selected' : ''} title="Keep element but mask changing values.">MASK_VARIABLE</option>
+          <option value="ALWAYS_COLLECT" ${decision === 'ALWAYS_COLLECT' ? 'selected' : ''} title="Always keep this element in collection output.">ALWAYS_COLLECT</option>
         </select>
       </td>`;
     pullRows.appendChild(tr);
