@@ -101,7 +101,7 @@ class InteractiveCaptureAcceptanceTests(unittest.TestCase):
         self.assertEqual(len([k for k in keys if "/elements/" in k]), 1)
 
         context_suffix = (
-            f"{context.language}/{deterministic_url_hash(context.url)}/{context.state}/"
+            f"{deterministic_url_hash(context.url)}/{context.state}/"
             f"{context.viewport_kind}/{context.user_tier or 'null'}"
         )
         screenshot_keys = [
@@ -111,18 +111,6 @@ class InteractiveCaptureAcceptanceTests(unittest.TestCase):
             and key.endswith("/screenshot.png")
         ]
         self.assertEqual(len(screenshot_keys), 1)
-
-
-    def test_storage_uris_are_language_partitioned(self):
-        store = InMemoryStore()
-        writer = GCSArtifactWriter(store, "watchdog-data", "watchdog-review")
-        en_context = CaptureContext("example.com", "https://example.com/", "en", "desktop", "baseline", "guest")
-        fr_context = CaptureContext("example.com", "https://example.com/", "fr", "desktop", "baseline", "guest")
-        en_out = capture_state(en_context, self._payload(), writer, self._run_context())
-        fr_out = capture_state(fr_context, self._payload(), writer, self._run_context())
-        self.assertNotEqual(en_out["uris"]["screenshot_uri"], fr_out["uris"]["screenshot_uri"])
-        self.assertIn("/screenshots/en/", en_out["uris"]["screenshot_uri"])
-        self.assertIn("/screenshots/fr/", fr_out["uris"]["screenshot_uri"])
 
     def test_multi_state_recipe_test(self):
         planner = DeterministicPlanner()

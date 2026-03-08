@@ -31,7 +31,6 @@ from app.seed_urls import (
     write_seed_urls,
 )
 from app.testbench import get_modules, run_module_test
-from pipeline.interactive_capture import GCSArtifactWriter
 from pipeline.runtime_config import load_phase1_runtime_config
 
 TEMPLATES_DIR = BASE_DIR / "web" / "templates"
@@ -170,26 +169,6 @@ def _run_phase1_async(job_id: str, runtime_payload: dict) -> None:
 
         config = load_phase1_runtime_config(runtime_payload)
         run_with_config(config)
-        _jobs[job_id]["status"] = "done"
-    except Exception as exc:
-        _jobs[job_id]["status"] = "error"
-        _jobs[job_id]["error"] = str(exc)
-
-
-def _run_rerun_async(job_id: str, runtime_payload: dict) -> None:
-    _jobs[job_id] = {"status": "running", "phase": "rerun", "domain": runtime_payload.get("domain"), "run_id": runtime_payload.get("run_id")}
-    try:
-        from pipeline.run_phase1 import run_exact_context
-
-        run_exact_context(
-            domain=str(runtime_payload.get("domain")),
-            run_id=str(runtime_payload.get("run_id")),
-            url=str(runtime_payload.get("url")),
-            viewport_kind=str(runtime_payload.get("viewport_kind")),
-            state=str(runtime_payload.get("state")),
-            user_tier=runtime_payload.get("user_tier"),
-            language=str(runtime_payload.get("language")),
-        )
         _jobs[job_id]["status"] = "done"
     except Exception as exc:
         _jobs[job_id]["status"] = "error"

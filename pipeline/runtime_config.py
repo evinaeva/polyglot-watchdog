@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from pipeline.interactive_capture import validate_state_name
 from pipeline.schema_validator import validate
 
 _ALLOWED_VIEWPORTS = {"desktop", "mobile", "responsive"}
+_ALLOWED_STATES = {"guest", "user"}
 
 
 @dataclass(frozen=True)
@@ -22,22 +22,8 @@ class Phase1RuntimeConfig:
 
 
 def validate_seed_urls_payload(payload: Mapping[str, Any]) -> None:
-    """Validate canonical seed_urls payload shape used by runtime planning.
-
-    The canonical payload may include `updated_at`; schema validation is enforced
-    against the authoritative contract fields (`domain`, `urls`).
-    """
-    if not isinstance(payload, Mapping):
-        raise ValueError("seed_urls payload must be an object")
-
-    if "updated_at" in payload and payload["updated_at"] is not None and not isinstance(payload["updated_at"], str):
-        raise ValueError("seed_urls.updated_at must be a string when present")
-
-    canonical_payload = {
-        "domain": payload.get("domain"),
-        "urls": payload.get("urls"),
-    }
-    validate("seed_urls", canonical_payload)
+    """Validate canonical seed_urls payload shape used by runtime planning."""
+    validate("seed_urls", {"domain": payload.get("domain"), "urls": payload.get("urls")})
 
 
 def load_phase1_runtime_config(source: Mapping[str, Any]) -> Phase1RuntimeConfig:
@@ -56,10 +42,8 @@ def load_phase1_runtime_config(source: Mapping[str, Any]) -> Phase1RuntimeConfig
         raise ValueError("run_id is required")
     if viewport_kind not in _ALLOWED_VIEWPORTS:
         raise ValueError(f"viewport_kind must be one of {sorted(_ALLOWED_VIEWPORTS)}")
-    try:
-        validate_state_name(state)
-    except ValueError as exc:
-        raise ValueError(str(exc)) from exc
+    if state not in _ALLOWED_STATES:
+        raise ValueError(f"state must be one of {sorted(_ALLOWED_STATES)}")
 
     return Phase1RuntimeConfig(
         domain=domain,

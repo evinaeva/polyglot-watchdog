@@ -25,28 +25,23 @@ project_root = str(Path(__file__).resolve().parents[1])
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from app.recipes import load_recipes_for_planner
 from pipeline.phase1_puller import pull_page, detect_universal_sections
-from pipeline.interactive_capture import CaptureContext, CapturePoint, CaptureJob, DeterministicPlanner, GCSArtifactWriter, Recipe, RunContext, capture_state
+from pipeline.interactive_capture import CaptureContext, GCSArtifactWriter, RunContext, capture_state
 from pipeline.runtime_config import Phase1RuntimeConfig, load_phase1_runtime_config, validate_seed_urls_payload
 from pipeline.storage import BUCKET_NAME, write_json_artifact, read_json_artifact
 from pipeline.schema_validator import validate, SchemaValidationError
 
 
-def load_planning_rows(domain: str, run_id: str) -> list[dict]:
-    """Load planning rows with seed_urls as primary input for v1.0."""
+def load_planning_urls(domain: str, run_id: str) -> list[str]:
+    """Load planning URLs with seed_urls as primary input for v1.0."""
     try:
         seed_payload = read_json_artifact(domain, "manual", "seed_urls.json")
-        validate_seed_urls_payload(seed_payload)
-        rows = [
-            {"url": str(row.get("url")), "recipe_ids": sorted({str(rid) for rid in row.get("recipe_ids", []) if str(rid)})}
-            for row in seed_payload.get("urls", [])
-            if isinstance(row, dict) and isinstance(row.get("url"), str)
-        ]
-        rows.sort(key=lambda r: r["url"])
-        if rows:
-            print(f"[Phase 1] Planning input: seed_urls ({len(rows)} URLs)")
-            return rows
+        validate_seed_urls_payload({"domain": seed_payload.get("domain", domain), "urls": seed_payload.get("urls", [])})
+        rows = seed_payload.get("urls", [])
+        urls = sorted({str(row["url"]) for row in rows if isinstance(row, dict) and isinstance(row.get("url"), str)})
+        if urls:
+            print(f"[Phase 1] Planning input: seed_urls ({len(urls)} URLs)")
+            return urls
     except Exception as exc:
         print(f"[Phase 1] seed_urls unavailable or invalid: {exc}")
 
@@ -55,58 +50,8 @@ def load_planning_rows(domain: str, run_id: str) -> list[dict]:
     url_inventory = read_json_artifact(domain, run_id, "url_inventory.json")
     if isinstance(url_inventory, list) and url_inventory:
         print(f"[Phase 1] TEMP_COMPAT planning input: url_inventory ({len(url_inventory)} URLs)")
-        return [{"url": url, "recipe_ids": []} for url in sorted({str(url) for url in url_inventory})]
+        return sorted({str(url) for url in url_inventory})
     raise RuntimeError("No planning input available: seed_urls required (url_inventory TEMP_COMPAT also missing)")
-
-
-def load_planning_urls(domain: str, run_id: str) -> list[str]:
-    return [row["url"] for row in load_planning_rows(domain, run_id)]
-
-
-def build_planned_jobs(domain: str, planning_rows: list[dict], language: str, viewport_kind: str, user_tier: str | None, recipes: dict[str, Recipe]) -> list[CaptureJob]:
-    planner = DeterministicPlanner()
-    seed_payload = {"domain": domain, "urls": planning_rows}
-    return planner.expand_jobs(
-        seed_urls=seed_payload,
-        recipes=recipes,
-        languages=[language],
-        viewports=[viewport_kind],
-        user_tiers=[user_tier or ""],
-    )
-
-
-def build_exact_context_job(domain: str, url: str, language: str, viewport_kind: str, state: str, user_tier: str | None) -> CaptureJob:
-    synthetic_recipe_id = "__rerun_exact__"
-    recipes: dict[str, Recipe] = {}
-    recipe_ids: list[str] = []
-    if state != "baseline":
-        recipes[synthetic_recipe_id] = Recipe(
-            recipe_id=synthetic_recipe_id,
-            url_pattern="*",
-            steps=tuple(),
-            capture_points=(CapturePoint(state=state),),
-        )
-        recipe_ids = [synthetic_recipe_id]
-
-    jobs = build_planned_jobs(
-        domain=domain,
-        planning_rows=[{"url": url, "recipe_ids": recipe_ids}],
-        language=language,
-        viewport_kind=viewport_kind,
-        user_tier=user_tier,
-        recipes=recipes,
-    )
-    matching = [
-        job for job in jobs
-        if job.context.url == url
-        and job.context.viewport_kind == viewport_kind
-        and job.context.state == state
-        and (job.context.user_tier or None) == (user_tier or None)
-        and job.context.language == language
-    ]
-    if len(matching) != 1:
-        raise RuntimeError(f"Exact-context rerun resolution failed: expected 1 job, got {len(matching)}")
-    return matching[0]
 
 
 class _GCSConfigStore:
@@ -147,23 +92,18 @@ async def main(
 ) -> None:
     print(f"[Phase 1] Starting data collection domain={domain} run_id={run_id} lang={language}")
 
-    if jobs_override is None:
-        # Load planning URLs (seed_urls primary input for v1.0).
-        try:
-            planning_rows = load_planning_rows(domain, run_id)
-        except Exception as e:
-            print(f"[Phase 1] STOP: Cannot load planning URLs — {e}", file=sys.stderr)
-            sys.exit(1)
+    # Load planning URLs (seed_urls primary input for v1.0).
+    try:
+        planning_urls = load_planning_urls(domain, run_id)
+    except Exception as e:
+        print(f"[Phase 1] STOP: Cannot load planning URLs — {e}", file=sys.stderr)
+        sys.exit(1)
 
-        if not planning_rows:
-            print("[Phase 1] STOP: planning URL list is empty", file=sys.stderr)
-            sys.exit(1)
+    if not planning_urls:
+        print("[Phase 1] STOP: planning URL list is empty", file=sys.stderr)
+        sys.exit(1)
 
-        recipes = load_recipes_for_planner(domain)
-        jobs = build_planned_jobs(domain, planning_rows, language, viewport_kind, user_tier, recipes)
-    else:
-        jobs = list(jobs_override)
-    print(f"[Phase 1] Processing {len(jobs)} capture jobs")
+    print(f"[Phase 1] Processing {len(planning_urls)} URLs")
 
     from playwright.async_api import async_playwright
 
@@ -189,9 +129,8 @@ async def main(
             user_agent="polyglot-watchdog/1.0",
         )
 
-        for job in jobs:
-            url = job.context.url
-            print(f"[Phase 1] Pulling {url} state={job.context.state}")
+        for url in planning_urls:
+            print(f"[Phase 1] Pulling {url}")
             try:
                 page = await context.new_page()
                 page_screenshot, items, screenshot_bytes = await pull_page(
@@ -212,10 +151,10 @@ async def main(
                 context=CaptureContext(
                     domain=domain,
                     url=url,
-                    language=job.context.language,
-                    viewport_kind=job.context.viewport_kind,
-                    state=job.context.state,
-                    user_tier=job.context.user_tier or None,
+                    language=language,
+                    viewport_kind=viewport_kind,
+                    state=state,
+                    user_tier=user_tier,
                 ),
                 page_payload=(
                     {"viewport": page_screenshot["viewport"], "screenshot_bytes": screenshot_bytes},
@@ -313,11 +252,6 @@ def run(
 
 def run_with_config(config: Phase1RuntimeConfig):
     return asyncio.run(main(config.domain, config.run_id, config.language, config.viewport_kind, config.state, config.user_tier))
-
-
-def run_exact_context(domain: str, run_id: str, url: str, viewport_kind: str, state: str, user_tier: str | None, language: str):
-    job = build_exact_context_job(domain, url, language, viewport_kind, state, user_tier)
-    return asyncio.run(main(domain, run_id, language, viewport_kind, state, user_tier, jobs_override=[job]))
 
 
 if __name__ == "__main__":
