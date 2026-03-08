@@ -10,6 +10,19 @@
   <nav><a href="/">Issues</a> | <a href="/crawler">Crawler</a> | <a href="/pulling">Pulling</a> | <a href="/urls">URLs</a> | <a href="/about">About</a> | <a href="/testbench">Testbench</a></nav>
   <main>
     <h1>Pulling</h1>
+    <details class="page-help">
+      <summary>What does this page do?</summary>
+      <div class="page-help-content">
+        <p>Inspect pulled page elements, filter rows, and assign annotation decisions.</p>
+        <ul>
+          <li><strong>Collect</strong> loads pull rows.</li>
+          <li>Filters narrow rows by URL text and element type.</li>
+          <li>Screenshot thumbnails open a larger preview.</li>
+          <li>Decision dropdown saves row-level rule choices.</li>
+        </ul>
+        <p>This page currently uses mock pull/rule endpoints for the visible interactions.</p>
+      </div>
+    </details>
     <div class="controls">
       <input id="languageSubdomain" value="fr.example.com" aria-label="language subdomain" />
       <select id="domainDropdown"></select>
@@ -23,6 +36,7 @@
       <label><input type="checkbox" id="buttonsFilter" /> Buttons</label>
       <label><input type="checkbox" id="inputsFilter" /> Inputs</label>
     </div>
+    <p class="inline-help">Decision guide: <code>IGNORE_ENTIRE_ELEMENT</code> excludes an item, <code>MASK_VARIABLE</code> keeps it but masks changing values, and <code>ALWAYS_COLLECT</code> always includes it.</p>
 
     <table>
       <thead>
@@ -45,6 +59,7 @@
     <img id="modalImage" alt="screenshot" />
   </div>
 
+  <script src="/static/tooltips.js"></script>
   <script src="/static/pulling.js"></script>
 </body>
 </html>

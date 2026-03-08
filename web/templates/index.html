@@ -10,6 +10,17 @@
   <nav><a href="/">Issues</a> | <a href="/crawler">Crawler</a> | <a href="/pulling">Pulling</a> | <a href="/urls">URLs</a> | <a href="/about">About</a> | <a href="/testbench">Testbench</a></nav>
   <main>
     <h1>Issues Explorer</h1>
+    <details class="page-help">
+      <summary>What does this page do?</summary>
+      <div class="page-help-content">
+        <p>Use this page to query localization issues by URL fragment or keyword.</p>
+        <ul>
+          <li><strong>Apply Query</strong> calls the issues endpoint and fills the table.</li>
+          <li>The table stays empty until you run a query.</li>
+          <li>In the current scaffold, results can be mock-backed depending on filters.</li>
+        </ul>
+      </div>
+    </details>
     <p>Issues are shown only after applying a query.</p>
     <div class="controls">
       <input id="issueQuery" placeholder="Enter URL or keyword" />
@@ -20,6 +31,7 @@
       <tbody></tbody>
     </table>
   </main>
+  <script src="/static/tooltips.js"></script>
   <script src="/static/index.js"></script>
 </body>
 </html>

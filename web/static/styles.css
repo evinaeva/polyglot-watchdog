@@ -6,6 +6,63 @@ main { padding: 18px; }
 table { width: 100%; border-collapse: collapse; background: #fff; }
 th, td { border: 1px solid #d1d5db; padding: 8px; font-size: 14px; text-align: left; vertical-align: top; }
 .hidden { display: none; }
+.page-help {
+  margin: 0 0 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  padding: 8px 10px;
+}
+
+.page-help summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.page-help-content {
+  margin-top: 8px;
+}
+
+.page-help-content p,
+.page-help-content ul {
+  margin: 0 0 8px;
+}
+
+.page-help-content ul {
+  padding-left: 18px;
+}
+
+.about-layout {
+  max-width: 960px;
+}
+
+.about-layout section {
+  margin-bottom: 18px;
+}
+
+.about-layout h2,
+.about-layout h3 {
+  margin-bottom: 8px;
+}
+
+.about-layout p,
+.about-layout ul,
+.about-layout ol {
+  margin-top: 0;
+}
+
+.doc-note {
+  border-left: 3px solid #f59e0b;
+  background: #fffbeb;
+  padding: 8px;
+}
+
+.inline-help {
+  font-size: 13px;
+  color: #334155;
+  margin: 4px 0 10px;
+}
+
 .thumb { width: 80px; cursor: pointer; }
 .pagination { margin-top: 10px; display: flex; gap: 10px; align-items: center; }
 .modal { position: fixed; inset: 0; z-index: 99; }

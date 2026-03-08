@@ -33,6 +33,7 @@ function render(data) {
     const actionCell = document.createElement("td");
     const deleteButton = document.createElement("button");
     deleteButton.textContent = "Delete";
+    deleteButton.title = "Delete this URL from the saved seed list.";
     deleteButton.addEventListener("click", async () => {
       await mutate("/api/seed-urls/delete", { domain: domainInput.value, url });
     });
