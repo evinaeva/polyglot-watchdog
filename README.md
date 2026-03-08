@@ -13,7 +13,6 @@ All data returned by the API endpoints is mock/static.
 | `/crawler` | URL crawler page |
 | `/pulling` | Content pulling and annotation page |
 | `/about` | Glossary (placeholder) |
-| `/healthz` | Health check — returns `{"status": "ok"}` |
 
 ## What is NOT implemented yet
 
@@ -30,8 +29,7 @@ PORT=8080 python app/skeleton_server.py
 
 Verify:
 ```bash
-curl http://localhost:8080/healthz
-# {"status": "ok"}
+curl http://localhost:8080/
 ```
 
 ## Build and deploy to Cloud Run
@@ -44,9 +42,10 @@ gcloud builds submit \
 
 After deployment, verify:
 ```bash
-curl https://<SERVICE_URL>/healthz
-# {"status": "ok"}
+curl https://<SERVICE_URL>/
 ```
+
+Or open the service URL in a browser and confirm the UI loads successfully.
 
 The service URL is printed at the end of `gcloud builds submit` output,
 or retrieve it with:
