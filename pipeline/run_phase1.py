@@ -26,7 +26,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from app.recipes import load_recipes_for_planner
-from pipeline.phase1_puller import pull_page, detect_universal_sections
+from pipeline.phase1_puller import capture_current_page, execute_recipe_step, pull_page, detect_universal_sections
 from pipeline.interactive_capture import CaptureContext, CapturePoint, CaptureJob, DeterministicPlanner, GCSArtifactWriter, Recipe, RunContext, capture_state
 from pipeline.runtime_config import Phase1RuntimeConfig, load_phase1_runtime_config, validate_seed_urls_payload
 from pipeline.storage import BUCKET_NAME, write_json_artifact, read_json_artifact
@@ -49,14 +49,7 @@ def load_planning_rows(domain: str, run_id: str) -> list[dict]:
             return rows
     except Exception as exc:
         print(f"[Phase 1] seed_urls unavailable or invalid: {exc}")
-
-    # TEMP_COMPAT: allow url_inventory fallback only while migrating callers to seed_urls.
-    # Removal condition: delete fallback in PW-BL-017 once seed_urls is required everywhere.
-    url_inventory = read_json_artifact(domain, run_id, "url_inventory.json")
-    if isinstance(url_inventory, list) and url_inventory:
-        print(f"[Phase 1] TEMP_COMPAT planning input: url_inventory ({len(url_inventory)} URLs)")
-        return [{"url": url, "recipe_ids": []} for url in sorted({str(url) for url in url_inventory})]
-    raise RuntimeError("No planning input available: seed_urls required (url_inventory TEMP_COMPAT also missing)")
+    raise RuntimeError("No planning input available: valid seed_urls are required")
 
 
 def load_planning_urls(domain: str, run_id: str) -> list[str]:
@@ -76,17 +69,17 @@ def build_planned_jobs(domain: str, planning_rows: list[dict], language: str, vi
 
 
 def build_exact_context_job(domain: str, url: str, language: str, viewport_kind: str, state: str, user_tier: str | None) -> CaptureJob:
-    synthetic_recipe_id = "__rerun_exact__"
-    recipes: dict[str, Recipe] = {}
+    recipes = load_recipes_for_planner(domain)
     recipe_ids: list[str] = []
     if state != "baseline":
-        recipes[synthetic_recipe_id] = Recipe(
-            recipe_id=synthetic_recipe_id,
-            url_pattern="*",
-            steps=tuple(),
-            capture_points=(CapturePoint(state=state),),
+        matching_recipe_ids = sorted(
+            recipe_id
+            for recipe_id, recipe in recipes.items()
+            if any(point.state == state for point in recipe.capture_points)
         )
-        recipe_ids = [synthetic_recipe_id]
+        if not matching_recipe_ids:
+            raise RuntimeError(f"No recipe defines capture point state={state!r} for exact-context rerun")
+        recipe_ids = [matching_recipe_ids[0]]
 
     jobs = build_planned_jobs(
         domain=domain,
@@ -103,6 +96,7 @@ def build_exact_context_job(domain: str, url: str, language: str, viewport_kind:
         and job.context.state == state
         and (job.context.user_tier or None) == (user_tier or None)
         and job.context.language == language
+        and (state == "baseline" or job.recipe_id == recipe_ids[0])
     ]
     if len(matching) != 1:
         raise RuntimeError(f"Exact-context rerun resolution failed: expected 1 job, got {len(matching)}")
@@ -136,6 +130,49 @@ class _GCSConfigStore:
         return json.loads(blob.download_as_text(encoding="utf-8"))
 
 
+def _capture_marker_state(step: RecipeStep) -> str | None:
+    if step.action.strip().lower() != "capture_state":
+        return None
+    marker = (step.wait_for or step.selector or "").strip()
+    return marker or None
+
+
+async def _execute_recipe_until_state(page, recipe: Recipe, target_state: str) -> None:
+    defined_states = [point.state for point in recipe.capture_points]
+    if target_state not in defined_states:
+        raise RuntimeError(f"Recipe {recipe.recipe_id} does not define capture state {target_state!r}")
+
+    marker_states = [state for state in (_capture_marker_state(step) for step in recipe.steps) if state is not None]
+    if marker_states:
+        if marker_states != defined_states:
+            raise RuntimeError(
+                f"Recipe {recipe.recipe_id} capture_state markers must match capture_points order"
+            )
+        reached = False
+        for step in recipe.steps:
+            marker_state = _capture_marker_state(step)
+            if marker_state is not None:
+                if marker_state == target_state:
+                    reached = True
+                    break
+                continue
+            await execute_recipe_step(page, step.action, step.selector, step.wait_for)
+        if not reached:
+            raise RuntimeError(
+                f"Recipe {recipe.recipe_id} did not reach capture marker for state={target_state!r}"
+            )
+        return
+
+    if len(defined_states) != 1:
+        raise RuntimeError(
+            f"Recipe {recipe.recipe_id} has multiple capture_points and requires capture_state step markers"
+        )
+    if defined_states[0] != target_state:
+        raise RuntimeError(f"Recipe {recipe.recipe_id} cannot produce state={target_state!r}")
+    for step in recipe.steps:
+        await execute_recipe_step(page, step.action, step.selector, step.wait_for)
+
+
 async def main(
     domain: str,
     run_id: str,
@@ -163,6 +200,7 @@ async def main(
         jobs = build_planned_jobs(domain, planning_rows, language, viewport_kind, user_tier, recipes)
     else:
         jobs = list(jobs_override)
+        recipes = load_recipes_for_planner(domain)
     print(f"[Phase 1] Processing {len(jobs)} capture jobs")
 
     from playwright.async_api import async_playwright
@@ -194,15 +232,31 @@ async def main(
             print(f"[Phase 1] Pulling {url} state={job.context.state}")
             try:
                 page = await context.new_page()
-                page_screenshot, items, screenshot_bytes = await pull_page(
-                    page=page,
-                    url=url,
-                    domain=domain,
-                    viewport_kind=viewport_kind,
-                    state=job.context.state,
-                    user_tier=job.context.user_tier or None,
-                    language=job.context.language,
-                )
+                if job.mode == "baseline":
+                    page_screenshot, items, screenshot_bytes = await pull_page(
+                        page=page,
+                        url=url,
+                        domain=domain,
+                        viewport_kind=viewport_kind,
+                        state=job.context.state,
+                        user_tier=job.context.user_tier or None,
+                        language=job.context.language,
+                    )
+                else:
+                    if not job.recipe_id or job.recipe_id not in recipes:
+                        raise RuntimeError(f"Missing recipe for scripted capture: recipe_id={job.recipe_id!r}")
+                    recipe = recipes[job.recipe_id]
+                    await page.goto(url, timeout=30000)
+                    await _execute_recipe_until_state(page, recipe, job.context.state)
+                    page_screenshot, items, screenshot_bytes = await capture_current_page(
+                        page=page,
+                        url=url,
+                        domain=domain,
+                        viewport_kind=viewport_kind,
+                        state=job.context.state,
+                        user_tier=job.context.user_tier or None,
+                        language=job.context.language,
+                    )
                 await page.close()
             except Exception as exc:
                 print(f"[Phase 1] STOP: Failed to pull {url}: {exc}", file=sys.stderr)

@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import json
+import os
 import sys
 from pathlib import Path
 
@@ -31,8 +33,27 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from pipeline.phase2_annotator import filter_items_by_rules
+from pipeline.interactive_capture import CaptureContext, build_capture_context_id, build_eligible_dataset
 from pipeline.storage import write_json_artifact, write_text_artifact, read_json_artifact
 from pipeline.schema_validator import validate, SchemaValidationError
+
+
+def _load_review_statuses(domain: str, language: str, capture_context_ids: list[str]) -> list[dict]:
+    from google.cloud import storage  # type: ignore
+    from pipeline.storage import BUCKET_NAME
+
+    review_bucket = os.environ.get("REVIEW_BUCKET", BUCKET_NAME)
+    client = storage.Client()
+    bucket = client.bucket(review_bucket)
+    statuses: list[dict] = []
+    for capture_context_id in sorted(set(capture_context_ids)):
+        key = f"{domain}/capture_status/{capture_context_id}__{language}.json"
+        blob = bucket.blob(key)
+        if not blob.exists(client=client):
+            continue
+        statuses.append(json.loads(blob.download_as_text(encoding="utf-8")))
+    statuses.sort(key=lambda row: row["capture_context_id"])
+    return statuses
 
 
 def run(domain: str, run_id: str) -> list[dict]:
@@ -49,6 +70,33 @@ def run(domain: str, run_id: str) -> list[dict]:
         print(f"[Phase 3] STOP: Cannot read collected_items — {e}", file=sys.stderr)
         sys.exit(1)
 
+    try:
+        page_screenshots = read_json_artifact(domain, run_id, "page_screenshots.json")
+    except Exception as e:
+        print(f"[Phase 3] STOP: Cannot read page_screenshots — {e}", file=sys.stderr)
+        sys.exit(1)
+
+    language = next((str(item.get("language", "")).strip() for item in collected_items if str(item.get("language", "")).strip()), "en")
+    page_records_by_capture_context_id: dict[str, dict] = {}
+    for page in page_screenshots:
+        capture_context_id = build_capture_context_id(
+            CaptureContext(
+                domain=domain,
+                url=page["url"],
+                language=language,
+                viewport_kind=page["viewport_kind"],
+                state=page["state"],
+                user_tier=page.get("user_tier"),
+            )
+        )
+        page_records_by_capture_context_id[capture_context_id] = page
+
+    review_statuses = _load_review_statuses(domain, language, list(page_records_by_capture_context_id.keys()))
+    review_filtered_items = build_eligible_dataset(collected_items, review_statuses, page_records_by_capture_context_id)
+    print(
+        f"[Phase 3] Review filtering: {len(review_filtered_items)} items kept from {len(collected_items)}"
+    )
+
     # Load template_rules (optional)
     template_rules: list[dict] = []
     try:
@@ -58,8 +106,8 @@ def run(domain: str, run_id: str) -> list[dict]:
         print("[Phase 3] No template_rules found — proceeding without filtering")
 
     # Apply rules — Contract §6 Phase 3
-    eligible_dataset = filter_items_by_rules(collected_items, template_rules)
-    print(f"[Phase 3] eligible_dataset: {len(eligible_dataset)} items (from {len(collected_items)} collected)")
+    eligible_dataset = filter_items_by_rules(review_filtered_items, template_rules)
+    print(f"[Phase 3] eligible_dataset: {len(eligible_dataset)} items (from {len(review_filtered_items)} review-filtered)")
 
     # Schema validation gate — SPEC_LOCK §3
     try:

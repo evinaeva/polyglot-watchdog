@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from app.skeleton_server import _parse_rerun_payload, _persist_capture_review
+from pipeline.interactive_capture import CapturePoint, Recipe, RecipeStep
 from pipeline.run_phase1 import build_exact_context_job
 
 
@@ -31,14 +32,23 @@ class ReviewAndRerunTests(unittest.TestCase):
             _parse_rerun_payload({"domain": "example.com", "run_id": "r1", "url": "https://example.com/"})
 
     def test_exact_context_job_resolves_single_job(self):
-        job = build_exact_context_job(
-            domain="example.com",
-            url="https://example.com/profile",
-            language="en",
-            viewport_kind="desktop",
-            state="profile_open",
-            user_tier="guest",
-        )
+        recipes = {
+            "profile": Recipe(
+                recipe_id="profile",
+                url_pattern="/profile",
+                steps=(RecipeStep(action="click", selector="#profile"),),
+                capture_points=(CapturePoint(state="profile_open"),),
+            )
+        }
+        with patch("pipeline.run_phase1.load_recipes_for_planner", return_value=recipes):
+            job = build_exact_context_job(
+                domain="example.com",
+                url="https://example.com/profile",
+                language="en",
+                viewport_kind="desktop",
+                state="profile_open",
+                user_tier="guest",
+            )
         self.assertEqual(job.context.url, "https://example.com/profile")
         self.assertEqual(job.context.state, "profile_open")
         self.assertEqual(job.context.viewport_kind, "desktop")

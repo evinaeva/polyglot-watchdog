@@ -60,6 +60,39 @@ class Phase6SchemaComplianceTests(unittest.TestCase):
 
         write_mock.assert_not_called()
 
+    def test_phase6_emits_overlay_blocked_capture_issue_when_review_marks_blocked(self):
+        en_eligible, target_eligible, en_collected, target_collected, en_screens, target_screens = self._artifacts()
+        target_eligible = [
+            {
+                "item_id": "item-1",
+                "page_id": "fr-page-1",
+                "url": "https://fr.example.com/p",
+                "language": "fr",
+                "viewport_kind": "desktop",
+                "state": "baseline",
+                "user_tier": "guest",
+                "element_type": "p",
+                "css_selector": "main > p",
+                "bbox": {"x": 1, "y": 2, "width": 3, "height": 4},
+                "text": "Acheter",
+                "visible": True,
+                "tag": "p",
+                "attributes": None,
+            }
+        ]
+        target_collected = [{"item_id": "item-1", "page_id": "fr-page-1", "bbox": {"x": 1, "y": 2, "width": 3, "height": 4}}]
+        target_screens = [{"page_id": "fr-page-1", "url": "https://fr.example.com/p", "viewport_kind": "desktop", "state": "baseline", "user_tier": "guest", "storage_uri": "gs://b/fr.png"}]
+
+        artifacts = [en_eligible, target_eligible, en_collected, target_collected, en_screens, target_screens]
+        with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+            "pipeline.run_phase6._load_blocked_overlay_pages",
+            return_value=[{"capture_context_id": "ctx-1", "url": "https://fr.example.com/p", "storage_uri": "gs://b/fr.png"}],
+        ), patch("pipeline.run_phase6.write_json_artifact"):
+            issues = run("example.com", "run-en", "run-fr")
+
+        categories = {issue["category"] for issue in issues}
+        self.assertIn("OVERLAY_BLOCKED_CAPTURE", categories)
+
 
 if __name__ == "__main__":
     unittest.main()

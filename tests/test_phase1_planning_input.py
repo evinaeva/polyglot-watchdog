@@ -1,5 +1,7 @@
 from unittest.mock import patch
 
+import pytest
+
 from pipeline.run_phase1 import load_planning_rows, load_planning_urls
 
 
@@ -19,18 +21,9 @@ def test_phase1_uses_seed_urls_as_primary_planning_input() -> None:
     assert read_mock.call_args_list[0].args == ("example.com", "manual", "seed_urls.json")
 
 
-def test_phase1_uses_url_inventory_only_as_temp_compat() -> None:
-    legacy_inventory = ["https://example.com/z", "https://example.com/y"]
-
-    with patch(
-        "pipeline.run_phase1.read_json_artifact",
-        side_effect=[RuntimeError("missing seed"), legacy_inventory],
-    ) as read_mock:
-        urls = load_planning_urls("example.com", "run-2")
-
-    assert urls == ["https://example.com/y", "https://example.com/z"]
-    assert read_mock.call_args_list[0].args == ("example.com", "manual", "seed_urls.json")
-    assert read_mock.call_args_list[1].args == ("example.com", "run-2", "url_inventory.json")
+def test_phase1_requires_seed_urls_without_legacy_fallback() -> None:
+    with patch("pipeline.run_phase1.read_json_artifact", side_effect=[RuntimeError("missing seed")]), pytest.raises(RuntimeError):
+        load_planning_urls("example.com", "run-2")
 
 
 def test_phase1_load_planning_rows_preserves_recipe_ids() -> None:
