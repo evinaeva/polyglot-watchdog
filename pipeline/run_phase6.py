@@ -65,6 +65,8 @@ def run(domain: str, en_run_id: str, target_run_id: str) -> list[dict]:
 
     en_by_item = {i["item_id"]: i for i in en_eligible if i.get("language") == "en"}
     target_by_item = {i["item_id"]: i for i in target_eligible if i.get("language") != "en"}
+    en_collected_by_item = _index_collected(en_collected)
+    en_screens_by_page = _index_screenshots(en_screens)
     target_collected_by_item = _index_collected(target_collected)
     target_screens_by_page = _index_screenshots(target_screens)
 
@@ -79,14 +81,14 @@ def run(domain: str, en_run_id: str, target_run_id: str) -> list[dict]:
         if not t_item:
             evidence = {
                 "url": en_item.get("url", ""),
-                "bbox": _index_collected(en_collected).get(item_id, {}).get("bbox", {"x": 0, "y": 0, "width": 0, "height": 0}),
-                "storage_uri": _index_screenshots(en_screens).get(en_item.get("page_id"), {}).get("storage_uri", ""),
+                "bbox": en_collected_by_item.get(item_id, {}).get("bbox", {"x": 0, "y": 0, "width": 0, "height": 0}),
+                "storage_uri": en_screens_by_page.get(en_item.get("page_id"), {}).get("storage_uri", ""),
                 "item_id": item_id,
             }
             msg = "Missing target element for EN reference item"
             issues.append({
-                "id": _issue_id("OTHER", item_id, en_item.get("url", ""), msg),
-                "category": "OTHER",
+                "id": _issue_id("MISSING_TRANSLATION", item_id, en_item.get("url", ""), msg),
+                "category": "MISSING_TRANSLATION",
                 "confidence": 0.95,
                 "message": msg,
                 "evidence": evidence,
@@ -101,8 +103,8 @@ def run(domain: str, en_run_id: str, target_run_id: str) -> list[dict]:
         if en_placeholders != t_placeholders:
             msg = "Placeholder tokens differ between EN and target text"
             issues.append({
-                "id": _issue_id("PLACEHOLDER", item_id, t_item["url"], msg),
-                "category": "PLACEHOLDER",
+                "id": _issue_id("FORMATTING_MISMATCH", item_id, t_item["url"], msg),
+                "category": "FORMATTING_MISMATCH",
                 "confidence": 0.9,
                 "message": msg,
                 "evidence": evidence,
@@ -111,8 +113,8 @@ def run(domain: str, en_run_id: str, target_run_id: str) -> list[dict]:
         if en_text and t_text and en_text == t_text and not en_placeholders:
             msg = "Target text appears untranslated (identical to EN)"
             issues.append({
-                "id": _issue_id("MEANING", item_id, t_item["url"], msg),
-                "category": "MEANING",
+                "id": _issue_id("TRANSLATION_MISMATCH", item_id, t_item["url"], msg),
+                "category": "TRANSLATION_MISMATCH",
                 "confidence": 0.7,
                 "message": msg,
                 "evidence": evidence,

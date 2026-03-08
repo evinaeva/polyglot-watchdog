@@ -1,5 +1,6 @@
 import unittest
 
+from pipeline import pipeline_runner
 from pipeline.phase0_crawler import build_url_inventory, canonicalize_url
 from pipeline.phase1_puller import compute_item_id
 from pipeline.phase5_normalizer import normalize_text
@@ -40,6 +41,10 @@ class ContractPipelineTests(unittest.TestCase):
             "evidence": {"url": "https://example.com", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}, "storage_uri": "gs://b/s.png"},
         }]
         validate("issues", issues)
+
+    def test_legacy_pipeline_runner_is_retired(self):
+        with self.assertRaises(SystemExit):
+            pipeline_runner.main()
 
 
 if __name__ == "__main__":

@@ -184,6 +184,16 @@ EXTRACTION_JS = """
 """
 
 
+async def wait_for_capture_readiness(page, state: str) -> None:
+    """Fail-fast readiness policy before extraction/bbox capture."""
+    await page.wait_for_load_state("domcontentloaded", timeout=15000)
+    await page.wait_for_load_state("networkidle", timeout=10000)
+    await page.wait_for_selector("body", state="attached", timeout=5000)
+    if state != "baseline":
+        # Deterministic state-specific stabilization wait before bbox capture.
+        await page.wait_for_timeout(200)
+
+
 async def pull_page(
     page,  # Playwright Page object
     url: str,
@@ -202,12 +212,9 @@ async def pull_page(
     screenshot_id = compute_screenshot_id(page_id)
     captured_at = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Navigate
+    # Navigate + deterministic readiness checks (fail-fast on timeout).
     await page.goto(url, timeout=30000)
-    try:
-        await page.wait_for_load_state("networkidle", timeout=10000)
-    except Exception:
-        pass
+    await wait_for_capture_readiness(page, state)
 
     # Extract elements via JS — Contract §3.1 (no per-element screenshots)
     raw_elements = await page.evaluate(EXTRACTION_JS)
