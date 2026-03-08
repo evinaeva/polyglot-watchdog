@@ -1,6 +1,15 @@
 body { font-family: Arial, sans-serif; margin: 0; background: #f8f9fb; }
 nav { background: #1e293b; padding: 12px; }
 nav a { color: #fff; margin-right: 12px; text-decoration: none; }
+nav button {
+  background: #334155;
+  color: #fff;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+nav button:hover { background: #475569; }
 main { padding: 18px; }
 .controls, .filters { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 table { width: 100%; border-collapse: collapse; background: #fff; }
