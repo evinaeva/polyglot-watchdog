@@ -1,0 +1,33 @@
+from unittest.mock import patch
+
+from pipeline.run_phase1 import load_planning_urls
+
+
+def test_phase1_uses_seed_urls_as_primary_planning_input() -> None:
+    seed_payload = {
+        "domain": "example.com",
+        "urls": [
+            {"url": "https://example.com/b", "description": None, "recipe_ids": []},
+            {"url": "https://example.com/a", "description": None, "recipe_ids": []},
+        ],
+    }
+
+    with patch("pipeline.run_phase1.read_json_artifact", side_effect=[seed_payload]) as read_mock:
+        urls = load_planning_urls("example.com", "run-1")
+
+    assert urls == ["https://example.com/a", "https://example.com/b"]
+    assert read_mock.call_args_list[0].args == ("example.com", "manual", "seed_urls.json")
+
+
+def test_phase1_uses_url_inventory_only_as_temp_compat() -> None:
+    legacy_inventory = ["https://example.com/z", "https://example.com/y"]
+
+    with patch(
+        "pipeline.run_phase1.read_json_artifact",
+        side_effect=[RuntimeError("missing seed"), legacy_inventory],
+    ) as read_mock:
+        urls = load_planning_urls("example.com", "run-2")
+
+    assert urls == ["https://example.com/y", "https://example.com/z"]
+    assert read_mock.call_args_list[0].args == ("example.com", "manual", "seed_urls.json")
+    assert read_mock.call_args_list[1].args == ("example.com", "run-2", "url_inventory.json")
