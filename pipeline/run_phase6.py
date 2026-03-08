@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -21,6 +23,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from pipeline.phase5_normalizer import normalize_text
+from pipeline.interactive_capture import CaptureContext, build_capture_context_id
 from pipeline.schema_validator import SchemaValidationError, validate
 from pipeline.storage import read_json_artifact, write_json_artifact
 
@@ -53,6 +56,42 @@ def _build_evidence(target_item: dict, target_collected_by_item: dict[str, dict]
     }
 
 
+def _load_blocked_overlay_pages(domain: str, language: str, target_screens: list[dict]) -> list[dict]:
+    from google.cloud import storage  # type: ignore
+    from pipeline.storage import BUCKET_NAME
+
+    review_bucket = os.environ.get("REVIEW_BUCKET", BUCKET_NAME)
+    client = storage.Client()
+    bucket = client.bucket(review_bucket)
+
+    blocked_pages: list[dict] = []
+    for page in sorted(target_screens, key=lambda row: row["page_id"]):
+        capture_context_id = build_capture_context_id(
+            CaptureContext(
+                domain=domain,
+                url=page["url"],
+                language=language,
+                viewport_kind=page["viewport_kind"],
+                state=page["state"],
+                user_tier=page.get("user_tier"),
+            )
+        )
+        key = f"{domain}/capture_status/{capture_context_id}__{language}.json"
+        blob = bucket.blob(key)
+        if not blob.exists(client=client):
+            continue
+        review = json.loads(blob.download_as_text(encoding="utf-8"))
+        if review.get("status") != "blocked_by_overlay":
+            continue
+        blocked_pages.append({
+            "capture_context_id": capture_context_id,
+            "url": page.get("url", ""),
+            "storage_uri": page.get("storage_uri", ""),
+        })
+    blocked_pages.sort(key=lambda row: row["capture_context_id"])
+    return blocked_pages
+
+
 def run(domain: str, en_run_id: str, target_run_id: str) -> list[dict]:
     en_eligible = read_json_artifact(domain, en_run_id, "eligible_dataset.json")
     target_eligible = read_json_artifact(domain, target_run_id, "eligible_dataset.json")
@@ -69,6 +108,8 @@ def run(domain: str, en_run_id: str, target_run_id: str) -> list[dict]:
     en_screens_by_page = _index_screenshots(en_screens)
     target_collected_by_item = _index_collected(target_collected)
     target_screens_by_page = _index_screenshots(target_screens)
+    target_language = next((str(item.get("language", "")).strip() for item in target_eligible if str(item.get("language", "")).strip() and str(item.get("language", "")).lower() != "en"), "")
+    blocked_pages = _load_blocked_overlay_pages(domain, target_language, target_screens) if target_language else []
 
     issues: list[dict] = []
 
@@ -119,6 +160,20 @@ def run(domain: str, en_run_id: str, target_run_id: str) -> list[dict]:
                 "message": msg,
                 "evidence": evidence,
             })
+
+    for blocked in blocked_pages:
+        msg = "Capture blocked by overlay"
+        issues.append({
+            "id": _issue_id("OVERLAY_BLOCKED_CAPTURE", blocked["capture_context_id"], blocked["url"], msg),
+            "category": "OVERLAY_BLOCKED_CAPTURE",
+            "confidence": 1.0,
+            "message": msg,
+            "evidence": {
+                "url": blocked["url"],
+                "bbox": {"x": 0, "y": 0, "width": 0, "height": 0},
+                "storage_uri": blocked["storage_uri"],
+            },
+        })
 
     issues.sort(key=lambda i: (i["category"], i["id"]))
 

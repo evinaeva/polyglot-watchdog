@@ -27,3 +27,15 @@ def test_seed_payload_uses_schema_rows() -> None:
     payload = _seed_payload("example.com", ["https://example.com/a"])
     assert payload["domain"] == "example.com"
     assert payload["urls"] == [{"url": "https://example.com/a", "description": None, "recipe_ids": []}]
+
+
+def test_seed_payload_rejects_legacy_string_rows_on_read() -> None:
+    from unittest.mock import patch
+    from app.seed_urls import read_seed_urls
+
+    legacy_payload = {"domain": "example.com", "updated_at": "2026-01-01T00:00:00Z", "urls": ["https://example.com/a"]}
+    with patch("app.seed_urls.storage.read_json_artifact", return_value=legacy_payload):
+        payload = read_seed_urls("example.com")
+
+    assert payload["domain"] == "example.com"
+    assert payload["urls"] == []

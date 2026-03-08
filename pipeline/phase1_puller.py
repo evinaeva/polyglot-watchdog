@@ -21,7 +21,6 @@ from __future__ import annotations
 import datetime
 import hashlib
 import json
-import uuid
 from typing import Any
 
 
@@ -208,12 +207,38 @@ async def pull_page(
     Contract §3.1: exactly one full-page screenshot, elements reference page_id.
     Contract §3.4: stable item_id.
     """
+    # Navigate + deterministic readiness checks (fail-fast on timeout).
+    await page.goto(url, timeout=30000)
+    await wait_for_capture_readiness(page, state)
+
+    return await capture_current_page(
+        page=page,
+        url=url,
+        domain=domain,
+        viewport_kind=viewport_kind,
+        state=state,
+        user_tier=user_tier,
+        language=language,
+    )
+
+
+async def capture_current_page(
+    page,
+    url: str,
+    domain: str,
+    viewport_kind: str,
+    state: str,
+    user_tier: str | None,
+    language: str,
+) -> tuple[dict, list[dict], bytes]:
+    """Capture current page state without navigation.
+
+    Used for scripted capture points after recipe actions have been applied.
+    """
     page_id = compute_page_id(url, viewport_kind, state, user_tier)
     screenshot_id = compute_screenshot_id(page_id)
     captured_at = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Navigate + deterministic readiness checks (fail-fast on timeout).
-    await page.goto(url, timeout=30000)
     await wait_for_capture_readiness(page, state)
 
     # Extract elements via JS — Contract §3.1 (no per-element screenshots)
@@ -278,6 +303,74 @@ async def pull_page(
     items.sort(key=lambda i: (i["item_id"],))
 
     return page_screenshot, items, screenshot_bytes
+
+
+async def execute_recipe_step(page, action: str, selector: str | None, wait_for: str | None) -> None:
+    """Execute one deterministic recipe action step.
+
+    Unsupported actions fail explicitly.
+    """
+    normalized = action.strip().lower()
+    if normalized == "capture_state":
+        return
+    if normalized == "navigate":
+        target = (wait_for or selector or "").strip()
+        if not target:
+            raise RuntimeError("navigate step requires selector or wait_for URL")
+        await page.goto(target, timeout=30000)
+        return
+    if normalized == "click":
+        if not selector:
+            raise RuntimeError("click step requires selector")
+        await page.locator(selector).click()
+        return
+    if normalized == "fill":
+        if not selector:
+            raise RuntimeError("fill step requires selector")
+        await page.locator(selector).fill(wait_for or "")
+        return
+    if normalized == "press":
+        if not selector or not wait_for:
+            raise RuntimeError("press step requires selector and wait_for key")
+        await page.locator(selector).press(wait_for)
+        return
+    if normalized == "wait_for_selector":
+        target = wait_for or selector
+        if not target:
+            raise RuntimeError("wait_for_selector step requires selector or wait_for")
+        await page.wait_for_selector(target, state="visible", timeout=10000)
+        return
+    if normalized == "wait_for_hidden":
+        target = wait_for or selector
+        if not target:
+            raise RuntimeError("wait_for_hidden step requires selector or wait_for")
+        await page.wait_for_selector(target, state="hidden", timeout=10000)
+        return
+    if normalized == "hover":
+        if not selector:
+            raise RuntimeError("hover step requires selector")
+        await page.locator(selector).hover()
+        return
+    if normalized == "scroll":
+        if selector:
+            await page.locator(selector).scroll_into_view_if_needed()
+        else:
+            await page.mouse.wheel(0, 800)
+        return
+    if normalized == "wait_for_url":
+        target = wait_for or selector
+        if not target:
+            raise RuntimeError("wait_for_url step requires selector or wait_for pattern")
+        await page.wait_for_url(target, timeout=10000)
+        return
+    if normalized == "wait_for_function":
+        expression = wait_for or selector
+        if not expression:
+            raise RuntimeError("wait_for_function step requires selector or wait_for expression")
+        await page.wait_for_function(expression, timeout=10000)
+        return
+
+    raise RuntimeError(f"Unsupported recipe action: {action}")
 
 
 # ---------------------------------------------------------------------------

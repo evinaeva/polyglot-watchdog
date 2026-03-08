@@ -69,10 +69,6 @@ def read_seed_urls(domain: str) -> dict[str, Any]:
     for row in urls:
         if isinstance(row, dict) and isinstance(row.get("url"), str):
             normalized_urls.append(row["url"])
-        elif isinstance(row, str):
-            # TEMP_COMPAT: legacy flat-string seed_urls format.
-            # Removal condition: drop this branch in PW-BL-017.
-            normalized_urls.append(row)
         else:
             return _seed_payload(domain, [])
 
@@ -87,4 +83,3 @@ def write_seed_urls(domain: str, urls: list[str]) -> dict[str, Any]:
     validate_seed_urls_payload(payload)
     storage.write_json_artifact(domain, "manual", "seed_urls.json", payload)
     return payload
-
