@@ -14,7 +14,26 @@ from pipeline.interactive_capture import (
     build_eligible_dataset,
     build_universal_sections_en_only,
     capture_state,
+    deterministic_url_hash,
 )
+
+
+class _FakeWriter:
+    def __init__(self):
+        self.data_bucket = "watchdog-data"
+        self.calls = 0
+        self.page_records = []
+        self.screenshot_payloads = []
+
+    def write_capture(self, context, page_artifact, elements_artifact, screenshot_bytes):
+        self.calls += 1
+        self.page_records.append(dict(page_artifact))
+        self.screenshot_payloads.append(screenshot_bytes)
+        return {
+            "page_uri": f"gs://{self.data_bucket}/page.json",
+            "elements_uri": f"gs://{self.data_bucket}/elements.json",
+            "screenshot_uri": page_artifact["storage_uri"],
+        }
 
 
 class InteractiveCaptureAcceptanceTests(unittest.TestCase):
@@ -35,6 +54,41 @@ class InteractiveCaptureAcceptanceTests(unittest.TestCase):
     def _run_context(self):
         return RunContext(run_id="run-20260101-01", run_started_at="2026-01-01T00:00:00Z")
 
+
+    def test_item_id_independent_of_language(self):
+        store = InMemoryStore()
+        writer = GCSArtifactWriter(store, "watchdog-data", "watchdog-review")
+        en_context = CaptureContext("example.com", "https://example.com/", "en", "desktop", "baseline", "guest")
+        fr_context = CaptureContext("example.com", "https://example.com/", "fr", "desktop", "baseline", "guest")
+        en_out = capture_state(en_context, self._payload("Text EN"), writer, self._run_context())
+        fr_out = capture_state(fr_context, self._payload("Texte FR"), writer, self._run_context())
+        self.assertEqual([e["item_id"] for e in en_out["elements"]], [e["item_id"] for e in fr_out["elements"]])
+
+    def test_one_screenshot_per_context_with_fake_writer(self):
+        writer = _FakeWriter()
+        context = CaptureContext("example.com", "https://example.com/", "en", "desktop", "baseline", "guest")
+        out = capture_state(context, self._payload(), writer, self._run_context())
+        self.assertEqual(writer.calls, 1)
+        self.assertEqual(len(writer.page_records), 1)
+        self.assertEqual(len(writer.screenshot_payloads), 1)
+        self.assertEqual(out["page"]["storage_uri"], out["uris"]["screenshot_uri"])
+
+    def test_preserves_double_spaces_and_price_strings(self):
+        store = InMemoryStore()
+        writer = GCSArtifactWriter(store, "watchdog-data", "watchdog-review")
+        context = CaptureContext("example.com", "https://example.com/", "en", "desktop", "baseline", "guest")
+        payload = (
+            {"viewport": {"width": 1280, "height": 720}, "screenshot_bytes": b"PNG"},
+            [
+                {"css_selector": "main > p:nth-of-type(1)", "element_type": "p", "bbox": {"x": 1, "y": 2, "width": 3, "height": 4}, "text": "A  B", "visible": True},
+                {"css_selector": "main > p:nth-of-type(2)", "element_type": "p", "bbox": {"x": 5, "y": 6, "width": 7, "height": 8}, "text": "$12.00", "visible": True},
+            ],
+        )
+        out = capture_state(context, payload, writer, self._run_context())
+        texts = sorted([e["text"] for e in out["elements"]])
+        self.assertIn("A  B", texts)
+        self.assertIn("$12.00", texts)
+
     def test_baseline_contract_test(self):
         store = InMemoryStore()
         writer = GCSArtifactWriter(store, "watchdog-data", "watchdog-review")
@@ -45,6 +99,18 @@ class InteractiveCaptureAcceptanceTests(unittest.TestCase):
         self.assertEqual(len([k for k in keys if "/screenshots/" in k]), 1)
         self.assertEqual(len([k for k in keys if "/pages/" in k]), 1)
         self.assertEqual(len([k for k in keys if "/elements/" in k]), 1)
+
+        context_suffix = (
+            f"{deterministic_url_hash(context.url)}/{context.state}/"
+            f"{context.viewport_kind}/{context.user_tier or 'null'}"
+        )
+        screenshot_keys = [
+            key for (bucket, key) in store.objects
+            if bucket == "watchdog-data"
+            and f"/screenshots/{context_suffix}/" in key
+            and key.endswith("/screenshot.png")
+        ]
+        self.assertEqual(len(screenshot_keys), 1)
 
     def test_multi_state_recipe_test(self):
         planner = DeterministicPlanner()

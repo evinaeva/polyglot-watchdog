@@ -10,6 +10,10 @@ from pipeline.schema_validator import validate
 
 STATE_PATTERN = re.compile(r"^[a-z0-9]+(?:_[a-z0-9]+)*$")
 _ITEM_ID_DELIMITER = "\x1f"
+# Contract capture-context identity dimensions are exactly:
+#   (url, viewport_kind, state, user_tier)
+# Language is explicitly NOT part of contract identity (storage/rerun scope in PW-BL-011).
+CONTRACT_CAPTURE_CONTEXT_FIELDS = ("url", "viewport_kind", "state", "user_tier")
 
 
 class DeterminismError(RuntimeError):
@@ -89,6 +93,9 @@ def deterministic_url_hash(url: str) -> str:
 
 
 def build_capture_context_id(context: CaptureContext) -> str:
+    # Invariant: include domain + contract capture-context fields only.
+    # Contract capture-context fields are exactly CONTRACT_CAPTURE_CONTEXT_FIELDS,
+    # so language must stay excluded from this identity hash.
     payload = "|".join([
         context.domain,
         context.url,
@@ -100,6 +107,8 @@ def build_capture_context_id(context: CaptureContext) -> str:
 
 
 def compute_page_id(context: CaptureContext) -> str:
+    # Invariant: page_id must be built from contract capture-context fields only
+    # (url, viewport_kind, state, user_tier). language must stay excluded.
     payload = "|".join([context.url, context.viewport_kind, context.state, context.user_tier or ""])
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()
 
@@ -193,6 +202,29 @@ class GCSArtifactWriter:
         return self.store.write_json(self.review_bucket, f"{domain}/capture_status/{record['capture_context_id']}.json", record)
 
 
+
+
+def assert_language_not_in_contract_identity(context: CaptureContext) -> None:
+    """Guard: language must not affect contract capture-context identity."""
+    probe = CaptureContext(
+        domain=context.domain,
+        url=context.url,
+        language="__identity_probe__",
+        viewport_kind=context.viewport_kind,
+        state=context.state,
+        user_tier=context.user_tier,
+    )
+    if build_capture_context_id(context) != build_capture_context_id(probe):
+        raise DeterminismError(
+            "Contract identity drift: language must not affect capture_context_id "
+            f"(contract fields={CONTRACT_CAPTURE_CONTEXT_FIELDS})"
+        )
+    if compute_page_id(context) != compute_page_id(probe):
+        raise DeterminismError(
+            "Contract identity drift: language must not affect page_id "
+            f"(contract fields={CONTRACT_CAPTURE_CONTEXT_FIELDS})"
+        )
+
 def _canonical_element_sort_key(raw: dict[str, Any]) -> tuple[str, str, str, str]:
     selector = raw.get("css_selector")
     if not selector:
@@ -216,6 +248,7 @@ def capture_state(
     run_context: RunContext,
 ) -> dict[str, Any]:
     validate_state_name(context.state)
+    assert_language_not_in_contract_identity(context)
     capture_context_id = build_capture_context_id(context)
     page_id = compute_page_id(context)
     page_content, raw_elements = page_payload

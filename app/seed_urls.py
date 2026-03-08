@@ -7,7 +7,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from pipeline import storage
-from pipeline.schema_validator import validate
+from pipeline.runtime_config import validate_seed_urls_payload
 
 
 def normalize_seed_url(line: str) -> str | None:
@@ -32,11 +32,15 @@ def _utc_now_rfc3339() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def _seed_rows(urls: list[str]) -> list[dict[str, Any]]:
+    return [{"url": url, "description": None, "recipe_ids": []} for url in sorted(set(urls))]
+
+
 def _seed_payload(domain: str, urls: list[str], updated_at: str | None = None) -> dict[str, Any]:
     return {
         "domain": domain,
         "updated_at": updated_at or _utc_now_rfc3339(),
-        "urls": sorted(set(urls)),
+        "urls": _seed_rows(urls),
     }
 
 
@@ -61,15 +65,26 @@ def read_seed_urls(domain: str) -> dict[str, Any]:
     if not isinstance(urls, list) or not isinstance(updated_at, str):
         return _seed_payload(domain, [])
 
-    result = _seed_payload(domain, [str(item) for item in urls], updated_at=updated_at)
-    validate("seed_urls", result)
+    normalized_urls: list[str] = []
+    for row in urls:
+        if isinstance(row, dict) and isinstance(row.get("url"), str):
+            normalized_urls.append(row["url"])
+        elif isinstance(row, str):
+            # TEMP_COMPAT: legacy flat-string seed_urls format.
+            # Removal condition: drop this branch in PW-BL-017.
+            normalized_urls.append(row)
+        else:
+            return _seed_payload(domain, [])
+
+    result = _seed_payload(domain, normalized_urls, updated_at=updated_at)
+    validate_seed_urls_payload(result)
     return result
 
 
 def write_seed_urls(domain: str, urls: list[str]) -> dict[str, Any]:
     """Persist full seed URL list under the fixed manual namespace."""
     payload = _seed_payload(domain, urls)
-    validate("seed_urls", payload)
+    validate_seed_urls_payload(payload)
     storage.write_json_artifact(domain, "manual", "seed_urls.json", payload)
     return payload
 

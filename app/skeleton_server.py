@@ -30,6 +30,7 @@ from app.seed_urls import (
     write_seed_urls,
 )
 from app.testbench import get_modules, run_module_test
+from pipeline.runtime_config import load_phase1_runtime_config
 
 TEMPLATES_DIR = BASE_DIR / "web" / "templates"
 STATIC_DIR = BASE_DIR / "web" / "static"
@@ -94,20 +95,14 @@ def _run_phase0_async(job_id: str, domain: str, run_id: str) -> None:
         _jobs[job_id]["error"] = str(exc)
 
 
-def _run_phase1_async(job_id: str, domain: str, run_id: str, language: str,
-                     viewport_kind: str, state: str, user_tier) -> None:
+def _run_phase1_async(job_id: str, runtime_payload: dict) -> None:
     """Run Phase 1 in a background thread."""
-    _jobs[job_id] = {"status": "running", "phase": "1", "domain": domain, "run_id": run_id}
+    _jobs[job_id] = {"status": "running", "phase": "1", "domain": runtime_payload.get("domain"), "run_id": runtime_payload.get("run_id")}
     try:
-        from pipeline.run_phase1 import run as phase1_run
-        phase1_run(
-            domain=domain,
-            run_id=run_id,
-            language=language,
-            viewport_kind=viewport_kind,
-            state=state,
-            user_tier=user_tier,
-        )
+        from pipeline.run_phase1 import run_with_config
+
+        config = load_phase1_runtime_config(runtime_payload)
+        run_with_config(config)
         _jobs[job_id]["status"] = "done"
     except Exception as exc:
         _jobs[job_id]["status"] = "error"
@@ -237,7 +232,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 valid_domain = validate_domain(domain)
                 incoming = parse_seed_urls(urls_multiline)
                 existing = read_seed_urls(valid_domain)
-                merged = sorted(set(existing["urls"]) | set(incoming))
+                existing_urls = {str(row.get("url", "")) for row in existing.get("urls", []) if isinstance(row, dict) and row.get("url")}
+                merged = sorted(existing_urls | set(incoming))
                 saved = write_seed_urls(valid_domain, merged)
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -257,7 +253,11 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 if normalized is None:
                     raise ValueError("url is required")
                 existing = read_seed_urls(valid_domain)
-                remaining = [url for url in existing["urls"] if url != normalized]
+                remaining = [
+                    str(row.get("url"))
+                    for row in existing.get("urls", [])
+                    if isinstance(row, dict) and row.get("url") and str(row.get("url")) != normalized
+                ]
                 saved = write_seed_urls(valid_domain, remaining)
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -319,14 +319,23 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             if not domain or not run_id:
                 self._json_response({"status": "error", "message": "domain and run_id required"}, status=HTTPStatus.BAD_REQUEST)
                 return
-            language = payload.get("language", "en")
-            viewport_kind = payload.get("viewport_kind", "desktop")
-            state = payload.get("state", "guest")
-            user_tier = payload.get("user_tier") or None
-            job_id = f"phase1-{run_id}-{language}-{viewport_kind}-{state}"
+            runtime_payload = {
+                "domain": domain,
+                "run_id": run_id,
+                "language": payload.get("language", "en"),
+                "viewport_kind": payload.get("viewport_kind", "desktop"),
+                "state": payload.get("state", "guest"),
+                "user_tier": payload.get("user_tier") or None,
+            }
+            try:
+                config = load_phase1_runtime_config(runtime_payload)
+            except ValueError as exc:
+                self._json_response({"status": "error", "message": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            job_id = f"phase1-{config.run_id}-{config.language}-{config.viewport_kind}-{config.state}"
             t = threading.Thread(
                 target=_run_phase1_async,
-                args=(job_id, domain, run_id, language, viewport_kind, state, user_tier),
+                args=(job_id, runtime_payload),
                 daemon=True,
             )
             t.start()
