@@ -22,6 +22,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from app.recipes import delete_recipe, list_recipes, upsert_recipe
 from app.seed_urls import (
     normalize_seed_url,
     parse_seed_urls,
@@ -81,6 +82,71 @@ RULE_DECISIONS: dict[str, str] = {}
 
 # In-memory job status store (cleared on restart — for UI feedback only)
 _jobs: dict[str, dict] = {}
+
+
+class _ReviewConfigStore:
+    def _client(self):
+        from google.cloud import storage  # type: ignore
+
+        return storage.Client()
+
+    def write_json(self, bucket: str, key: str, value):
+        import json
+
+        client = self._client()
+        blob = client.bucket(bucket).blob(key)
+        blob.upload_from_string(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")), content_type="application/json; charset=utf-8")
+        return f"gs://{bucket}/{key}"
+
+
+def _parse_rerun_payload(payload: dict) -> dict:
+    required = ["domain", "run_id", "url", "viewport_kind", "state", "language"]
+    missing = [k for k in required if not str(payload.get(k, "")).strip()]
+    if missing:
+        raise ValueError(f"missing required fields: {', '.join(missing)}")
+    runtime_payload = {
+        "domain": str(payload.get("domain", "")).strip(),
+        "run_id": str(payload.get("run_id", "")).strip(),
+        "language": str(payload.get("language", "")).strip(),
+        "viewport_kind": str(payload.get("viewport_kind", "")).strip(),
+        "state": str(payload.get("state", "")).strip(),
+        "user_tier": payload.get("user_tier") or None,
+        "url": str(payload.get("url", "")).strip(),
+    }
+    load_phase1_runtime_config(runtime_payload)
+    return runtime_payload
+
+
+def _persist_capture_review(payload: dict) -> dict:
+    from pipeline.schema_validator import validate
+
+    domain = validate_domain(str(payload.get("domain", "")))
+    capture_context_id = str(payload.get("capture_context_id", "")).strip()
+    language = str(payload.get("language", "")).strip()
+    status = str(payload.get("status", "")).strip()
+    reviewer = str(payload.get("reviewer", "operator")).strip() or "operator"
+    timestamp = str(payload.get("timestamp", "")).strip()
+    if not capture_context_id:
+        raise ValueError("capture_context_id is required")
+    if not language:
+        raise ValueError("language is required")
+    if not timestamp:
+        raise ValueError("timestamp is required")
+
+    record = {
+        "capture_context_id": capture_context_id,
+        "status": status,
+        "reviewer": reviewer,
+        "timestamp": timestamp,
+    }
+    validate("capture_review_status", record)
+
+    from pipeline.storage import BUCKET_NAME
+
+    review_bucket = os.environ.get("REVIEW_BUCKET", BUCKET_NAME)
+    writer = GCSArtifactWriter(_ReviewConfigStore(), BUCKET_NAME, review_bucket)
+    uri = writer.set_review_status(domain, capture_context_id, language, record)
+    return {"record": record, "storage_uri": uri}
 
 
 def _run_phase0_async(job_id: str, domain: str, run_id: str) -> None:
@@ -192,6 +258,14 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/testbench/modules":
             self._json_response({"modules": get_modules()})
             return
+        if parsed.path == "/api/recipes":
+            domain = parse_qs(parsed.query).get("domain", [""])[0]
+            try:
+                valid_domain = validate_domain(domain)
+                self._json_response({"recipes": list_recipes(valid_domain)})
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
         # Job status endpoint
         if parsed.path == "/api/job":
             job_id = parse_qs(parsed.query).get("id", [""])[0]
@@ -281,6 +355,80 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
                 return
             self._json_response(saved)
+            return
+
+
+        if self.path == "/api/recipes/upsert":
+            payload = self._read_json_payload()
+            domain = str(payload.get("domain", ""))
+            recipe = payload.get("recipe")
+            try:
+                valid_domain = validate_domain(domain)
+                if not isinstance(recipe, dict):
+                    raise ValueError("recipe object is required")
+                saved = upsert_recipe(valid_domain, recipe)
+                self._json_response({"recipe": saved, "recipes": list_recipes(valid_domain)})
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            except Exception as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        if self.path == "/api/recipes/delete":
+            payload = self._read_json_payload()
+            domain = str(payload.get("domain", ""))
+            recipe_id = str(payload.get("recipe_id", "")).strip()
+            try:
+                valid_domain = validate_domain(domain)
+                if not recipe_id:
+                    raise ValueError("recipe_id is required")
+                recipes = delete_recipe(valid_domain, recipe_id)
+                self._json_response({"recipes": recipes})
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            except Exception as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        if self.path == "/api/capture/review":
+            payload = self._read_json_payload()
+            try:
+                result = _persist_capture_review(payload)
+                self._json_response(result)
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            except Exception as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        if self.path == "/api/capture/rerun":
+            payload = self._read_json_payload()
+            try:
+                runtime_payload = _parse_rerun_payload(payload)
+                from pipeline.run_phase1 import build_exact_context_job
+
+                job = build_exact_context_job(
+                    domain=runtime_payload["domain"],
+                    url=runtime_payload["url"],
+                    language=runtime_payload["language"],
+                    viewport_kind=runtime_payload["viewport_kind"],
+                    state=runtime_payload["state"],
+                    user_tier=runtime_payload["user_tier"],
+                )
+                job_id = f"rerun-{runtime_payload['run_id']}-{runtime_payload['language']}-{runtime_payload['state']}"
+                t = threading.Thread(target=_run_rerun_async, args=(job_id, runtime_payload), daemon=True)
+                t.start()
+                self._json_response({"status": "started", "job_id": job_id, "resolved_context": {
+                    "url": job.context.url,
+                    "viewport_kind": job.context.viewport_kind,
+                    "state": job.context.state,
+                    "user_tier": job.context.user_tier,
+                    "language": job.context.language,
+                }, "job_count": 1})
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            except Exception as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
 
         if self.path == "/api/rules":

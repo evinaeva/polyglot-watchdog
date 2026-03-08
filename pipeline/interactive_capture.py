@@ -183,9 +183,16 @@ class GCSArtifactWriter:
     def _prefix(self, context: CaptureContext) -> str:
         return f"domain/{context.domain}"
 
-    def write_capture(self, context: CaptureContext, page_artifact: dict[str, Any], elements_artifact: list[dict[str, Any]], screenshot_bytes: bytes) -> dict[str, str]:
+    def _capture_suffix(self, context: CaptureContext) -> str:
+        # Storage identity adds language partition; contract identity stays unchanged.
         url_hash = deterministic_url_hash(context.url)
-        suffix = f"{url_hash}/{context.state}/{context.viewport_kind}/{context.user_tier or 'null'}"
+        return f"{context.language}/{url_hash}/{context.state}/{context.viewport_kind}/{context.user_tier or 'null'}"
+
+    def review_status_key(self, domain: str, capture_context_id: str, language: str) -> str:
+        return f"{domain}/capture_status/{capture_context_id}__{language}.json"
+
+    def write_capture(self, context: CaptureContext, page_artifact: dict[str, Any], elements_artifact: list[dict[str, Any]], screenshot_bytes: bytes) -> dict[str, str]:
+        suffix = self._capture_suffix(context)
         screenshot_uri = self.store.write_bytes(
             self.data_bucket,
             f"{self._prefix(context)}/screenshots/{suffix}/screenshot.png",
@@ -198,8 +205,9 @@ class GCSArtifactWriter:
         elements_uri = self.store.write_json(self.data_bucket, f"{self._prefix(context)}/elements/{suffix}/elements.json", elements_artifact)
         return {"page_uri": page_uri, "elements_uri": elements_uri, "screenshot_uri": screenshot_uri}
 
-    def set_review_status(self, domain: str, record: dict[str, Any]) -> str:
-        return self.store.write_json(self.review_bucket, f"{domain}/capture_status/{record['capture_context_id']}.json", record)
+    def set_review_status(self, domain: str, capture_context_id: str, language: str, record: dict[str, Any]) -> str:
+        validate("capture_review_status", record)
+        return self.store.write_json(self.review_bucket, self.review_status_key(domain, capture_context_id, language), record)
 
 
 
@@ -292,7 +300,7 @@ def capture_state(
     validate("collected_items", elements)
 
     predicted_url_hash = deterministic_url_hash(context.url)
-    predicted_suffix = f"{predicted_url_hash}/{context.state}/{context.viewport_kind}/{context.user_tier or 'null'}"
+    predicted_suffix = f"{context.language}/{predicted_url_hash}/{context.state}/{context.viewport_kind}/{context.user_tier or 'null'}"
     predicted_screenshot_uri = f"gs://{writer.data_bucket}/domain/{context.domain}/screenshots/{predicted_suffix}/screenshot.png"
     page_artifact["storage_uri"] = predicted_screenshot_uri
     validate("page_screenshots", [page_artifact])

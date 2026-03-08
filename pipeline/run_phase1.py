@@ -88,6 +88,7 @@ async def main(
     viewport_kind: str,
     state: str,
     user_tier: str | None,
+    jobs_override: list[CaptureJob] | None = None,
 ) -> None:
     print(f"[Phase 1] Starting data collection domain={domain} run_id={run_id} lang={language}")
 
@@ -137,9 +138,9 @@ async def main(
                     url=url,
                     domain=domain,
                     viewport_kind=viewport_kind,
-                    state=state,
-                    user_tier=user_tier,
-                    language=language,
+                    state=job.context.state,
+                    user_tier=job.context.user_tier or None,
+                    language=job.context.language,
                 )
                 await page.close()
             except Exception as exc:
@@ -259,7 +260,7 @@ if __name__ == "__main__":
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--language", default="en")
     parser.add_argument("--viewport", default="desktop", choices=["desktop", "mobile", "responsive"])
-    parser.add_argument("--state", default="guest", choices=["guest", "user"])
+    parser.add_argument("--state", default="guest")
     parser.add_argument("--user-tier", default=None)
     args = parser.parse_args()
     config = load_phase1_runtime_config(vars(args))
