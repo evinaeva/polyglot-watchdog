@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from datetime import datetime
 import base64
 import hashlib
 import hmac
@@ -34,6 +35,7 @@ from app.seed_urls import (
     normalize_seed_url,
     parse_seed_urls,
     read_seed_urls,
+    upsert_seed_url_row,
     validate_domain,
     write_seed_urls,
 )
@@ -223,6 +225,123 @@ def _run_phase3_async(job_id: str, domain: str, run_id: str) -> None:
         _jobs[job_id]["error"] = str(exc)
 
 
+
+
+def _load_collected_rows(domain: str, run_id: str) -> list[dict]:
+    from pipeline.storage import read_json_artifact
+    rows = read_json_artifact(domain, run_id, "collected_items.json")
+    if not isinstance(rows, list):
+        return []
+    rows.sort(key=lambda r: str(r.get("item_id", "")))
+    return rows
+
+
+def _load_issues(domain: str, run_id: str) -> list[dict]:
+    from pipeline.storage import read_json_artifact
+    rows = read_json_artifact(domain, run_id, "issues.json")
+    if not isinstance(rows, list):
+        return []
+    rows.sort(key=lambda r: str(r.get("id", "")))
+    return rows
+
+
+def _parse_created_at_rfc3339_z(value: str) -> datetime:
+    """Parse canonical contract timestamp format YYYY-MM-DDTHH:MM:SSZ."""
+    return datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
+
+
+def _load_template_rule_decisions(domain: str, run_id: str) -> dict[str, str]:
+    from pipeline.storage import read_json_artifact
+
+    try:
+        rules = read_json_artifact(domain, run_id, "template_rules.json")
+    except Exception:
+        return {}
+    if not isinstance(rules, list):
+        return {}
+    decisions: dict[str, tuple[str, datetime]] = {}
+    for row in rules:
+        if not isinstance(row, dict):
+            continue
+        item_id = str(row.get("item_id", "")).strip()
+        rule_type = str(row.get("rule_type", "")).strip()
+        created_at_raw = str(row.get("created_at", "")).strip()
+        if not item_id or not rule_type:
+            continue
+        try:
+            created_at = _parse_created_at_rfc3339_z(created_at_raw)
+        except ValueError:
+            continue
+        prev = decisions.get(item_id)
+        if prev is None or created_at >= prev[1]:
+            decisions[item_id] = (rule_type, created_at)
+    return {item_id: rule for item_id, (rule, _) in decisions.items()}
+
+
+def _merge_pull_rows(rows: list[dict], decisions: dict[str, str]) -> list[dict]:
+    merged_rows: list[dict] = []
+    for row in rows:
+        merged = dict(row)
+        item_id = str(row.get("item_id", ""))
+        merged["decision"] = decisions.get(item_id, row.get("decision", ""))
+        merged_rows.append(merged)
+    return merged_rows
+
+
+def _filter_issues(issues: list[dict], query: str) -> list[dict]:
+    q = query.strip().lower()
+    if not q:
+        return issues
+    filtered: list[dict] = []
+    for issue in issues:
+        haystack = " ".join(
+            [
+                str(issue.get("id", "")),
+                str(issue.get("category", "")),
+                str(issue.get("url", "")),
+                str(issue.get("message", "")),
+            ]
+        ).lower()
+        if q in haystack:
+            filtered.append(issue)
+    return filtered
+
+
+def _build_capture_plan(payload: dict) -> list[dict]:
+    from app.recipes import load_recipes_for_planner
+    from pipeline.run_phase1 import build_planned_jobs, load_planning_rows
+
+    domain = str(payload.get("domain", "")).strip()
+    run_id = str(payload.get("run_id", "")).strip()
+    if not domain or not run_id:
+        raise ValueError("domain and run_id are required")
+    languages = [str(v).strip() for v in payload.get("languages", ["en"]) if str(v).strip()]
+    viewports = [str(v).strip() for v in payload.get("viewports", ["desktop"]) if str(v).strip()]
+    user_tiers = [str(v).strip() for v in payload.get("user_tiers", [""])]
+    mode = str(payload.get("mode", "baseline_only"))
+
+    planning_rows = load_planning_rows(domain, run_id)
+    recipes = load_recipes_for_planner(domain)
+    rows: list[dict] = []
+    for language in sorted(set(languages)):
+        for viewport in sorted(set(viewports)):
+            for tier in sorted(set(user_tiers)):
+                jobs = build_planned_jobs(domain, planning_rows, language, viewport, tier or None, recipes)
+                for job in jobs:
+                    if mode == "baseline_only" and job.mode != "baseline":
+                        continue
+                    rows.append({
+                        "url": job.context.url,
+                        "language": job.context.language,
+                        "viewport_kind": job.context.viewport_kind,
+                        "state": job.context.state,
+                        "user_tier": job.context.user_tier,
+                        "mode": job.mode,
+                        "recipe_id": job.recipe_id,
+                    })
+    rows.sort(key=lambda r: (r["url"], r["language"], r["viewport_kind"], r["state"], r.get("recipe_id") or ""))
+    return rows
+
 class SkeletonHandler(BaseHTTPRequestHandler):
     def _read_template_cached(self, path: Path) -> str:
         stat = path.stat()
@@ -371,19 +490,27 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/url-inventory":
             if not self._require_auth(api=True):
                 return
-            domain = parse_qs(parsed.query).get("domain", ["en.example.com"])[0]
-            urls = sorted(MOCK_URL_INVENTORY.get(domain, []))
-            self._json_response({"domain": domain, "urls": urls})
+            domain = parse_qs(parsed.query).get("domain", [""])[0]
+            try:
+                payload = read_seed_urls(validate_domain(domain))
+                urls = [str(row.get("url")) for row in payload.get("urls", []) if isinstance(row, dict)]
+                self._json_response({"domain": domain, "urls": sorted(urls)})
+            except Exception as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
         if parsed.path == "/api/pulls":
             if not self._require_auth(api=True):
                 return
-            rows = []
-            for row in sorted(MOCK_PULLS, key=lambda item: item["item_id"]):
-                merged = dict(row)
-                merged["decision"] = RULE_DECISIONS.get(row["item_id"], row["decision"])
-                rows.append(merged)
-            self._json_response({"rows": rows})
+            domain = parse_qs(parsed.query).get("domain", [""])[0]
+            run_id = parse_qs(parsed.query).get("run_id", [""])[0]
+            try:
+                valid_domain = validate_domain(domain)
+                rows = _load_collected_rows(valid_domain, run_id)
+                decisions = _load_template_rule_decisions(valid_domain, run_id)
+            except Exception as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self._json_response({"rows": _merge_pull_rows(rows, decisions)})
             return
         if parsed.path == "/api/rules":
             if not self._require_auth(api=True):
@@ -393,7 +520,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                     "rule_id": f"rule-{item_id}",
                     "item_id": item_id,
                     "rule_type": rule_type,
-                    "url": next((row["url"] for row in MOCK_PULLS if row["item_id"] == item_id), ""),
+                    "url": "",
                 }
                 for item_id, rule_type in sorted(RULE_DECISIONS.items(), key=lambda item: item[0])
             ]
@@ -403,9 +530,15 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             if not self._require_auth(api=True):
                 return
             query = parse_qs(parsed.query)
-            has_filters = any(value for values in query.values() for value in values if value.strip())
-            issues = sorted(MOCK_ISSUES, key=lambda issue: issue["id"]) if has_filters else []
-            self._json_response({"issues": issues})
+            domain = query.get("domain", [""])[0]
+            run_id = query.get("run_id", [""])[0]
+            q = query.get("q", [""])[0]
+            try:
+                issues = _load_issues(validate_domain(domain), run_id)
+            except Exception as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self._json_response({"issues": _filter_issues(issues, q)})
             return
         if parsed.path == "/api/seed-urls":
             if not self._require_auth(api=True):
@@ -692,6 +825,26 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             except Exception as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        if self.path == "/api/runs/plan":
+            payload = self._read_json_payload()
+            try:
+                plan = _build_capture_plan(payload)
+                self._json_response({"plan": plan, "count": len(plan)})
+            except Exception as exc:
+                self._json_response({"error": "invalid planning request", "details": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+
+        if self.path == "/api/seed-urls/upsert-row":
+            payload = self._read_json_payload()
+            domain = str(payload.get("domain", ""))
+            row = payload.get("row")
+            try:
+                saved = upsert_seed_url_row(validate_domain(domain), row if isinstance(row, dict) else {})
+                self._json_response(saved)
+            except Exception as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
 
         if self.path == "/api/rules":

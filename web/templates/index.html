@@ -18,12 +18,14 @@
         <ul>
           <li><strong data-i18n="index.apply_query">Apply Query</strong><span data-i18n="index.help.li1_tail"> calls the issues endpoint and fills the table.</span></li>
           <li><span data-i18n="index.help.li2">The table stays empty until you run a query.</span></li>
-          <li><span data-i18n="index.help.li3">In the current scaffold, results can be mock-backed depending on filters.</span></li>
+          <li><span data-i18n="index.help.li3">Results are loaded from real Phase 6 issue artifacts for the selected domain and run.</span></li>
         </ul>
       </div>
     </details>
     <p><span data-i18n="index.note">Issues are shown only after applying a query.</span></p>
     <div class="controls">
+      <input id="domainInput" placeholder="domain" />
+      <input id="runIdInput" placeholder="run_id" />
       <input id="issueQuery" placeholder="Enter URL or keyword" data-i18n-placeholder="index.query_placeholder" />
       <button id="applyIssueQuery" data-i18n="index.apply_query">Apply Query</button>
     </div>

@@ -4,7 +4,7 @@ from app.seed_urls import _seed_payload, normalize_seed_url, parse_seed_urls
 def test_normalize_seed_url_rules() -> None:
     assert normalize_seed_url("  ") is None
     assert normalize_seed_url("Example.COM/path?a=1#Frag") == "https://example.com/path?a=1#Frag"
-    assert normalize_seed_url("HTTP://MiXeD.Example.com/Path?Q=Yes") == "https://http://MiXeD.Example.com/Path?Q=Yes"
+    assert normalize_seed_url("HTTP://MiXeD.Example.com/Path?Q=Yes") == "http://mixed.example.com/Path?Q=Yes"
     assert normalize_seed_url("https://UPPER.example.com/Path/Keep") == "https://upper.example.com/Path/Keep"
 
 
@@ -39,3 +39,17 @@ def test_seed_payload_rejects_legacy_string_rows_on_read() -> None:
 
     assert payload["domain"] == "example.com"
     assert payload["urls"] == []
+
+
+
+def test_upsert_seed_url_row_merges_by_normalized_url():
+    from unittest.mock import patch
+    from app.seed_urls import upsert_seed_url_row
+
+    existing = {"domain": "example.com", "updated_at": "2026-01-01T00:00:00Z", "urls": [{"url": "https://example.com/a", "description": None, "recipe_ids": []}]}
+    writes = {}
+
+    with patch("app.seed_urls.storage.read_json_artifact", return_value=existing), patch("app.seed_urls.storage.write_json_artifact", side_effect=lambda d,r,f,p: writes.setdefault("payload", p)):
+        out = upsert_seed_url_row("example.com", {"url": "https://EXAMPLE.com/a", "recipe_ids": ["r1"]})
+
+    assert out["urls"] == [{"url": "https://example.com/a", "description": None, "recipe_ids": ["r1"]}]

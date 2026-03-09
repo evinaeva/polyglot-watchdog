@@ -21,12 +21,13 @@
           <li data-i18n="pulling.help.li3">Screenshot thumbnails open a larger preview.</li>
           <li data-i18n="pulling.help.li4">Decision dropdown saves row-level rule choices.</li>
         </ul>
-        <p data-i18n="pulling.help.p2">This page currently uses mock pull/rule endpoints for the visible interactions.</p>
+        <p data-i18n="pulling.help.p2">Pull rows are loaded from real artifacts (`collected_items.json`) for selected domain/run_id. Rule choices are currently saved via local `/api/rules` and Phase 2 endpoint integration remains the production path.</p>
       </div>
     </details>
     <div class="controls">
       <input id="languageSubdomain" value="fr.example.com" aria-label="language subdomain" />
       <select id="domainDropdown"></select>
+      <input id="runIdInput" placeholder="run_id" value="manual" />
       <button id="collectPullsButton" data-i18n="pulling.collect">Collect</button>
     </div>
 

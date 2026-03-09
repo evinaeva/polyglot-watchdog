@@ -21,10 +21,11 @@ function setError(message) {
 function render(data) {
   const urls = Array.isArray(data.urls) ? data.urls : [];
   updatedAt.textContent = data.updated_at || "-";
-  urlsMultiline.value = urls.join("\n");
+  urlsMultiline.value = urls.map((row) => typeof row === "string" ? row : row.url).join("\n");
   savedUrlsBody.innerHTML = "";
 
-  for (const url of urls) {
+  for (const entry of urls) {
+    const url = typeof entry === "string" ? entry : entry.url;
     const tr = document.createElement("tr");
 
     const urlCell = document.createElement("td");

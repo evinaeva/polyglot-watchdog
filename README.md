@@ -2,15 +2,21 @@
 
 Minimal skeleton web UI service for Polyglot Watchdog.
 
-This is an early-stage scaffold. No pipeline phases (0–6) are implemented yet.
-All data returned by the API endpoints is mock/static.
+Operator UI is now connected to runtime/storage artifacts for core flows:
+
+- `/urls`: persisted seed URL source-of-truth (`manual/seed_urls.json`) with normalization/dedup and row upsert.
+- `/pulling`: reads real `collected_items.json` by `domain + run_id` and writes phase2 decisions via `/api/phase2/rule`.
+- `/`: issues explorer reads real `issues.json` by `domain + run_id`.
+- Capture review/rerun endpoints are wired to Phase 1 exact-context rerun APIs.
+- `/api/domains` dropdown source is temporarily a fixed list (`MOCK_DOMAINS`) until storage-backed domain indexing is introduced.
+- `/api/rules` remains a local/in-memory helper endpoint; durable annotation persistence should use `POST /api/phase2/rule`.
 
 ## Available routes
 
 | Route | Description |
 |---|---|
 | `/login` | Login screen (used only when auth mode is ON) |
-| `/` | Issues explorer (returns results only when filters are applied) |
+| `/` | Issues explorer (table fills after Apply Query; `q` may be empty, but `domain` + `run_id` are required) |
 | `/crawler` | URL crawler page |
 | `/pulling` | Content pulling and annotation page |
 | `/about` | Glossary (placeholder) |
@@ -105,3 +111,12 @@ gcloud run services describe polyglot-watchdog --region=europe-west1 --format='v
 - Manual module playground: `/testbench`
 - Preferred test data format: universal suite files (`*.suite.json`, `*.tests.json`, `suite.json`)
 - Setup and extension guide: `docs/testbench.md`
+
+
+## Operator flow (local)
+
+1. Configure URLs in `/urls`.
+2. Trigger capture with `POST /api/phase1/run` (or plan via `POST /api/runs/plan`).
+3. Review contexts via `POST /api/capture/review` and rerun exact context via `POST /api/capture/rerun`.
+4. Annotate items in `/pulling` and save Phase 2 rules.
+5. Run Phase 3 / Phase 6 and inspect real issues on `/`.

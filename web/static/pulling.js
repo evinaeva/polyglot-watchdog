@@ -6,6 +6,7 @@ let currentScale = 1;
 
 const domainDropdown = document.getElementById('domainDropdown');
 const collectPullsButton = document.getElementById('collectPullsButton');
+const runIdInput = document.getElementById('runIdInput');
 const pullRows = document.getElementById('pullRows');
 const pageLabel = document.getElementById('pageLabel');
 const prevPage = document.getElementById('prevPage');
@@ -128,7 +129,8 @@ async function loadDomains() {
 }
 
 async function loadPullRows() {
-  const response = await fetch('/api/pulls');
+  const params = new URLSearchParams({ domain: domainDropdown.value, run_id: runIdInput.value.trim() });
+  const response = await fetch(`/api/pulls?${params.toString()}`);
   const payload = await response.json();
   allRows = (payload.rows || []).sort((a, b) => a.item_id.localeCompare(b.item_id));
   populateFilterOptions();
