@@ -1,4 +1,6 @@
 (function () {
+  document.documentElement.classList.add('i18n-loading');
+
   const STORAGE_KEY = 'pw_locale';
   const DEFAULT_LOCALE = 'ru';
   const FALLBACK_LOCALE = 'en';
@@ -85,18 +87,28 @@
   }
 
   async function initI18n() {
-    setLocale(getLocale());
-    const [ru, en] = await Promise.all([
-      fetch('/static/locales/ru.json').then((r) => r.json()).catch(() => ({})),
-      fetch('/static/locales/en.json').then((r) => r.json()).catch(() => ({})),
-    ]);
-    dictionaries.ru = ru;
-    dictionaries.en = en;
-    bindLanguageSwitcher();
-    applyI18n();
-    document.dispatchEvent(new CustomEvent('pw:i18n:ready'));
+    try {
+      setLocale(getLocale());
+      const [ru, en] = await Promise.all([
+        fetch('/static/locales/ru.json').then((r) => r.json()).catch(() => ({})),
+        fetch('/static/locales/en.json').then((r) => r.json()).catch(() => ({})),
+      ]);
+      dictionaries.ru = ru;
+      dictionaries.en = en;
+      bindLanguageSwitcher();
+      applyI18n();
+      document.dispatchEvent(new CustomEvent('pw:i18n:ready'));
+    } finally {
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      document.documentElement.classList.remove('i18n-loading');
+    }
   }
 
   window.i18n = { t, applyI18n, setLocale, getLocale };
-  document.addEventListener('DOMContentLoaded', initI18n);
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initI18n, { once: true });
+  } else {
+    initI18n();
+  }
 })();

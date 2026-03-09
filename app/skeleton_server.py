@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import base64
 import hashlib
 import hmac
@@ -819,6 +820,15 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.NOT_FOUND, "Template not found")
             return
         html = self._read_template_cached(path)
+        html = re.sub(
+            r"(<body\b[^>]*>)",
+            r"\1\n<script>document.documentElement.classList.add('i18n-loading');</script>",
+            html,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+        loader_html = '<div class="i18n-loader-overlay" aria-hidden="true"><div class="i18n-loader"></div></div>'
+        html = html.replace("</body>", f"  {loader_html}\n</body>", 1)
         header_path = TEMPLATES_DIR / "_header.html"
         header_html = self._read_template_cached(header_path) if header_path.exists() else ""
         html = html.replace("{{header}}", header_html)
