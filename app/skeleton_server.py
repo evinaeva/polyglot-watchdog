@@ -29,12 +29,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from app.recipes import delete_recipe, list_recipes, upsert_recipe
+from app.recipes import delete_recipe, list_recipes, upsert_recipe, load_recipes_for_planner
 from app.seed_urls import (
     normalize_seed_url,
     parse_seed_urls,
+    parse_seed_urls_with_errors,
     read_seed_urls,
     validate_domain,
+    write_seed_rows,
     write_seed_urls,
 )
 from app.testbench import get_modules, run_module_test
@@ -52,53 +54,186 @@ SESSION_SIGNING_SECRET_ENV = "SESSION_SIGNING_SECRET"
 AUTH_MODE = "OFF"
 SESSION_MAX_AGE_SECONDS = max(int(os.environ.get("SESSION_MAX_AGE_SECONDS", "28800")), 300)
 
-MOCK_DOMAINS = ["de.example.com", "en.example.com", "fr.example.com"]
-MOCK_URL_INVENTORY = {
-    "en.example.com": [
-        "https://en.example.com/",
-        "https://en.example.com/catalog",
-        "https://en.example.com/contact",
-    ],
-    "fr.example.com": [
-        "https://fr.example.com/",
-        "https://fr.example.com/catalog",
-    ],
-}
-
-MOCK_PULLS = [
-    {
-        "item_id": f"item-{index:04d}",
-        "url": f"https://en.example.com/catalog/item-{index:04d}",
-        "element_type": "img" if index % 4 == 0 else "button" if index % 4 == 1 else "input" if index % 4 == 2 else "text",
-        "text": f"Sample content line  {index:04d}",
-        "screenshot_thumbnail": "/static/mock-screenshot.svg",
-        "screenshot_full": "/static/mock-screenshot.svg",
-        "decision": "",
-    }
-    for index in range(1, 46)
-]
-
-MOCK_ISSUES = [
-    {
-        "id": "issue-0001",
-        "category": "SPELLING",
-        "message": "Potential typo in CTA button.",
-        "url": "https://fr.example.com/catalog",
-    },
-    {
-        "id": "issue-0002",
-        "category": "GRAMMAR",
-        "message": "Sentence agreement mismatch in product details.",
-        "url": "https://de.example.com/catalog",
-    },
-]
-
-RULE_DECISIONS: dict[str, str] = {}
 
 # In-memory job status store (cleared on restart — for UI feedback only)
 _jobs: dict[str, dict] = {}
 _template_cache: dict[Path, tuple[int, str]] = {}
 
+
+def _read_json_safe(domain: str, run_id: str, filename: str, default):
+    from pipeline.storage import read_json_artifact
+
+    try:
+        return read_json_artifact(domain, run_id, filename)
+    except Exception as exc:
+        print(f"[storage] read fallback domain={domain} run_id={run_id} file={filename}: {exc}", file=sys.stderr)
+        return default
+
+
+def _list_domains() -> list[str]:
+    payload = _read_json_safe("_system", "manual", "domains.json", {"domains": []})
+    values = payload.get("domains") if isinstance(payload, dict) else []
+    return sorted({str(v).strip() for v in values if str(v).strip()})
+
+
+def _register_domain(domain: str) -> None:
+    from pipeline.storage import write_json_artifact
+
+    domain = validate_domain(domain)
+    domains = set(_list_domains())
+    domains.add(domain)
+    write_json_artifact("_system", "manual", "domains.json", {"domains": sorted(domains)})
+
+
+def _load_runs(domain: str) -> dict:
+    payload = _read_json_safe(domain, "manual", "capture_runs.json", {"runs": []})
+    if not isinstance(payload, dict) or not isinstance(payload.get("runs"), list):
+        return {"runs": []}
+    return payload
+
+
+def _save_runs(domain: str, payload: dict) -> None:
+    from pipeline.storage import write_json_artifact
+
+    write_json_artifact(domain, "manual", "capture_runs.json", payload)
+
+
+def _upsert_job_status(domain: str, run_id: str, job_record: dict) -> None:
+    runs_payload = _load_runs(domain)
+    runs = runs_payload["runs"]
+    run = next((r for r in runs if r.get("run_id") == run_id), None)
+    if run is None:
+        run = {"run_id": run_id, "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "jobs": []}
+        runs.append(run)
+    jobs = [j for j in run.get("jobs", []) if j.get("job_id") != job_record.get("job_id")]
+    jobs.append(job_record)
+    jobs.sort(key=lambda r: r.get("job_id", ""))
+    run["jobs"] = jobs
+    runs.sort(key=lambda r: r.get("run_id", ""), reverse=True)
+    _save_runs(domain, {"runs": runs})
+
+
+
+
+def _load_phase2_decisions(domain: str, run_id: str) -> list[dict]:
+    payload = _read_json_safe(domain, run_id, "phase2_decisions.json", {"decisions": []})
+    if not isinstance(payload, dict) or not isinstance(payload.get("decisions"), list):
+        return []
+    return [row for row in payload.get("decisions", []) if isinstance(row, dict)]
+
+
+def _save_phase2_decisions(domain: str, run_id: str, decisions: list[dict]) -> None:
+    from pipeline.storage import write_json_artifact
+
+    write_json_artifact(domain, run_id, "phase2_decisions.json", {"decisions": decisions})
+
+
+def _decision_key(row: dict) -> tuple:
+    return (
+        str(row.get("capture_context_id", "")),
+        str(row.get("item_id", "")),
+        str(row.get("url", "")),
+        str(row.get("state", "")),
+        str(row.get("language", "")),
+        str(row.get("viewport_kind", "")),
+        str(row.get("user_tier") or ""),
+    )
+
+
+def _upsert_phase2_decision(domain: str, run_id: str, decision: dict) -> dict:
+    decisions = _load_phase2_decisions(domain, run_id)
+    by_key = {_decision_key(row): row for row in decisions}
+    by_key[_decision_key(decision)] = decision
+    merged = [by_key[key] for key in sorted(by_key.keys())]
+    _save_phase2_decisions(domain, run_id, merged)
+    return decision
+
+
+def _estimate_severity(issue: dict) -> str:
+    explicit = str(issue.get("severity", "")).strip().lower()
+    if explicit in {"high", "medium", "low"}:
+        return explicit
+    confidence = float(issue.get("confidence", 0) or 0)
+    if confidence >= 0.9:
+        return "high"
+    if confidence >= 0.7:
+        return "medium"
+    return "low"
+
+
+def _filter_issues(issues: list[dict], query: dict[str, list[str]]) -> list[dict]:
+    q = query.get("q", [""])[0].strip().lower()
+    issue_type = query.get("type", [""])[0].strip().lower()
+    language = query.get("language", [""])[0].strip().lower()
+    severity = query.get("severity", [""])[0].strip().lower()
+    state = query.get("state", [""])[0].strip().lower()
+    url_filter = query.get("url", [""])[0].strip().lower()
+
+    filtered = []
+    for issue in issues:
+        evidence = issue.get("evidence", {}) if isinstance(issue.get("evidence"), dict) else {}
+        issue_url = str(evidence.get("url", ""))
+        derived = {
+            "language": str(issue.get("language", "")).lower(),
+            "severity": _estimate_severity(issue),
+            "type": str(issue.get("category", "")).lower(),
+            "state": str(issue.get("state", "")).lower(),
+            "url": issue_url.lower(),
+        }
+        if issue_type and derived["type"] != issue_type:
+            continue
+        if language and derived["language"] != language:
+            continue
+        if severity and derived["severity"] != severity:
+            continue
+        if state and derived["state"] != state:
+            continue
+        if url_filter and url_filter not in derived["url"]:
+            continue
+        if q and q not in str(issue.get("category", "")).lower() and q not in str(issue.get("message", "")).lower() and q not in derived["url"]:
+            continue
+        filtered.append(issue)
+    return sorted(filtered, key=lambda item: str(item.get("id", "")))
+
+
+
+def _expand_capture_plan(domain: str, planning_rows: list[dict], languages: list[str], viewports: list[str], tiers: list[str], recipes: dict) -> list[dict]:
+    from pipeline.run_phase1 import build_planned_jobs
+
+    # NOTE: we intentionally expand cross-product at this layer to guarantee deterministic
+    # operator-visible plan ordering: language -> viewport -> user_tier.
+    expanded_jobs = []
+    seen: set[tuple[str, str, str, str, str, str, str]] = set()
+    for language in sorted(languages):
+        for viewport in sorted(viewports):
+            for tier in sorted(tiers):
+                jobs = build_planned_jobs(domain, planning_rows, language, viewport, tier or None, recipes)
+                for job in jobs:
+                    key = (
+                        str(job.context.url),
+                        str(job.context.language),
+                        str(job.context.viewport_kind),
+                        str(job.context.state),
+                        str(job.context.user_tier or ""),
+                        str(job.recipe_id or ""),
+                        str(job.mode),
+                    )
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    expanded_jobs.append(job)
+    return [
+        {
+            "url": job.context.url,
+            "language": job.context.language,
+            "viewport_kind": job.context.viewport_kind,
+            "state": job.context.state,
+            "user_tier": job.context.user_tier,
+            "mode": job.mode,
+            "recipe_id": job.recipe_id,
+        }
+        for job in expanded_jobs
+    ]
 
 class _ReviewConfigStore:
     def _client(self):
@@ -172,27 +307,33 @@ def _run_phase0_async(job_id: str, domain: str, run_id: str) -> None:
         from pipeline.run_phase0 import run as phase0_run
         phase0_run(domain=domain, run_id=run_id)
         _jobs[job_id]["status"] = "done"
+        _upsert_job_status(domain, run_id, {"job_id": job_id, "status": "succeeded", "phase": "0"})
     except Exception as exc:
         _jobs[job_id]["status"] = "error"
         _jobs[job_id]["error"] = str(exc)
+        _upsert_job_status(domain, run_id, {"job_id": job_id, "status": "failed", "error": str(exc), "phase": "0"})
 
 
 def _run_phase1_async(job_id: str, runtime_payload: dict) -> None:
     """Run Phase 1 in a background thread."""
     _jobs[job_id] = {"status": "running", "phase": "1", "domain": runtime_payload.get("domain"), "run_id": runtime_payload.get("run_id")}
+    _upsert_job_status(str(runtime_payload.get("domain")), str(runtime_payload.get("run_id")), {"job_id": job_id, "status": "running", "context": runtime_payload})
     try:
         from pipeline.run_phase1 import run_with_config
 
         config = load_phase1_runtime_config(runtime_payload)
         run_with_config(config)
         _jobs[job_id]["status"] = "done"
+        _upsert_job_status(str(runtime_payload.get("domain")), str(runtime_payload.get("run_id")), {"job_id": job_id, "status": "succeeded", "context": runtime_payload})
     except Exception as exc:
         _jobs[job_id]["status"] = "error"
         _jobs[job_id]["error"] = str(exc)
+        _upsert_job_status(str(runtime_payload.get("domain")), str(runtime_payload.get("run_id")), {"job_id": job_id, "status": "failed", "error": str(exc), "context": runtime_payload})
 
 
 def _run_rerun_async(job_id: str, runtime_payload: dict) -> None:
     _jobs[job_id] = {"status": "running", "phase": "rerun", "domain": runtime_payload.get("domain"), "run_id": runtime_payload.get("run_id")}
+    _upsert_job_status(str(runtime_payload.get("domain")), str(runtime_payload.get("run_id")), {"job_id": job_id, "status": "running", "context": runtime_payload, "type": "rerun"})
     try:
         from pipeline.run_phase1 import run_exact_context
 
@@ -206,9 +347,11 @@ def _run_rerun_async(job_id: str, runtime_payload: dict) -> None:
             language=str(runtime_payload.get("language")),
         )
         _jobs[job_id]["status"] = "done"
+        _upsert_job_status(str(runtime_payload.get("domain")), str(runtime_payload.get("run_id")), {"job_id": job_id, "status": "succeeded", "context": runtime_payload, "type": "rerun"})
     except Exception as exc:
         _jobs[job_id]["status"] = "error"
         _jobs[job_id]["error"] = str(exc)
+        _upsert_job_status(str(runtime_payload.get("domain")), str(runtime_payload.get("run_id")), {"job_id": job_id, "status": "failed", "error": str(exc), "context": runtime_payload, "type": "rerun"})
 
 
 def _run_phase3_async(job_id: str, domain: str, run_id: str) -> None:
@@ -218,6 +361,7 @@ def _run_phase3_async(job_id: str, domain: str, run_id: str) -> None:
         from pipeline.run_phase3 import run as phase3_run
         phase3_run(domain=domain, run_id=run_id)
         _jobs[job_id]["status"] = "done"
+        _upsert_job_status(domain, run_id, {"job_id": job_id, "status": "succeeded", "phase": "3"})
     except Exception as exc:
         _jobs[job_id]["status"] = "error"
         _jobs[job_id]["error"] = str(exc)
@@ -366,46 +510,76 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/domains":
             if not self._require_auth(api=True):
                 return
-            self._json_response({"items": sorted(MOCK_DOMAINS)})
+            self._json_response({"items": _list_domains()})
             return
         if parsed.path == "/api/url-inventory":
             if not self._require_auth(api=True):
                 return
-            domain = parse_qs(parsed.query).get("domain", ["en.example.com"])[0]
-            urls = sorted(MOCK_URL_INVENTORY.get(domain, []))
-            self._json_response({"domain": domain, "urls": urls})
+            domain = parse_qs(parsed.query).get("domain", [""])[0]
+            try:
+                payload = read_seed_urls(validate_domain(domain))
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            urls = [row.get("url", "") for row in payload.get("urls", []) if isinstance(row, dict)]
+            self._json_response({"domain": domain, "urls": sorted(urls)})
             return
         if parsed.path == "/api/pulls":
             if not self._require_auth(api=True):
                 return
+            query = parse_qs(parsed.query)
+            domain = query.get("domain", [""])[0]
+            run_id = query.get("run_id", [""])[0]
+            if not domain or not run_id:
+                self._json_response({"error": "domain and run_id required"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            items = _read_json_safe(domain, run_id, "collected_items.json", [])
+            decisions = _load_phase2_decisions(domain, run_id)
+            decisions_by_key = {_decision_key(row): row for row in decisions}
             rows = []
-            for row in sorted(MOCK_PULLS, key=lambda item: item["item_id"]):
-                merged = dict(row)
-                merged["decision"] = RULE_DECISIONS.get(row["item_id"], row["decision"])
-                rows.append(merged)
+            for row in items:
+                if not isinstance(row, dict):
+                    continue
+                key = _decision_key(row)
+                decision = decisions_by_key.get(key, {})
+                rows.append({
+                    "item_id": row.get("item_id", ""),
+                    "url": row.get("url", ""),
+                    "state": row.get("state", ""),
+                    "language": row.get("language", ""),
+                    "viewport_kind": row.get("viewport_kind", ""),
+                    "user_tier": row.get("user_tier"),
+                    "element_type": row.get("element_type", ""),
+                    "text": row.get("text", ""),
+                    "decision": decision.get("rule_type", ""),
+                })
+            rows.sort(key=lambda item: item.get("item_id", ""))
             self._json_response({"rows": rows})
             return
         if parsed.path == "/api/rules":
             if not self._require_auth(api=True):
                 return
-            rules = [
-                {
-                    "rule_id": f"rule-{item_id}",
-                    "item_id": item_id,
-                    "rule_type": rule_type,
-                    "url": next((row["url"] for row in MOCK_PULLS if row["item_id"] == item_id), ""),
-                }
-                for item_id, rule_type in sorted(RULE_DECISIONS.items(), key=lambda item: item[0])
-            ]
+            query = parse_qs(parsed.query)
+            domain = query.get("domain", [""])[0]
+            run_id = query.get("run_id", [""])[0]
+            if not domain or not run_id:
+                self._json_response({"error": "domain and run_id required"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            rules = _load_phase2_decisions(domain, run_id)
             self._json_response({"rules": rules})
             return
-        if parsed.path == "/api/issues":
+        if parsed.path in {"/api/issues", "/api/issues/export"}:
             if not self._require_auth(api=True):
                 return
             query = parse_qs(parsed.query)
-            has_filters = any(value for values in query.values() for value in values if value.strip())
-            issues = sorted(MOCK_ISSUES, key=lambda issue: issue["id"]) if has_filters else []
-            self._json_response({"issues": issues})
+            domain = query.get("domain", [""])[0]
+            run_id = query.get("run_id", [""])[0]
+            if not domain or not run_id:
+                self._json_response({"error": "domain and run_id required"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            issues = _read_json_safe(domain, run_id, "issues.json", [])
+            filtered = _filter_issues(issues if isinstance(issues, list) else [], query)
+            self._json_response({"issues": filtered, "count": len(filtered)})
             return
         if parsed.path == "/api/seed-urls":
             if not self._require_auth(api=True):
@@ -439,6 +613,44 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
         # Job status endpoint
+        if parsed.path == "/api/capture/runs":
+            if not self._require_auth(api=True):
+                return
+            domain = parse_qs(parsed.query).get("domain", [""])[0]
+            try:
+                self._json_response(_load_runs(validate_domain(domain)))
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if parsed.path == "/api/capture/contexts":
+            if not self._require_auth(api=True):
+                return
+            query = parse_qs(parsed.query)
+            domain = query.get("domain", [""])[0]
+            run_id = query.get("run_id", [""])[0]
+            pages = _read_json_safe(domain, run_id, "page_screenshots.json", []) if domain and run_id else []
+            elements = _read_json_safe(domain, run_id, "collected_items.json", []) if domain and run_id else []
+            by_page = {}
+            for row in elements:
+                page_id = row.get("page_id") if isinstance(row, dict) else None
+                if not page_id:
+                    continue
+                by_page[page_id] = by_page.get(page_id, 0) + 1
+            contexts = []
+            for page in pages:
+                if not isinstance(page, dict):
+                    continue
+                contexts.append({
+                    "page_id": page.get("page_id"),
+                    "url": page.get("url"),
+                    "viewport_kind": page.get("viewport_kind"),
+                    "state": page.get("state"),
+                    "user_tier": page.get("user_tier"),
+                    "storage_uri": page.get("storage_uri"),
+                    "elements_count": by_page.get(page.get("page_id"), 0),
+                })
+            self._json_response({"contexts": contexts})
+            return
         if parsed.path == "/api/job":
             if not self._require_auth(api=True):
                 return
@@ -465,8 +677,10 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             urls_multiline = str(payload.get("urls_multiline", ""))
             try:
                 valid_domain = validate_domain(domain)
-                urls = parse_seed_urls(urls_multiline)
-                saved = write_seed_urls(valid_domain, urls)
+                parsed_urls = parse_seed_urls_with_errors(urls_multiline)
+                saved = write_seed_urls(valid_domain, parsed_urls["urls"])
+                saved["validation_errors"] = parsed_urls["errors"]
+                _register_domain(valid_domain)
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                 return
@@ -567,17 +781,20 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             urls_multiline = str(payload.get("urls_multiline", ""))
             try:
                 valid_domain = validate_domain(domain)
-                incoming = parse_seed_urls(urls_multiline)
+                parsed_urls = parse_seed_urls_with_errors(urls_multiline)
+                incoming = parsed_urls["urls"]
                 existing = read_seed_urls(valid_domain)
                 existing_urls = {str(row.get("url", "")) for row in existing.get("urls", []) if isinstance(row, dict) and row.get("url")}
                 merged = sorted(existing_urls | set(incoming))
                 saved = write_seed_urls(valid_domain, merged)
+                _register_domain(valid_domain)
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                 return
             except Exception as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
                 return
+            saved["validation_errors"] = parsed_urls["errors"]
             self._json_response(saved)
             return
 
@@ -596,6 +813,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                     if isinstance(row, dict) and row.get("url") and str(row.get("url")) != normalized
                 ]
                 saved = write_seed_urls(valid_domain, remaining)
+                _register_domain(valid_domain)
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                 return
@@ -611,6 +829,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             try:
                 valid_domain = validate_domain(domain)
                 saved = write_seed_urls(valid_domain, [])
+                _register_domain(valid_domain)
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                 return
@@ -630,6 +849,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 if not isinstance(recipe, dict):
                     raise ValueError("recipe object is required")
                 saved = upsert_recipe(valid_domain, recipe)
+                _register_domain(valid_domain)
                 self._json_response({"recipe": saved, "recipes": list_recipes(valid_domain)})
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -647,6 +867,84 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                     raise ValueError("recipe_id is required")
                 recipes = delete_recipe(valid_domain, recipe_id)
                 self._json_response({"recipes": recipes})
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            except Exception as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        if self.path == "/api/seed-urls/row-upsert":
+            payload = self._read_json_payload()
+            domain = str(payload.get("domain", ""))
+            row = payload.get("row")
+            try:
+                valid_domain = validate_domain(domain)
+                if not isinstance(row, dict):
+                    raise ValueError("row object is required")
+                existing = read_seed_urls(valid_domain)
+                rows = [r for r in existing.get("urls", []) if isinstance(r, dict)]
+                normalized_url = normalize_seed_url(str(row.get("url", "")))
+                if normalized_url is None:
+                    raise ValueError("row.url is required")
+                merged = [r for r in rows if str(r.get("url")) != normalized_url]
+                merged.append({
+                    "url": normalized_url,
+                    "description": row.get("description"),
+                    "recipe_ids": row.get("recipe_ids", []),
+                    "active": bool(row.get("active", True)),
+                })
+                saved = write_seed_rows(valid_domain, merged)
+                _register_domain(valid_domain)
+                self._json_response(saved)
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            except Exception as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        if self.path == "/api/capture/plan":
+            payload = self._read_json_payload()
+            try:
+                domain = validate_domain(str(payload.get("domain", "")).strip())
+                languages = sorted({str(v).strip() for v in payload.get("languages", []) if str(v).strip()})
+                viewports = sorted({str(v).strip() for v in payload.get("viewports", []) if str(v).strip()})
+                tiers = sorted({str(v).strip() for v in payload.get("user_tiers", []) if str(v).strip()}) or [""]
+                include_recipes = bool(payload.get("include_recipes", False))
+                if not languages or not viewports:
+                    raise ValueError("languages and viewports are required")
+                seed_payload = read_seed_urls(domain)
+                planning_rows = []
+                for row in seed_payload.get("urls", []):
+                    if not isinstance(row, dict) or not row.get("active", True):
+                        continue
+                    recipe_ids = list(row.get("recipe_ids", [])) if include_recipes else []
+                    planning_rows.append({"url": row.get("url"), "recipe_ids": recipe_ids})
+                recipes = load_recipes_for_planner(domain)
+                output = _expand_capture_plan(domain, planning_rows, languages, viewports, tiers, recipes)
+                self._json_response({"jobs": output, "count": len(output)})
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            except Exception as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        if self.path == "/api/capture/start":
+            payload = self._read_json_payload()
+            domain = str(payload.get("domain", "")).strip()
+            run_id = str(payload.get("run_id", "")).strip() or str(uuid.uuid4())
+            language = str(payload.get("language", "en")).strip() or "en"
+            viewport_kind = str(payload.get("viewport_kind", "desktop")).strip() or "desktop"
+            state = str(payload.get("state", "guest")).strip() or "guest"
+            user_tier = payload.get("user_tier") or None
+            runtime_payload = {"domain": domain, "run_id": run_id, "language": language, "viewport_kind": viewport_kind, "state": state, "user_tier": user_tier}
+            try:
+                load_phase1_runtime_config(runtime_payload)
+                _register_domain(validate_domain(domain))
+                job_id = f"phase1-{run_id}-{language}-{viewport_kind}-{state}"
+                _upsert_job_status(domain, run_id, {"job_id": job_id, "status": "queued", "context": runtime_payload})
+                t = threading.Thread(target=_run_phase1_async, args=(job_id, runtime_payload), daemon=True)
+                t.start()
+                self._json_response({"status": "started", "job_id": job_id, "run_id": run_id})
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             except Exception as exc:
@@ -679,6 +977,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                     user_tier=runtime_payload["user_tier"],
                 )
                 job_id = f"rerun-{runtime_payload['run_id']}-{runtime_payload['language']}-{runtime_payload['state']}"
+                _upsert_job_status(runtime_payload["domain"], runtime_payload["run_id"], {"job_id": job_id, "status": "queued", "context": runtime_payload, "type": "rerun"})
                 t = threading.Thread(target=_run_rerun_async, args=(job_id, runtime_payload), daemon=True)
                 t.start()
                 self._json_response({"status": "started", "job_id": job_id, "resolved_context": {
@@ -696,14 +995,36 @@ class SkeletonHandler(BaseHTTPRequestHandler):
 
         if self.path == "/api/rules":
             payload = self._read_json_payload()
-            item_id = payload.get("item_id", "")
-            rule_type = payload.get("rule_type", "")
+            domain = str(payload.get("domain", "")).strip()
+            run_id = str(payload.get("run_id", "")).strip()
+            item_id = str(payload.get("item_id", "")).strip()
+            url = str(payload.get("url", "")).strip()
+            rule_type = str(payload.get("rule_type", "")).strip()
             allowed = {"IGNORE_ENTIRE_ELEMENT", "MASK_VARIABLE", "ALWAYS_COLLECT"}
-            if item_id and rule_type in allowed:
-                RULE_DECISIONS[item_id] = rule_type
-                self._json_response({"status": "ok", "item_id": item_id, "rule_type": rule_type})
+            if not domain or not run_id or not item_id or not url or rule_type not in allowed:
+                self._json_response({"status": "error", "message": "domain, run_id, item_id, url and valid rule_type required"}, status=HTTPStatus.BAD_REQUEST)
                 return
-            self._json_response({"status": "error", "message": "invalid payload"}, status=HTTPStatus.BAD_REQUEST)
+            decision = {
+                "capture_context_id": str(payload.get("capture_context_id", "")),
+                "item_id": item_id,
+                "url": url,
+                "state": str(payload.get("state", "")),
+                "language": str(payload.get("language", "")),
+                "viewport_kind": str(payload.get("viewport_kind", "")),
+                "user_tier": payload.get("user_tier"),
+                "rule_type": rule_type,
+                "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
+            _upsert_phase2_decision(domain, run_id, decision)
+            phase2_applied = True
+            phase2_error = ""
+            try:
+                from pipeline.run_phase2 import run as phase2_run
+                phase2_run(domain=domain, run_id=run_id, item_id=item_id, url=url, rule_type=rule_type, note=None)
+            except Exception as exc:
+                phase2_applied = False
+                phase2_error = str(exc)
+            self._json_response({"status": "ok", "decision": decision, "phase2_applied": phase2_applied, "phase2_error": phase2_error})
             return
 
         # Phase 0 trigger — real pipeline
@@ -744,6 +1065,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self._json_response({"status": "error", "message": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                 return
             job_id = f"phase1-{config.run_id}-{config.language}-{config.viewport_kind}-{config.state}"
+            _register_domain(domain)
+            _upsert_job_status(domain, run_id, {"job_id": job_id, "status": "queued", "context": runtime_payload})
             t = threading.Thread(
                 target=_run_phase1_async,
                 args=(job_id, runtime_payload),
@@ -769,8 +1092,6 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             try:
                 from pipeline.run_phase2 import run as phase2_run
                 rule = phase2_run(domain=domain, run_id=run_id, item_id=item_id, url=url, rule_type=rule_type, note=note)
-                # Also update in-memory decisions for UI consistency
-                RULE_DECISIONS[item_id] = rule_type
                 self._json_response({"status": "ok", "rule": rule})
             except Exception as exc:
                 self._json_response({"status": "error", "message": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)

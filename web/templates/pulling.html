@@ -21,14 +21,17 @@
           <li data-i18n="pulling.help.li3">Screenshot thumbnails open a larger preview.</li>
           <li data-i18n="pulling.help.li4">Decision dropdown saves row-level rule choices.</li>
         </ul>
-        <p data-i18n="pulling.help.p2">This page currently uses mock pull/rule endpoints for the visible interactions.</p>
+        <p data-i18n="pulling.help.p2">This page reads real Phase 1 artifacts and stores annotation decisions as persisted Phase 2 outputs.</p>
       </div>
     </details>
     <div class="controls">
       <input id="languageSubdomain" value="fr.example.com" aria-label="language subdomain" />
       <select id="domainDropdown"></select>
+      <input id="runIdInput" placeholder="run id" />
       <button id="collectPullsButton" data-i18n="pulling.collect">Collect</button>
     </div>
+
+    <div id="pullError" class="hidden" style="color:#b00020; margin:8px 0;"></div>
 
     <div class="filters">
       <label><span data-i18n="pulling.filters.url">URL</span> <input id="urlFilter" placeholder="Filter by URL text" data-i18n-placeholder="pulling.url_filter" /></label>
