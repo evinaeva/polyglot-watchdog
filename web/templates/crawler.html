@@ -1,35 +1,36 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Polyglot Watchdog - Crawler</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
-<body>
-  <nav><a href="/">Issues</a> | <a href="/crawler">Crawler</a> | <a href="/pulling">Pulling</a> | <a href="/urls">URLs</a> | <a href="/about">About</a> | <a href="/testbench">Testbench</a> | <button id="logoutButton" type="button">Logout</button></nav>
+<body data-i18n-title="crawler.page_title">
+  <nav><a href="/" data-i18n="nav.issues">Issues</a> | <a href="/crawler" data-i18n="nav.crawler">Crawler</a> | <a href="/pulling" data-i18n="nav.pulling">Pulling</a> | <a href="/urls" data-i18n="nav.urls">URLs</a> | <a href="/about" data-i18n="nav.about">About</a> | <a href="/testbench" data-i18n="nav.testbench">Testbench</a> | <label for="languageSwitcher" data-i18n="language.label">Language</label> <select id="languageSwitcher"><option value="ru">RU</option><option value="en">EN</option></select> | <button id="logoutButton" type="button" data-i18n="nav.logout">Logout</button></nav>
   <main>
-    <h1>Crawler</h1>
+    <h1 data-i18n="crawler.h1">Crawler</h1>
     <details class="page-help">
-      <summary>What does this page do?</summary>
+      <summary><span data-i18n="common.page_help">What does this page do?</span></summary>
       <div class="page-help-content">
-        <p>Inspect URL inventory for a selected domain.</p>
+        <p><span data-i18n="crawler.help.p1">Inspect URL inventory for a selected domain.</span></p>
         <ul>
-          <li><strong>Collect URLs</strong> loads inventory rows into the table.</li>
-          <li>This page currently reads the mock inventory route from frontend JS.</li>
-          <li>Real pipeline Phase 0 endpoints exist separately.</li>
+          <li><strong data-i18n="crawler.collect">Collect URLs</strong><span data-i18n="crawler.help.li1_tail"> loads inventory rows into the table.</span></li>
+          <li><span data-i18n="crawler.help.li2">This page currently reads the mock inventory route from frontend JS.</span></li>
+          <li><span data-i18n="crawler.help.li3">Real pipeline Phase 0 endpoints exist separately.</span></li>
         </ul>
       </div>
     </details>
     <div class="controls">
-      <input id="domainInput" value="en.example.com" aria-label="domain" />
-      <button id="collectUrlsButton">Collect URLs</button>
+      <input id="domainInput" value="en.example.com" aria-label="domain" data-i18n-title="crawler.domain_aria" />
+      <button id="collectUrlsButton" data-i18n="crawler.collect">Collect URLs</button>
     </div>
     <table>
-      <thead><tr><th>URL Inventory (placeholder)</th></tr></thead>
+      <thead><tr><th><span data-i18n="crawler.table">URL Inventory (placeholder)</span></th></tr></thead>
       <tbody id="urlInventoryBody"></tbody>
     </table>
   </main>
+  <script src="/static/i18n.js"></script>
   <script src="/static/tooltips.js"></script>
   <script src="/static/crawler.js"></script>
   <script src="/static/auth.js"></script>

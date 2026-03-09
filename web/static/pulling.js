@@ -73,19 +73,19 @@ function renderRows() {
       <td>${row.url}</td>
       <td>${row.element_type}</td>
       <td>${row.text}</td>
-      <td><img class="thumb" src="${row.screenshot_thumbnail}" alt="thumbnail" data-full="${row.screenshot_full}" title="Open full screenshot preview." /></td>
+      <td><img class="thumb" src="${row.screenshot_thumbnail}" alt="${i18n.t('pulling.thumbnail.alt')}" data-full="${row.screenshot_full}" title="${i18n.t('pulling.thumbnail.title')}" /></td>
       <td>
-        <select data-item-id="${row.item_id}" class="decision-select" title="Choose how this element should be treated in dataset building.">
+        <select data-item-id="${row.item_id}" class="decision-select" title="${i18n.t('pulling.decision.select_title')}">
           <option value="" ${decision === '' ? 'selected' : ''}>--</option>
-          <option value="IGNORE_ENTIRE_ELEMENT" ${decision === 'IGNORE_ENTIRE_ELEMENT' ? 'selected' : ''} title="Exclude this element from comparison.">IGNORE_ENTIRE_ELEMENT</option>
-          <option value="MASK_VARIABLE" ${decision === 'MASK_VARIABLE' ? 'selected' : ''} title="Keep element but mask changing values.">MASK_VARIABLE</option>
-          <option value="ALWAYS_COLLECT" ${decision === 'ALWAYS_COLLECT' ? 'selected' : ''} title="Always keep this element in collection output.">ALWAYS_COLLECT</option>
+          <option value="IGNORE_ENTIRE_ELEMENT" ${decision === 'IGNORE_ENTIRE_ELEMENT' ? 'selected' : ''} title="${i18n.t('pulling.decision.exclude_title')}">IGNORE_ENTIRE_ELEMENT</option>
+          <option value="MASK_VARIABLE" ${decision === 'MASK_VARIABLE' ? 'selected' : ''} title="${i18n.t('pulling.decision.mask_title')}">MASK_VARIABLE</option>
+          <option value="ALWAYS_COLLECT" ${decision === 'ALWAYS_COLLECT' ? 'selected' : ''} title="${i18n.t('pulling.decision.always_title')}">ALWAYS_COLLECT</option>
         </select>
       </td>`;
     pullRows.appendChild(tr);
   }
 
-  pageLabel.textContent = `Page ${currentPage} / ${totalPages}`;
+  pageLabel.textContent = i18n.t('pulling.pagination.label', { currentPage, totalPages });
   bindRowInteractions();
 }
 
@@ -159,5 +159,7 @@ screenshotModal.addEventListener('wheel', (event) => {
   modalImage.style.transform = `translateY(-50%) scale(${currentScale})`;
 });
 
-loadDomains();
-renderRows();
+document.addEventListener('pw:i18n:ready', () => {
+  loadDomains();
+  renderRows();
+});
