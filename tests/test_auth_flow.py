@@ -12,7 +12,7 @@ from app.skeleton_server import SkeletonHandler
 class AuthFlowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        os.environ["LOGIN_PASSWORD"] = "test-password"
+        os.environ["WATCHDOG_PASSWORD"] = "test-password"
         os.environ["SESSION_SIGNING_SECRET"] = "test-signing-secret"
         cls.server = ThreadingHTTPServer(("127.0.0.1", 0), SkeletonHandler)
         cls.port = cls.server.server_address[1]

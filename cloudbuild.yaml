@@ -30,7 +30,7 @@ steps:
       - '--cpu=1'
       - '--service-account=polyglot-watchdog-sa@${PROJECT_ID}.iam.gserviceaccount.com'
       - '--set-env-vars=ARTIFACTS_BUCKET=polyglot-watchdog-artifacts-1018698441568'
-      - '--update-secrets=LOGIN_PASSWORD=LOGIN_PASSWORD:latest,SESSION_SIGNING_SECRET=SESSION_SIGNING_SECRET:latest'
+      - '--update-secrets=WATCHDOG_PASSWORD=WATCHDOG_PASSWORD:latest,SESSION_SIGNING_SECRET=SESSION_SIGNING_SECRET:latest'
 
 images:
   - '${_IMAGE}'

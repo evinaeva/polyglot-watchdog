@@ -45,7 +45,7 @@ FIXTURE_DIR = STATIC_DIR / "watchdog-fixture"
 
 SESSION_COOKIE = "pw_session"
 CSRF_COOKIE = "pw_csrf"
-LOGIN_PASSWORD_ENV = "LOGIN_PASSWORD"
+WATCHDOG_PASSWORD_ENV = "WATCHDOG_PASSWORD"
 SESSION_SIGNING_SECRET_ENV = "SESSION_SIGNING_SECRET"
 SESSION_MAX_AGE_SECONDS = max(int(os.environ.get("SESSION_MAX_AGE_SECONDS", "28800")), 300)
 
@@ -256,7 +256,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         return os.environ.get(SESSION_SIGNING_SECRET_ENV, "").strip()
 
     def _login_password(self) -> str:
-        return os.environ.get(LOGIN_PASSWORD_ENV, "").strip()
+        return os.environ.get(WATCHDOG_PASSWORD_ENV, "").strip()
 
     def _generate_session_token(self) -> str:
         secret = self._session_signing_secret().encode("utf-8")
@@ -477,7 +477,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self._json_response(
                     {
                         "error": (
-                            f"missing required environment variable: {LOGIN_PASSWORD_ENV} or {SESSION_SIGNING_SECRET_ENV}"
+                            f"missing required environment variable: {WATCHDOG_PASSWORD_ENV} or {SESSION_SIGNING_SECRET_ENV}"
                         )
                     },
                     status=HTTPStatus.INTERNAL_SERVER_ERROR,

@@ -37,14 +37,14 @@ Cookie policy:
 
 Do not hardcode secrets in code. Inject from Cloud Run + Secret Manager:
 
-- `LOGIN_PASSWORD`: login password for the web UI.
+- `WATCHDOG_PASSWORD`: login password for the web UI.
 - `SESSION_SIGNING_SECRET`: secret key used to sign session cookies.
 - `SESSION_MAX_AGE_SECONDS` (optional): session/csrf max age.
 
 ## Run locally
 
 ```bash
-export LOGIN_PASSWORD='your-local-password'
+export WATCHDOG_PASSWORD='your-local-password'
 export SESSION_SIGNING_SECRET='long-random-local-secret'
 PORT=8080 python app/skeleton_server.py
 ```
@@ -65,13 +65,13 @@ gcloud builds submit \
 
 `cloudbuild.yaml` now deploys with Secret Manager bindings:
 
-- `LOGIN_PASSWORD=LOGIN_PASSWORD:latest`
+- `WATCHDOG_PASSWORD=WATCHDOG_PASSWORD:latest`
 - `SESSION_SIGNING_SECRET=SESSION_SIGNING_SECRET:latest`
 
 Create/update those secrets first:
 
 ```bash
-printf '%s' 'your-strong-password' | gcloud secrets versions add LOGIN_PASSWORD --data-file=-
+printf '%s' 'your-strong-password' | gcloud secrets versions add WATCHDOG_PASSWORD --data-file=-
 printf '%s' 'your-long-random-signing-secret' | gcloud secrets versions add SESSION_SIGNING_SECRET --data-file=-
 ```
 
