@@ -2,6 +2,7 @@ import unittest
 
 from pipeline.interactive_capture import CaptureContext, DeterminismError, GCSArtifactWriter, InMemoryStore, RunContext, capture_state
 from pipeline.phase1_puller import wait_for_capture_readiness
+from pipeline.run_phase1 import _is_non_fatal_not_found_error
 
 
 class _TimeoutPage:
@@ -34,15 +35,12 @@ class Phase1FailFastTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(store.objects, {})
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class _FailingBrowser:
     async def new_context(self, **kwargs):
         class _Ctx:
             async def new_page(self):
                 return object()
+
         return _Ctx()
 
     async def close(self):
@@ -56,6 +54,7 @@ class _PlaywrightCM:
                 @staticmethod
                 async def launch():
                     return _FailingBrowser()
+
         return _P()
 
     async def __aexit__(self, exc_type, exc, tb):
@@ -81,12 +80,24 @@ class Phase1RunFailFastTests(unittest.TestCase):
         )
 
         import types, sys
+
         fake_playwright = types.SimpleNamespace(async_playwright=lambda: _PlaywrightCM())
-        with patch.dict(sys.modules, {"playwright.async_api": fake_playwright}), \
-             patch("pipeline.run_phase1.pull_page", new=AsyncMock(side_effect=RuntimeError("boom"))), \
-             patch("pipeline.run_phase1.write_json_artifact") as write_mock:
+        with patch.dict(sys.modules, {"playwright.async_api": fake_playwright}), patch(
+            "pipeline.run_phase1.pull_page", new=AsyncMock(side_effect=RuntimeError("boom"))
+        ), patch("pipeline.run_phase1.write_json_artifact") as write_mock:
             with self.assertRaises(SystemExit):
                 import asyncio
+
                 asyncio.run(run_phase1.main("example.com", "run-1", "en", "desktop", "baseline", "guest", jobs_override=[job]))
 
         write_mock.assert_not_called()
+
+
+class Phase1RerunErrorClassifierTests(unittest.TestCase):
+    def test_rerun_not_found_classifier_is_conservative(self):
+        self.assertTrue(_is_non_fatal_not_found_error(RuntimeError("waiting for selector '#x'")))
+        self.assertFalse(_is_non_fatal_not_found_error(RuntimeError("Navigation failed because page crashed")))
+
+
+if __name__ == "__main__":
+    unittest.main()

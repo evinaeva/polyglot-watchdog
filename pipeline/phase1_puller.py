@@ -23,29 +23,8 @@ import hashlib
 import json
 from typing import Any
 
+from pipeline.interactive_capture import compute_item_id
 
-# ---------------------------------------------------------------------------
-# Stable item_id — Contract §3.4
-# ---------------------------------------------------------------------------
-
-def compute_item_id(domain: str, url: str, css_selector: str, bbox: dict, element_type: str) -> str:
-    """Return sha1-based stable item_id per Contract §3.4.
-
-    item_id = sha1(domain + url + css_selector + bbox(x,y,width,height) + element_type)
-
-    text MUST NOT be included.
-    """
-    payload = (
-        domain
-        + url
-        + css_selector
-        + str(bbox.get("x", 0))
-        + str(bbox.get("y", 0))
-        + str(bbox.get("width", 0))
-        + str(bbox.get("height", 0))
-        + element_type
-    )
-    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
 
 
 # ---------------------------------------------------------------------------

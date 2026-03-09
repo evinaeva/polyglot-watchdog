@@ -1,7 +1,7 @@
 import unittest
 
 from pipeline.phase0_crawler import build_url_inventory, canonicalize_url
-from pipeline.phase1_puller import compute_item_id
+from pipeline.interactive_capture import compute_item_id
 from pipeline.phase5_normalizer import normalize_text
 from pipeline.schema_validator import validate
 
@@ -26,6 +26,14 @@ class ContractPipelineTests(unittest.TestCase):
         bbox = {"x": 1, "y": 2, "width": 3, "height": 4}
         a = compute_item_id("example.com", "https://example.com/a", "div > p", bbox, "p")
         b = compute_item_id("example.com", "https://example.com/a", "div > p", bbox, "p")
+        self.assertEqual(a, b)
+
+
+    def test_phase1_item_id_ignores_text_and_uses_canonical_bbox(self):
+        bbox_int = {"x": 1, "y": 2, "width": 3, "height": 4}
+        bbox_float = {"x": 1.0, "y": 2.0, "width": 3.0000001, "height": 4.0}
+        a = compute_item_id("example.com", "https://example.com/a", "div > p", bbox_int, "p")
+        b = compute_item_id("example.com", "https://example.com/a", "div > p", bbox_float, "p")
         self.assertEqual(a, b)
 
     def test_phase5_preserves_double_spaces(self):

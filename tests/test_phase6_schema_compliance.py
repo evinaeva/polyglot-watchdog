@@ -43,12 +43,13 @@ class Phase6SchemaComplianceTests(unittest.TestCase):
 
         with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
             "pipeline.run_phase6.write_json_artifact"
-        ) as write_mock:
+        ) as write_mock, patch("pipeline.run_phase6.write_phase_manifest") as manifest_mock:
             issues = run("example.com", "run-en", "run-fr")
 
         self.assertEqual(len(issues), 1)
         self.assertEqual(issues[0]["category"], "MISSING_TRANSLATION")
         write_mock.assert_called_once()
+        manifest_mock.assert_called_once()
 
     def test_phase6_does_not_persist_when_schema_invalid(self):
         artifacts = self._artifacts()
@@ -87,7 +88,7 @@ class Phase6SchemaComplianceTests(unittest.TestCase):
         with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
             "pipeline.run_phase6._load_blocked_overlay_pages",
             return_value=[{"capture_context_id": "ctx-1", "url": "https://fr.example.com/p", "storage_uri": "gs://b/fr.png"}],
-        ), patch("pipeline.run_phase6.write_json_artifact"):
+        ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
             issues = run("example.com", "run-en", "run-fr")
 
         categories = {issue["category"] for issue in issues}

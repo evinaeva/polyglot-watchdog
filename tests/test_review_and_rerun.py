@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from app.skeleton_server import _parse_rerun_payload, _persist_capture_review
 from pipeline.interactive_capture import CapturePoint, Recipe, RecipeStep
-from pipeline.run_phase1 import build_exact_context_job
+from pipeline.run_phase1 import build_exact_context_job, run_exact_context
 
 
 class ReviewAndRerunTests(unittest.TestCase):
@@ -53,6 +53,34 @@ class ReviewAndRerunTests(unittest.TestCase):
         self.assertEqual(job.context.state, "profile_open")
         self.assertEqual(job.context.viewport_kind, "desktop")
         self.assertEqual(job.context.user_tier, "guest")
+
+    def test_exact_context_rerun_includes_provenance_link(self):
+        recipes = {
+            "profile": Recipe(
+                recipe_id="profile",
+                url_pattern="/profile",
+                steps=(RecipeStep(action="click", selector="#profile"),),
+                capture_points=(CapturePoint(state="profile_open"),),
+            )
+        }
+        with patch("pipeline.run_phase1.load_recipes_for_planner", return_value=recipes), \
+             patch("pipeline.run_phase1.main") as main_mock, \
+             patch("pipeline.run_phase1.asyncio.run", side_effect=lambda coro: None):
+            run_exact_context(
+                domain="example.com",
+                run_id="run-rerun",
+                url="https://example.com/profile",
+                viewport_kind="desktop",
+                state="profile_open",
+                user_tier="guest",
+                language="en",
+                original_context_id="ctx-orig",
+            )
+
+        self.assertTrue(main_mock.called)
+        _, kwargs = main_mock.call_args
+        self.assertEqual(kwargs["rerun_provenance"]["original_capture_context_id"], "ctx-orig")
+        self.assertEqual(kwargs["rerun_provenance"]["state"], "profile_open")
 
 
 if __name__ == "__main__":

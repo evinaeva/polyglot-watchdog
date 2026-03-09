@@ -38,3 +38,17 @@ def test_phase1_load_planning_rows_preserves_recipe_ids() -> None:
         rows = load_planning_rows("example.com", "run-3")
 
     assert rows == [{"url": "https://example.com/p", "recipe_ids": ["a", "b"]}]
+
+
+def test_phase1_planner_rejects_duplicate_urls() -> None:
+    from pipeline.interactive_capture import DeterministicPlanner, DeterminismError
+
+    planner = DeterministicPlanner()
+    with pytest.raises(DeterminismError):
+        planner.expand_jobs(
+            seed_urls={"domain": "example.com", "urls": [{"url": "https://example.com/a", "recipe_ids": []}, {"url": "https://example.com/a", "recipe_ids": []}]},
+            recipes={},
+            languages=["en"],
+            viewports=["desktop"],
+            user_tiers=["guest"],
+        )
