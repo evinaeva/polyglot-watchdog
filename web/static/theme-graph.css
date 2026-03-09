@@ -1,0 +1,120 @@
+:root {
+  --bg: #0f172a;
+  --bg-soft: #111b33;
+  --panel: #16213d;
+  --panel-2: #1b2747;
+  --text: #dbe7ff;
+  --muted: #99a7c7;
+  --accent: #4fd1c5;
+  --accent-2: #6ee7ff;
+  --line: #2a3a63;
+  --danger: #f87171;
+}
+
+body {
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+  background:
+    radial-gradient(circle at 20% -10%, rgba(79, 209, 197, 0.12), transparent 35%),
+    radial-gradient(circle at 90% 0%, rgba(110, 231, 255, 0.1), transparent 28%),
+    linear-gradient(180deg, #0b1327 0%, var(--bg) 60%, #0c162f 100%);
+  color: var(--text);
+}
+
+nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(8px);
+  background: rgba(8, 15, 32, 0.85);
+}
+
+nav a {
+  color: #cfe0ff;
+  margin-right: 10px;
+}
+
+nav a:hover,
+nav a:focus-visible {
+  color: var(--accent-2);
+}
+
+nav button,
+button {
+  background: linear-gradient(135deg, #1f766f, #245ea4);
+  border: 1px solid #3a8bb6;
+  color: #ecfeff;
+  border-radius: 10px;
+  padding: 7px 12px;
+}
+
+button:hover { filter: brightness(1.08); }
+
+main {
+  max-width: 1200px;
+  margin: 20px auto;
+  padding: 0 18px 24px;
+}
+
+main > h1,
+main > p,
+main > .controls,
+main > .filters,
+main > details,
+main > table,
+main > section,
+main > .testbench-layout,
+main > .pagination,
+main > #errorBox,
+main > textarea,
+main > h2 {
+  background: linear-gradient(180deg, rgba(26, 39, 70, 0.86), rgba(19, 31, 58, 0.86));
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 14px 28px rgba(2, 10, 28, 0.35);
+}
+
+main > h1,
+main > p,
+main > h2,
+main > .controls,
+main > .filters,
+main > details,
+main > .pagination,
+main > #errorBox {
+  padding: 12px 14px;
+}
+
+input,
+select,
+textarea {
+  background: #0d1833;
+  border: 1px solid #31436f;
+  color: var(--text);
+  border-radius: 10px;
+  padding: 9px 11px;
+}
+
+table { overflow: hidden; }
+th { background: #21325a; color: #dff8ff; border-color: #324b80; }
+td { background: rgba(15, 25, 48, 0.82); border-color: #293d6b; }
+tbody tr:hover td { background: rgba(34, 56, 100, 0.7); }
+
+.page-help { background: linear-gradient(180deg, rgba(30, 44, 78, 0.86), rgba(18, 31, 60, 0.86)); border-color: #324a80; }
+.page-help summary { color: #b9d4ff; }
+.doc-note {
+  border-left-color: var(--accent);
+  background: rgba(79, 209, 197, 0.1);
+}
+
+.module-button { background: #122346; border-color: #33528a; color: var(--text); border-radius: 10px; }
+.module-button:hover { background: #1b315e; }
+
+.modal-overlay { background: rgba(2, 6, 18, 0.82); }
+#modalImage { border: 2px solid #365f9d; border-radius: 10px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45); }
+
+@media (max-width: 900px) {
+  .testbench-layout { grid-template-columns: 1fr; }
+  nav { flex-direction: column; align-items: flex-start; gap: 10px; }
+}
