@@ -47,6 +47,7 @@ SESSION_COOKIE = "pw_session"
 CSRF_COOKIE = "pw_csrf"
 WATCHDOG_PASSWORD_ENV = "WATCHDOG_PASSWORD"
 SESSION_SIGNING_SECRET_ENV = "SESSION_SIGNING_SECRET"
+AUTH_MODE = "ON"
 SESSION_MAX_AGE_SECONDS = max(int(os.environ.get("SESSION_MAX_AGE_SECONDS", "28800")), 300)
 
 MOCK_DOMAINS = ["de.example.com", "en.example.com", "fr.example.com"]
@@ -220,6 +221,10 @@ def _run_phase3_async(job_id: str, domain: str, run_id: str) -> None:
 
 
 class SkeletonHandler(BaseHTTPRequestHandler):
+    def _auth_enabled(self) -> bool:
+        mode = os.environ.get("AUTH_MODE", AUTH_MODE).strip().upper()
+        return mode != "OFF"
+
     def _is_production(self) -> bool:
         return bool(os.environ.get("K_SERVICE")) or os.environ.get("ENV", "").lower() == "production"
 
@@ -286,6 +291,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         return expires_at > int(time.time())
 
     def _require_auth(self, *, api: bool) -> bool:
+        if not self._auth_enabled():
+            return True
         if self._is_authenticated():
             return True
         if api:
@@ -303,6 +310,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         return secrets.token_urlsafe(32)
 
     def _validate_csrf(self, token: str) -> bool:
+        if not self._auth_enabled():
+            return True
         cookie_token = self._get_cookie(CSRF_COOKIE)
         return bool(cookie_token and token and secrets.compare_digest(cookie_token, token))
 
@@ -315,6 +324,11 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/login":
+            if not self._auth_enabled():
+                self.send_response(HTTPStatus.FOUND)
+                self.send_header("Location", "/")
+                self.end_headers()
+                return
             if self._is_authenticated():
                 self.send_response(HTTPStatus.FOUND)
                 self.send_header("Location", "/")
@@ -454,6 +468,11 @@ class SkeletonHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         if self.path == "/login":
+            if not self._auth_enabled():
+                self.send_response(HTTPStatus.FOUND)
+                self.send_header("Location", "/")
+                self.end_headers()
+                return
             form = self._read_form_payload()
             password = str(form.get("password", "")).strip()
             csrf_token = str(form.get("csrf_token", "")).strip()
@@ -507,6 +526,9 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             return
 
         if self.path == "/logout":
+            if not self._auth_enabled():
+                self._json_response({"status": "auth disabled"})
+                return
             if not self._require_auth(api=False):
                 return
             csrf_header = self.headers.get("X-CSRF-Token", "")
@@ -786,6 +808,10 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.NOT_FOUND, "Template not found")
             return
         html = path.read_text(encoding="utf-8")
+        html = html.replace(
+            "{{logout_button}}",
+            '<button id="logoutButton" type="button" data-i18n="nav.logout">Logout</button>' if self._auth_enabled() else "",
+        )
         if replacements:
             for key, value in replacements.items():
                 html = html.replace(key, value)

@@ -9,7 +9,7 @@ All data returned by the API endpoints is mock/static.
 
 | Route | Description |
 |---|---|
-| `/login` | Login screen (required before access to UI/API) |
+| `/login` | Login screen (used only when auth mode is ON) |
 | `/` | Issues explorer (returns results only when filters are applied) |
 | `/crawler` | URL crawler page |
 | `/pulling` | Content pulling and annotation page |
@@ -18,12 +18,24 @@ All data returned by the API endpoints is mock/static.
 
 ## Authentication and CSRF
 
+## Auth mode switch (one line)
+
+In `app/skeleton_server.py` there is a single toggle:
+
+```python
+AUTH_MODE = "ON"
+```
+
+Set it to `"OFF"` to disable login/session/CSRF checks and make all UI/API routes publicly accessible (no redirects to `/login`).
+
+⚠️ `AUTH_MODE = "OFF"` means public access for anyone with the URL.
+
 The web app now uses the same model as PutThatBase:
 
 - Password login form on `/login`.
 - Signed session cookie (`pw_session`) after successful login.
 - CSRF cookie/token (`pw_csrf`) validation for all mutating requests (`POST`/`PUT`).
-- Protected pages and API endpoints redirect/deny access when unauthenticated.
+- Protected pages and API endpoints redirect/deny access when unauthenticated (only when auth mode is ON).
 - Logout via `POST /logout`, which clears both session and CSRF cookies.
 
 Cookie policy:
@@ -53,7 +65,7 @@ Verify:
 ```bash
 curl -i http://localhost:8080/
 ```
-(should redirect to `/login` until authenticated).
+(with `AUTH_MODE="ON"`, should redirect to `/login` until authenticated).
 
 ## Build and deploy to Cloud Run
 
