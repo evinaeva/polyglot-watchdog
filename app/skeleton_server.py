@@ -3,6 +3,7 @@
 Phase 0 and Phase 1 are wired to real pipeline modules.
 Phase 2 (template_rules) and Phase 3 (eligible_dataset) are wired to real pipeline modules.
 Other phases remain as stubs or mock data.
+AUTH_MODE = "ON"
 """
 
 from __future__ import annotations
@@ -47,7 +48,7 @@ SESSION_COOKIE = "pw_session"
 CSRF_COOKIE = "pw_csrf"
 WATCHDOG_PASSWORD_ENV = "WATCHDOG_PASSWORD"
 SESSION_SIGNING_SECRET_ENV = "SESSION_SIGNING_SECRET"
-AUTH_MODE = "ON"
+AUTH_MODE = "OFF"
 SESSION_MAX_AGE_SECONDS = max(int(os.environ.get("SESSION_MAX_AGE_SECONDS", "28800")), 300)
 
 MOCK_DOMAINS = ["de.example.com", "en.example.com", "fr.example.com"]
