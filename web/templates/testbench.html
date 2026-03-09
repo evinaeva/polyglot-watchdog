@@ -7,7 +7,10 @@
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body data-i18n-title="testbench.page_title">
-  <nav><a href="/" data-i18n="nav.issues">Issues</a> | <a href="/crawler" data-i18n="nav.crawler">Crawler</a> | <a href="/pulling" data-i18n="nav.pulling">Pulling</a> | <a href="/urls" data-i18n="nav.urls">URLs</a> | <a href="/about" data-i18n="nav.about">About</a> | <a href="/testbench" data-i18n="nav.testbench">Testbench</a> | <label for="languageSwitcher" data-i18n="language.label">Language</label> <select id="languageSwitcher"><option value="ru">RU</option><option value="en">EN</option></select> | {{logout_button}}</nav>
+  <nav>
+    <span class="nav-links"><a href="/" data-i18n="nav.issues">Issues</a> | <a href="/crawler" data-i18n="nav.crawler">Crawler</a> | <a href="/pulling" data-i18n="nav.pulling">Pulling</a> | <a href="/urls" data-i18n="nav.urls">URLs</a> | <a href="/about" data-i18n="nav.about">About</a> | <a href="/testbench" data-i18n="nav.testbench">Testbench</a> | {{logout_button}}</span>
+    <span id="languageToggle" class="language-toggle"><a href="#" data-locale="en">EN</a> | <a href="#" data-locale="ru">RU</a></span>
+  </nav>
   <main>
     <h1 data-i18n="testbench.h1">INTERNAL TEST PAGE / NON-PRODUCTION</h1>
     <details class="page-help">

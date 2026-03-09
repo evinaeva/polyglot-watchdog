@@ -5,12 +5,21 @@
   const supported = ['ru', 'en'];
   const dictionaries = { ru: {}, en: {} };
 
+  function isLoginPage() {
+    return window.location.pathname === '/login';
+  }
+
   function getLocale() {
+    if (isLoginPage()) return 'en';
     const saved = localStorage.getItem(STORAGE_KEY);
     return supported.includes(saved) ? saved : DEFAULT_LOCALE;
   }
 
   function setLocale(locale) {
+    if (isLoginPage()) {
+      window.__pwLocale = 'en';
+      return;
+    }
     const next = supported.includes(locale) ? locale : DEFAULT_LOCALE;
     localStorage.setItem(STORAGE_KEY, next);
     window.__pwLocale = next;
@@ -49,14 +58,30 @@
   }
 
   function bindLanguageSwitcher() {
-    const switcher = document.getElementById('languageSwitcher');
-    if (!switcher) return;
-    switcher.value = window.__pwLocale || getLocale();
-    switcher.addEventListener('change', () => {
-      setLocale(switcher.value);
-      applyI18n();
-      document.dispatchEvent(new CustomEvent('pw:i18n:changed'));
+    const toggle = document.getElementById('languageToggle');
+    if (!toggle) return;
+
+    const links = toggle.querySelectorAll('[data-locale]');
+    const updateActiveLocale = () => {
+      const activeLocale = window.__pwLocale || getLocale();
+      links.forEach((link) => {
+        link.classList.toggle('active', link.dataset.locale === activeLocale);
+      });
+    };
+
+    updateActiveLocale();
+    links.forEach((link) => {
+      link.addEventListener('click', (event) => {
+        event.preventDefault();
+        setLocale(link.dataset.locale);
+        applyI18n();
+        updateActiveLocale();
+        document.dispatchEvent(new CustomEvent('pw:i18n:changed'));
+      });
     });
+
+    document.addEventListener('pw:i18n:ready', updateActiveLocale);
+    document.addEventListener('pw:i18n:changed', updateActiveLocale);
   }
 
   async function initI18n() {
