@@ -23,6 +23,7 @@ function renderModuleList(modules) {
     const li = document.createElement('li');
     const btn = document.createElement('button');
     btn.className = 'module-button';
+    btn.title = 'Open module details and available test cases.';
     btn.textContent = `[Phase ${module.phase}] ${module.title} (${statusLabel(module.status)})`;
     btn.onclick = () => renderModuleDetails(module);
     li.appendChild(btn);
@@ -77,8 +78,8 @@ function renderModuleDetails(module) {
     ${renderCaseOptions(module.test_cases || [])}
 
     <h3>Run</h3>
-    <button id="loadInputBtn">Load selected case</button>
-    <button id="runTestBtn">Run test</button>
+    <button id="loadInputBtn" title="Load the selected case input/expected payload without a full execution summary.">Load selected case</button>
+    <button id="runTestBtn" title="Run the selected test case and display assertions and validation output.">Run test</button>
 
     <h3>Case metadata</h3>
     <pre id="caseMetaPreview">(no case loaded)</pre>

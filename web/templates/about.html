@@ -11,6 +11,90 @@
   <main>
     <h1>About</h1>
     <p>Glossary placeholder. Terms will be added in a future phase.</p>
+  <nav><a href="/">Issues</a> | <a href="/crawler">Crawler</a> | <a href="/pulling">Pulling</a> | <a href="/urls">URLs</a> | <a href="/about">About</a> | <a href="/testbench">Testbench</a></nav>
+  <main class="about-layout">
+    <h1>About Polyglot Watchdog</h1>
+
+    <section>
+      <h2>Overview</h2>
+      <p>Polyglot Watchdog is a pipeline and operator interface for building an English reference dataset and detecting localization issues across languages.</p>
+      <p>It combines automated capture, structured extraction, operator review, deterministic element pairing, and issue generation. This repository UI mainly acts as an operator/development console for those workflows.</p>
+    </section>
+
+    <section>
+      <h2>The problem it addresses</h2>
+      <p>Localization QA is difficult to automate because pages include dynamic content, repeated templates, and elements that should not always be compared one-to-one.</p>
+      <p>Polyglot Watchdog addresses this by capturing pages under controlled contexts, extracting stable elements, applying operator rules, and comparing eligible EN reference data with target-language captures.</p>
+      <p class="doc-note"><strong>Current UI reality:</strong> issue artifacts can be produced by backend phases, but parts of the visible UI still use mock-backed paths.</p>
+    </section>
+
+    <section>
+      <h2>Pipeline summary</h2>
+      <h3>Phase 0 — URL discovery</h3>
+      <p>Builds URL inventory artifacts for a domain and run.</p>
+      <h3>Phase 1 — Page capture</h3>
+      <p>Captures screenshots and extracts page items (text, images, buttons, inputs) with stable identifiers.</p>
+      <h3>Phase 2 — Element annotation</h3>
+      <p>Stores rules such as <code>IGNORE_ENTIRE_ELEMENT</code>, <code>MASK_VARIABLE</code>, and <code>ALWAYS_COLLECT</code>.</p>
+      <h3>Phase 3 — English reference dataset</h3>
+      <p>Builds the eligible EN dataset by applying rules and review status filters.</p>
+      <h3>Phase 6 — Localization comparison</h3>
+      <p>Pairs EN and target-language items, then writes issue records with contextual evidence such as IDs, bounding boxes, and screenshot references.</p>
+      <p class="doc-note"><strong>Scope note:</strong> pairing and issue writing are implemented, but this UI does not yet expose every backend comparison detail as a dedicated operator screen.</p>
+    </section>
+
+    <section>
+      <h2>Capture contexts and deterministic pairing</h2>
+      <p>A capture context includes URL, viewport kind, state, and optional user tier. Language is runtime configuration but excluded from context identity.</p>
+      <p>Page and element IDs are deterministic so matching is stable across runs. Element identity excludes text content to avoid translation text changing identity.</p>
+    </section>
+
+    <section>
+      <h2>Review, rerun, and issue generation</h2>
+      <p>Review records are saved by capture context and language and are consumed when building eligible EN data. Operators can request exact-context reruns using the same runtime dimensions.</p>
+      <p>Later comparison phases generate issue artifacts for target runs.</p>
+    </section>
+
+    <section>
+      <h2>Artifacts produced</h2>
+      <ul>
+        <li><code>url_inventory.json</code></li>
+        <li><code>page_screenshots.json</code></li>
+        <li><code>collected_items.json</code></li>
+        <li><code>universal_sections.json</code></li>
+        <li><code>template_rules.json</code></li>
+        <li><code>eligible_dataset.json</code></li>
+        <li><code>issues.json</code></li>
+      </ul>
+      <p>Artifacts are stored per domain/run, with screenshots kept under deterministic page IDs.</p>
+    </section>
+
+    <section>
+      <h2>Typical operator workflow</h2>
+      <ol>
+        <li>Manage seed URLs in <code>/urls</code>.</li>
+        <li>Discover or inspect URLs.</li>
+        <li>Capture EN pages.</li>
+        <li>Review and annotate elements.</li>
+        <li>Build the EN eligible dataset.</li>
+        <li>Capture target-language pages and run comparison.</li>
+        <li>Query issues in <code>/</code>.</li>
+      </ol>
+      <p>Some steps are currently triggered through backend endpoints that are not yet fully represented by dedicated UI pages.</p>
+    </section>
+
+    <section>
+      <h2>Glossary</h2>
+      <ul>
+        <li><strong>Seed URLs:</strong> manually managed canonical URL list.</li>
+        <li><strong>Capture context:</strong> runtime capture dimensions for a page (identity excludes language).</li>
+        <li><strong>page_id:</strong> deterministic page identifier from context identity fields.</li>
+        <li><strong>item_id:</strong> deterministic element identifier from domain/URL/selector/bbox/type.</li>
+        <li><strong>Template rules:</strong> annotation decisions that shape the eligible dataset.</li>
+        <li><strong>Eligible dataset:</strong> filtered English reference artifact used for comparison.</li>
+        <li><strong>Exact context rerun:</strong> replaying capture with the same context parameters.</li>
+      </ul>
+    </section>
   </main>
   <script src="/static/auth.js"></script>
 </body>
