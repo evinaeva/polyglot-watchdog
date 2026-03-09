@@ -29,7 +29,7 @@ from app.recipes import load_recipes_for_planner
 from pipeline.phase1_puller import capture_current_page, execute_recipe_step, pull_page, detect_universal_sections
 from pipeline.interactive_capture import CaptureContext, CapturePoint, CaptureJob, DeterministicPlanner, GCSArtifactWriter, Recipe, RunContext, capture_state
 from pipeline.runtime_config import Phase1RuntimeConfig, load_phase1_runtime_config, validate_seed_urls_payload
-from pipeline.storage import BUCKET_NAME, write_json_artifact, read_json_artifact
+from pipeline.storage import BUCKET_NAME, write_json_artifact, read_json_artifact, write_phase_manifest
 from pipeline.schema_validator import validate, SchemaValidationError
 
 
@@ -173,6 +173,28 @@ async def _execute_recipe_until_state(page, recipe: Recipe, target_state: str) -
         await execute_recipe_step(page, step.action, step.selector, step.wait_for)
 
 
+def _is_non_fatal_not_found_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    not_found_markers = (
+        "not found",
+        "no node found",
+        "failed to find element",
+        "waiting for selector",
+        "selector",
+    )
+    fatal_markers = (
+        "net::",
+        "navigation",
+        "browser has been closed",
+        "target page, context or browser has been closed",
+        "protocol error",
+        "timeout 30000ms exceeded while navigating",
+    )
+    if any(marker in message for marker in fatal_markers):
+        return False
+    return any(marker in message for marker in not_found_markers)
+
+
 async def main(
     domain: str,
     run_id: str,
@@ -181,6 +203,7 @@ async def main(
     state: str,
     user_tier: str | None,
     jobs_override: list[CaptureJob] | None = None,
+    rerun_provenance: dict | None = None,
 ) -> None:
     print(f"[Phase 1] Starting data collection domain={domain} run_id={run_id} lang={language}")
 
@@ -209,6 +232,7 @@ async def main(
     all_collected_items: list[dict] = []
     all_items_by_url: dict[str, list[dict]] = {}
     representative_page_ids: dict[str, str] = {}
+    error_records: list[dict] = []
     run_context = RunContext(run_id=run_id, run_started_at=datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"))
     review_bucket = os.environ.get("REVIEW_BUCKET", BUCKET_NAME)
     artifact_writer = GCSArtifactWriter(_GCSConfigStore(), BUCKET_NAME, review_bucket)
@@ -259,6 +283,18 @@ async def main(
                     )
                 await page.close()
             except Exception as exc:
+                if rerun_provenance is not None and _is_non_fatal_not_found_error(exc):
+                    error_records.append({
+                        "type": "NOT_FOUND",
+                        "url": url,
+                        "viewport_kind": job.context.viewport_kind,
+                        "state": job.context.state,
+                        "user_tier": job.context.user_tier,
+                        "message": str(exc),
+                        "non_fatal": True,
+                    })
+                    print(f"[Phase 1] WARN: exact-context capture NOT FOUND for {url}: {exc}")
+                    continue
                 print(f"[Phase 1] STOP: Failed to pull {url}: {exc}", file=sys.stderr)
                 raise SystemExit(1) from exc
 
@@ -302,7 +338,7 @@ async def main(
     all_collected_items.sort(key=lambda i: (i["item_id"],))
 
     # Detect universal sections (EN only) — Contract §5
-    created_at = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    created_at = run_context.run_started_at
     universal_sections: list[dict] = []
     if language == "en":
         universal_sections = detect_universal_sections(
@@ -333,15 +369,44 @@ async def main(
             sys.exit(1)
 
     # Write artifacts to GCS
-    uri = write_json_artifact(domain, run_id, "page_screenshots.json", all_page_screenshots)
-    print(f"[Phase 1] Wrote page_screenshots -> {uri}")
+    page_screenshots_uri = write_json_artifact(domain, run_id, "page_screenshots.json", all_page_screenshots)
+    print(f"[Phase 1] Wrote page_screenshots -> {page_screenshots_uri}")
 
-    uri = write_json_artifact(domain, run_id, "collected_items.json", all_collected_items)
-    print(f"[Phase 1] Wrote collected_items -> {uri}")
+    collected_items_uri = write_json_artifact(domain, run_id, "collected_items.json", all_collected_items)
+    print(f"[Phase 1] Wrote collected_items -> {collected_items_uri}")
 
+    universal_uri = None
     if language == "en":
-        uri = write_json_artifact(domain, run_id, "universal_sections.json", universal_sections)
-        print(f"[Phase 1] Wrote universal_sections -> {uri}")
+        universal_uri = write_json_artifact(domain, run_id, "universal_sections.json", universal_sections)
+        print(f"[Phase 1] Wrote universal_sections -> {universal_uri}")
+
+    manifest = {
+        "schema_version": "v1.0",
+        "phase": "phase1",
+        "run_id": run_id,
+        "domain": domain,
+        "artifact_uris": sorted([u for u in [
+            page_screenshots_uri,
+            collected_items_uri,
+            universal_uri,
+        ] if u]),
+        "summary_counters": {
+            "pages": len(all_page_screenshots),
+            "items": len(all_collected_items),
+            "universal_sections": len(universal_sections),
+        },
+        "provenance": {
+            "language": language,
+            "viewport_kind": viewport_kind,
+            "state": state,
+            "user_tier": user_tier,
+            "run_started_at": run_context.run_started_at,
+            "rerun": rerun_provenance or {},
+        },
+        "error_records": sorted(error_records, key=lambda r: (r.get("url", ""), r.get("state", ""))),
+    }
+    manifest_uri = write_phase_manifest(domain, run_id, "phase1", manifest)
+    print(f"[Phase 1] Wrote manifest -> {manifest_uri}")
 
     print(f"[Phase 1] Complete. {len(all_page_screenshots)} pages, {len(all_collected_items)} items.")
 
@@ -369,9 +434,17 @@ def run_with_config(config: Phase1RuntimeConfig):
     return asyncio.run(main(config.domain, config.run_id, config.language, config.viewport_kind, config.state, config.user_tier))
 
 
-def run_exact_context(domain: str, run_id: str, url: str, viewport_kind: str, state: str, user_tier: str | None, language: str):
+def run_exact_context(domain: str, run_id: str, url: str, viewport_kind: str, state: str, user_tier: str | None, language: str, original_context_id: str | None = None):
     job = build_exact_context_job(domain, url, language, viewport_kind, state, user_tier)
-    return asyncio.run(main(domain, run_id, language, viewport_kind, state, user_tier, jobs_override=[job]))
+    provenance = {
+        "url": url,
+        "viewport_kind": viewport_kind,
+        "state": state,
+        "user_tier": user_tier,
+        "original_capture_context_id": original_context_id,
+        "recipe_id": job.recipe_id,
+    }
+    return asyncio.run(main(domain, run_id, language, viewport_kind, state, user_tier, jobs_override=[job], rerun_provenance=provenance))
 
 
 if __name__ == "__main__":

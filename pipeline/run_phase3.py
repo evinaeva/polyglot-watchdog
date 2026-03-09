@@ -34,7 +34,7 @@ if project_root not in sys.path:
 
 from pipeline.phase2_annotator import filter_items_by_rules
 from pipeline.interactive_capture import CaptureContext, build_capture_context_id, build_eligible_dataset
-from pipeline.storage import write_json_artifact, write_text_artifact, read_json_artifact
+from pipeline.storage import write_json_artifact, write_text_artifact, read_json_artifact, BUCKET_NAME, write_phase_manifest
 from pipeline.schema_validator import validate, SchemaValidationError
 
 
@@ -56,6 +56,21 @@ def _load_review_statuses(domain: str, language: str, capture_context_ids: list[
     return statuses
 
 
+def _universal_sections_as_eligible_rows(universal_sections: list[dict], language: str) -> list[dict]:
+    rows: list[dict] = []
+    for section in sorted(universal_sections, key=lambda r: (r.get("fingerprint", ""), r.get("representative_url", ""))):
+        rows.append({
+            "item_id": f"universal-{section.get('fingerprint', '')}",
+            "page_id": section.get("representative_page_id"),
+            "url": section.get("representative_url"),
+            "language": language,
+            "element_type": "universal_section",
+            "text": section.get("label", "universal_section"),
+            "mask_applied": False,
+        })
+    return rows
+
+
 def run(domain: str, run_id: str) -> list[dict]:
     """Build eligible_dataset from collected_items + template_rules.
 
@@ -75,6 +90,12 @@ def run(domain: str, run_id: str) -> list[dict]:
     except Exception as e:
         print(f"[Phase 3] STOP: Cannot read page_screenshots — {e}", file=sys.stderr)
         sys.exit(1)
+
+    universal_sections: list[dict] = []
+    try:
+        universal_sections = read_json_artifact(domain, run_id, "universal_sections.json")
+    except Exception:
+        universal_sections = []
 
     language = next((str(item.get("language", "")).strip() for item in collected_items if str(item.get("language", "")).strip()), "en")
     page_records_by_capture_context_id: dict[str, dict] = {}
@@ -107,7 +128,10 @@ def run(domain: str, run_id: str) -> list[dict]:
 
     # Apply rules — Contract §6 Phase 3
     eligible_dataset = filter_items_by_rules(review_filtered_items, template_rules)
-    print(f"[Phase 3] eligible_dataset: {len(eligible_dataset)} items (from {len(review_filtered_items)} review-filtered)")
+    universal_rows = _universal_sections_as_eligible_rows(universal_sections, language)
+    eligible_dataset.extend(universal_rows)
+    eligible_dataset.sort(key=lambda row: (row.get("item_id", ""), row.get("url", "")))
+    print(f"[Phase 3] eligible_dataset: {len(eligible_dataset)} items (from {len(review_filtered_items)} review-filtered + {len(universal_rows)} universal)")
 
     # Schema validation gate — SPEC_LOCK §3
     try:
@@ -125,6 +149,34 @@ def run(domain: str, run_id: str) -> list[dict]:
     created_at = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     write_text_artifact(domain, run_id, "phase3_created_at.txt", created_at)
     print(f"[Phase 3] EN reference created_at={created_at}")
+
+    manifest = {
+        "schema_version": "v1.0",
+        "phase": "phase3",
+        "run_id": run_id,
+        "domain": domain,
+        "artifact_uris": sorted([
+            f"gs://{BUCKET_NAME}/{domain}/{run_id}/eligible_dataset.json",
+            f"gs://{BUCKET_NAME}/{domain}/{run_id}/phase3_created_at.txt",
+        ]),
+        "summary_counters": {
+            "eligible_rows": len(eligible_dataset),
+            "blocked_overlay_contexts": len([r for r in review_statuses if r.get("status") == "blocked_by_overlay"]),
+            "universal_sections": len(universal_sections),
+        },
+        "error_records": [
+            {
+                "type": "NON_FATAL_NOT_FOUND",
+                "capture_context_id": rec.get("capture_context_id", ""),
+                "status": rec.get("status", ""),
+            }
+            for rec in sorted(review_statuses, key=lambda r: r.get("capture_context_id", ""))
+            if rec.get("status") in {"blocked_by_overlay", "not_found"}
+        ],
+        "provenance": {"language": language},
+    }
+    manifest_uri = write_phase_manifest(domain, run_id, "phase3", manifest)
+    print(f"[Phase 3] Wrote manifest -> {manifest_uri}")
 
     print(f"[Phase 3] Complete.")
     return eligible_dataset

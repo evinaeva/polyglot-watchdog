@@ -25,7 +25,7 @@ if project_root not in sys.path:
 from pipeline.phase5_normalizer import normalize_text
 from pipeline.interactive_capture import CaptureContext, build_capture_context_id
 from pipeline.schema_validator import SchemaValidationError, validate
-from pipeline.storage import read_json_artifact, write_json_artifact
+from pipeline.storage import BUCKET_NAME, read_json_artifact, write_json_artifact, write_phase_manifest
 
 _PLACEHOLDER_RE = re.compile(r"(%[^%]+%|\[[^\]]+\]|<[^>]+>)")
 
@@ -184,6 +184,17 @@ def run(domain: str, en_run_id: str, target_run_id: str) -> list[dict]:
         sys.exit(1)
 
     write_json_artifact(domain, target_run_id, "issues.json", issues)
+    manifest = {
+        "schema_version": "v1.0",
+        "phase": "phase6",
+        "run_id": target_run_id,
+        "domain": domain,
+        "artifact_uris": [f"gs://{BUCKET_NAME}/{domain}/{target_run_id}/issues.json"],
+        "summary_counters": {"issues": len(issues)},
+        "error_records": [],
+        "provenance": {"en_run_id": en_run_id, "target_run_id": target_run_id},
+    }
+    write_phase_manifest(domain, target_run_id, "phase6", manifest)
     return issues
 
 

@@ -37,6 +37,17 @@ class _FakeWriter:
 
 
 class InteractiveCaptureAcceptanceTests(unittest.TestCase):
+    def test_planner_failfast_on_unknown_recipe(self):
+        planner = DeterministicPlanner()
+        with self.assertRaises(DeterminismError):
+            planner.expand_jobs(
+                {"domain": "example.com", "urls": [{"url": "https://example.com/", "recipe_ids": ["missing"]}]},
+                recipes={},
+                languages=["en"],
+                viewports=["desktop"],
+                user_tiers=["guest"],
+            )
+
     def _payload(self, text="Hello"):
         return (
             {"viewport": {"width": 1280, "height": 720}, "screenshot_bytes": b"PNG"},
@@ -112,6 +123,22 @@ class InteractiveCaptureAcceptanceTests(unittest.TestCase):
         ]
         self.assertEqual(len(screenshot_keys), 1)
 
+
+    def test_no_per_element_screenshot_artifacts_are_written(self):
+        store = InMemoryStore()
+        writer = GCSArtifactWriter(store, "watchdog-data", "watchdog-review")
+        context = CaptureContext("example.com", "https://example.com/", "en", "desktop", "baseline", "guest")
+        payload = (
+            {"viewport": {"width": 1280, "height": 720}, "screenshot_bytes": b"PNG"},
+            [
+                {"css_selector": "main > p:nth-of-type(1)", "element_type": "p", "bbox": {"x": 1, "y": 2, "width": 3, "height": 4}, "text": "A", "visible": True},
+                {"css_selector": "main > p:nth-of-type(2)", "element_type": "p", "bbox": {"x": 5, "y": 6, "width": 7, "height": 8}, "text": "B", "visible": True},
+            ],
+        )
+        capture_state(context, payload, writer, self._run_context())
+        screenshot_keys = [k for (bucket, k) in store.objects if bucket == "watchdog-data" and "/screenshots/" in k]
+        self.assertEqual(len(screenshot_keys), 1)
+        self.assertTrue(screenshot_keys[0].endswith("/screenshot.png"))
 
     def test_storage_uris_are_language_partitioned(self):
         store = InMemoryStore()

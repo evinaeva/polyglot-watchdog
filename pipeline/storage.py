@@ -24,10 +24,34 @@ import json
 import os
 from typing import Any
 
+from pipeline.schema_validator import validate
+
 BUCKET_NAME = os.environ.get(
     "ARTIFACTS_BUCKET",
     "polyglot-watchdog-artifacts-1018698441568",
 )
+
+
+# Contract schema-gate applies only to normative v1.0 artifacts.
+# Phase manifests are intentionally out-of-band until/if a dedicated manifest schema is introduced.
+_ARTIFACT_NAME_BY_FILENAME = {
+    "url_inventory.json": "url_inventory",
+    "url_rules.json": "url_rules",
+    "page_screenshots.json": "page_screenshots",
+    "collected_items.json": "collected_items",
+    "universal_sections.json": "universal_sections",
+    "template_rules.json": "template_rules",
+    "eligible_dataset.json": "eligible_dataset",
+    "issues.json": "issues",
+}
+
+
+def _canonical_json_text(data: Any) -> str:
+    return json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def write_phase_manifest(domain: str, run_id: str, phase_name: str, manifest: dict[str, Any]) -> str:
+    return write_json_artifact(domain, run_id, f"{phase_name}_manifest.json", manifest)
 
 
 def _gcs_client():
@@ -59,7 +83,10 @@ def write_json_artifact(
     bucket = client.bucket(BUCKET_NAME)
     path = artifact_path(domain, run_id, filename)
     blob = bucket.blob(path)
-    content = json.dumps(data, ensure_ascii=False, sort_keys=True, indent=2)
+    artifact_name = _ARTIFACT_NAME_BY_FILENAME.get(filename)
+    if artifact_name is not None:
+        validate(artifact_name, data)
+    content = _canonical_json_text(data)
     blob.upload_from_string(content, content_type="application/json; charset=utf-8")
     return f"gs://{BUCKET_NAME}/{path}"
 

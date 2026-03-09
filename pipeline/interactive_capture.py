@@ -122,7 +122,9 @@ def _canonical_bbox_payload(bbox: dict[str, Any]) -> str:
         value = bbox[key]
         if not isinstance(value, (int, float)):
             raise DeterminismError(f"Bounding box field '{key}' must be numeric")
-    canonical_bbox = {k: bbox[k] for k in required}
+    # Deliberate normalization for deterministic item_id inputs: fixed precision avoids
+    # run-to-run floating noise from browser geometry calculations.
+    canonical_bbox = {k: round(float(bbox[k]), 4) for k in required}
     return json.dumps(canonical_bbox, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
@@ -141,16 +143,47 @@ def validate_state_name(state: str) -> None:
 
 class DeterministicPlanner:
     def expand_jobs(self, seed_urls: dict[str, Any], recipes: dict[str, Recipe], languages: list[str], viewports: list[str], user_tiers: list[str]) -> list[CaptureJob]:
-        rows = sorted(seed_urls["urls"], key=lambda row: row["url"])
+        rows_by_url: dict[str, dict[str, Any]] = {}
+        for raw_row in seed_urls.get("urls", []):
+            if not isinstance(raw_row, dict) or not isinstance(raw_row.get("url"), str):
+                raise DeterminismError("Planning rows must include explicit url strings")
+            url = raw_row["url"].strip()
+            if not url:
+                raise DeterminismError("Planning rows must include non-empty url")
+            if url in rows_by_url:
+                raise DeterminismError(f"Duplicate planning row url breaks deterministic planning: {url}")
+            recipe_ids = raw_row.get("recipe_ids")
+            if recipe_ids is None:
+                recipe_ids = []
+            if not isinstance(recipe_ids, list):
+                raise DeterminismError(f"recipe_ids must be an array for url={url}")
+            rows_by_url[url] = {"url": url, "recipe_ids": list(recipe_ids)}
+        rows = [rows_by_url[url] for url in sorted(rows_by_url.keys())]
+        if not rows:
+            raise DeterminismError("No explicit planning rows available")
+
+        if not languages or not viewports or not user_tiers:
+            raise DeterminismError("languages/viewports/user_tiers must be explicit non-empty collections")
+
+        normalized_languages = sorted({str(v).strip() for v in languages if str(v).strip()})
+        normalized_viewports = sorted({str(v).strip() for v in viewports if str(v).strip()})
+        normalized_tiers = sorted({str(v).strip() for v in user_tiers})
+        if len(normalized_languages) != len(languages) or len(normalized_viewports) != len(viewports) or len(normalized_tiers) != len(user_tiers):
+            raise DeterminismError("Planner inputs must not rely on duplicate/blank ordering")
+
         jobs: list[CaptureJob] = []
-        for language in sorted(languages):
-            for viewport in sorted(viewports):
-                for user_tier in sorted(user_tiers):
+        for language in normalized_languages:
+            for viewport in normalized_viewports:
+                for user_tier in normalized_tiers:
                     for row in rows:
                         url = row["url"]
                         jobs.append(CaptureJob(CaptureContext(seed_urls["domain"], url, language, viewport, "baseline", user_tier), "baseline"))
                         for recipe_id in sorted(row.get("recipe_ids", [])):
+                            if recipe_id not in recipes:
+                                raise DeterminismError(f"Unknown recipe_id={recipe_id!r} in planning rows for {url}")
                             recipe = recipes[recipe_id]
+                            if not recipe.capture_points:
+                                raise DeterminismError(f"Recipe {recipe.recipe_id} has no explicit capture_points")
                             for point in recipe.capture_points:
                                 validate_state_name(point.state)
                                 jobs.append(CaptureJob(CaptureContext(seed_urls["domain"], url, language, viewport, point.state, user_tier), "recipe", recipe_id))
