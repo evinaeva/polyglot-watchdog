@@ -1,46 +1,47 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Polyglot Watchdog - Seed URLs</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
-<body>
-  <nav><a href="/">Issues</a> | <a href="/crawler">Crawler</a> | <a href="/pulling">Pulling</a> | <a href="/urls">URLs</a> | <a href="/about">About</a> | <a href="/testbench">Testbench</a> | <button id="logoutButton" type="button">Logout</button></nav>
+<body data-i18n-title="urls.page_title">
+  <nav class="top-nav"><a href="/" data-i18n="nav.issues">Issues</a> | <a href="/crawler" data-i18n="nav.crawler">Crawler</a> | <a href="/pulling" data-i18n="nav.pulling">Pulling</a> | <a href="/urls" data-i18n="nav.urls">URLs</a> | <a href="/about" data-i18n="nav.about">About</a> | <a href="/testbench" data-i18n="nav.testbench">Testbench</a>  <span class="nav-right"><span class="lang-switcher" aria-label="Language switcher"><a href="#" data-locale="en">EN</a> | <a href="#" data-locale="ru">RU</a></span> | <button id="logoutButton" type="button" data-i18n="nav.logout">Logout</button></span></nav>
   <main>
-    <h1>Seed URL Manager</h1>
+    <h1 data-i18n="urls.h1">Seed URL Manager</h1>
     <details class="page-help">
-      <summary>What does this page do?</summary>
+      <summary><span data-i18n="common.page_help">What does this page do?</span></summary>
       <div class="page-help-content">
-        <p>Manage the stored seed URL list for a domain. These URLs feed discovery/capture workflows.</p>
+        <p><span data-i18n="urls.help.p1">Manage the stored seed URL list for a domain. These URLs feed discovery/capture workflows.</span></p>
         <ul>
-          <li><strong>Load</strong>: fetch saved URLs for the domain.</li>
-          <li><strong>Replace list</strong>: overwrite saved URLs with textarea content.</li>
-          <li><strong>Add to list</strong>: merge textarea URLs into saved URLs.</li>
+          <li><strong data-i18n="urls.load">Load</strong>: fetch saved URLs for the domain.</li>
+          <li><strong data-i18n="urls.replace">Replace list</strong>: overwrite saved URLs with textarea content.</li>
+          <li><strong data-i18n="urls.add">Add to list</strong>: merge textarea URLs into saved URLs.</li>
           <li><strong>Clear/Delete</strong>: remove all URLs or individual rows.</li>
         </ul>
       </div>
     </details>
     <div class="controls">
-      <label>Domain <input id="domainInput" value="en.wikipedia.org" /></label>
-      <button id="loadButton">Load</button>
+      <label><span data-i18n="urls.domain">Domain</span> <input id="domainInput" value="en.wikipedia.org" /></label>
+      <button id="loadButton" data-i18n="urls.load">Load</button>
     </div>
     <div class="controls">
-      <button id="replaceButton">Replace list</button>
-      <button id="addButton">Add to list</button>
-      <button id="clearButton">Clear</button>
+      <button id="replaceButton" data-i18n="urls.replace">Replace list</button>
+      <button id="addButton" data-i18n="urls.add">Add to list</button>
+      <button id="clearButton" data-i18n="urls.clear">Clear</button>
     </div>
-    <p>Updated at: <span id="updatedAt">-</span></p>
+    <p><span data-i18n="urls.updated">Updated at:</span> <span id="updatedAt">-</span></p>
     <div id="errorBox" class="hidden" style="color:#b00020; margin-bottom: 8px;"></div>
-    <textarea id="urlsMultiline" rows="10" style="width: 100%;" placeholder="One URL per line"></textarea>
+    <textarea id="urlsMultiline" rows="10" style="width: 100%;" placeholder="One URL per line" data-i18n-placeholder="urls.placeholder"></textarea>
 
-    <h2>Current saved URLs</h2>
+    <h2 data-i18n="urls.current">Current saved URLs</h2>
     <table>
-      <thead><tr><th>URL</th><th>Action</th></tr></thead>
+      <thead><tr><th>URL</th><th data-i18n="common.action">Action</th></tr></thead>
       <tbody id="savedUrlsBody"></tbody>
     </table>
   </main>
+  <script src="/static/i18n.js"></script>
   <script src="/static/tooltips.js"></script>
   <script src="/static/urls.js"></script>
   <script src="/static/auth.js"></script>

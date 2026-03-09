@@ -10,6 +10,36 @@ nav button {
   cursor: pointer;
 }
 nav button:hover { background: #475569; }
+
+.top-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.nav-right {
+  margin-left: auto;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.lang-switcher a {
+  color: #fff;
+  text-decoration: none;
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.lang-switcher a.active {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.login-lang {
+  margin-top: 8px;
+  text-align: right;
+}
 main { padding: 18px; }
 .controls, .filters { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 table { width: 100%; border-collapse: collapse; background: #fff; }

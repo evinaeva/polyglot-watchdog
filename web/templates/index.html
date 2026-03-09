@@ -1,36 +1,37 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Polyglot Watchdog - Issues</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
-<body>
-  <nav><a href="/">Issues</a> | <a href="/crawler">Crawler</a> | <a href="/pulling">Pulling</a> | <a href="/urls">URLs</a> | <a href="/about">About</a> | <a href="/testbench">Testbench</a> | <button id="logoutButton" type="button">Logout</button></nav>
+<body data-i18n-title="index.page_title">
+  <nav class="top-nav"><a href="/" data-i18n="nav.issues">Issues</a> | <a href="/crawler" data-i18n="nav.crawler">Crawler</a> | <a href="/pulling" data-i18n="nav.pulling">Pulling</a> | <a href="/urls" data-i18n="nav.urls">URLs</a> | <a href="/about" data-i18n="nav.about">About</a> | <a href="/testbench" data-i18n="nav.testbench">Testbench</a>  <span class="nav-right"><span class="lang-switcher" aria-label="Language switcher"><a href="#" data-locale="en">EN</a> | <a href="#" data-locale="ru">RU</a></span> | <button id="logoutButton" type="button" data-i18n="nav.logout">Logout</button></span></nav>
   <main>
-    <h1>Issues Explorer</h1>
+    <h1><span data-i18n="index.h1">Issues Explorer</span></h1>
     <details class="page-help">
-      <summary>What does this page do?</summary>
+      <summary><span data-i18n="common.page_help">What does this page do?</span></summary>
       <div class="page-help-content">
-        <p>Use this page to query localization issues by URL fragment or keyword.</p>
+        <p><span data-i18n="index.help.p1">Use this page to query localization issues by URL fragment or keyword.</span></p>
         <ul>
-          <li><strong>Apply Query</strong> calls the issues endpoint and fills the table.</li>
-          <li>The table stays empty until you run a query.</li>
-          <li>In the current scaffold, results can be mock-backed depending on filters.</li>
+          <li><strong data-i18n="index.apply_query">Apply Query</strong><span data-i18n="index.help.li1_tail"> calls the issues endpoint and fills the table.</span></li>
+          <li><span data-i18n="index.help.li2">The table stays empty until you run a query.</span></li>
+          <li><span data-i18n="index.help.li3">In the current scaffold, results can be mock-backed depending on filters.</span></li>
         </ul>
       </div>
     </details>
-    <p>Issues are shown only after applying a query.</p>
+    <p><span data-i18n="index.note">Issues are shown only after applying a query.</span></p>
     <div class="controls">
-      <input id="issueQuery" placeholder="Enter URL or keyword" />
-      <button id="applyIssueQuery">Apply Query</button>
+      <input id="issueQuery" placeholder="Enter URL or keyword" data-i18n-placeholder="index.query_placeholder" />
+      <button id="applyIssueQuery" data-i18n="index.apply_query">Apply Query</button>
     </div>
     <table id="issuesTable" class="hidden">
-      <thead><tr><th>ID</th><th>Category</th><th>URL</th><th>Message</th></tr></thead>
+      <thead><tr><th data-i18n="common.id">ID</th><th data-i18n="common.category">Category</th><th>URL</th><th data-i18n="common.message">Message</th></tr></thead>
       <tbody></tbody>
     </table>
   </main>
+  <script src="/static/i18n.js"></script>
   <script src="/static/tooltips.js"></script>
   <script src="/static/index.js"></script>
   <script src="/static/auth.js"></script>

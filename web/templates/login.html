@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -43,22 +43,25 @@
   }
 </style>
 </head>
-<body>
+<body data-i18n-title="login.page_title">
   <div class="card">
     <div class="logo">🔐</div>
-    <h1>Polyglot Watchdog</h1>
-    <div class="sub">Please enter the access password</div>
+    <h1 data-i18n="login.title">Polyglot Watchdog</h1>
+    <div class="sub" data-i18n="login.subtitle">Please enter the access password</div>
 
     {{error_block}}
 
     <form method="post" action="/login">
-      <label for="password">Password</label>
+      <label for="password" data-i18n="login.password">Password</label>
       <input id="password" name="password" type="password" required autofocus>
       <input type="hidden" name="csrf_token" value="{{csrf_token}}">
-      <button type="submit">Log In</button>
+      <button type="submit" data-i18n="login.submit">Log In</button>
     </form>
 
-    <div class="hint">Authorized access only</div>
+    <div class="lang-switcher login-lang" aria-label="Language switcher"><a href="#" data-locale="en">EN</a> | <a href="#" data-locale="ru">RU</a></div>
+
+    <div class="hint" data-i18n="login.hint">Authorized access only</div>
   </div>
+  <script src="/static/i18n.js"></script>
 </body>
 </html>

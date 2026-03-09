@@ -1,64 +1,65 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Polyglot Watchdog - Pulling</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
-<body>
-  <nav><a href="/">Issues</a> | <a href="/crawler">Crawler</a> | <a href="/pulling">Pulling</a> | <a href="/urls">URLs</a> | <a href="/about">About</a> | <a href="/testbench">Testbench</a> | <button id="logoutButton" type="button">Logout</button></nav>
+<body data-i18n-title="pulling.page_title">
+  <nav class="top-nav"><a href="/" data-i18n="nav.issues">Issues</a> | <a href="/crawler" data-i18n="nav.crawler">Crawler</a> | <a href="/pulling" data-i18n="nav.pulling">Pulling</a> | <a href="/urls" data-i18n="nav.urls">URLs</a> | <a href="/about" data-i18n="nav.about">About</a> | <a href="/testbench" data-i18n="nav.testbench">Testbench</a>  <span class="nav-right"><span class="lang-switcher" aria-label="Language switcher"><a href="#" data-locale="en">EN</a> | <a href="#" data-locale="ru">RU</a></span> | <button id="logoutButton" type="button" data-i18n="nav.logout">Logout</button></span></nav>
   <main>
-    <h1>Pulling</h1>
+    <h1 data-i18n="pulling.h1">Pulling</h1>
     <details class="page-help">
-      <summary>What does this page do?</summary>
+      <summary><span data-i18n="common.page_help">What does this page do?</span></summary>
       <div class="page-help-content">
-        <p>Inspect pulled page elements, filter rows, and assign annotation decisions.</p>
+        <p data-i18n="pulling.help.p1">Inspect pulled page elements, filter rows, and assign annotation decisions.</p>
         <ul>
-          <li><strong>Collect</strong> loads pull rows.</li>
-          <li>Filters narrow rows by URL text and element type.</li>
-          <li>Screenshot thumbnails open a larger preview.</li>
-          <li>Decision dropdown saves row-level rule choices.</li>
+          <li><strong data-i18n="pulling.collect">Collect</strong><span data-i18n="pulling.help.li1_tail"> loads pull rows.</span></li>
+          <li data-i18n="pulling.help.li2">Filters narrow rows by URL text and element type.</li>
+          <li data-i18n="pulling.help.li3">Screenshot thumbnails open a larger preview.</li>
+          <li data-i18n="pulling.help.li4">Decision dropdown saves row-level rule choices.</li>
         </ul>
-        <p>This page currently uses mock pull/rule endpoints for the visible interactions.</p>
+        <p data-i18n="pulling.help.p2">This page currently uses mock pull/rule endpoints for the visible interactions.</p>
       </div>
     </details>
     <div class="controls">
       <input id="languageSubdomain" value="fr.example.com" aria-label="language subdomain" />
       <select id="domainDropdown"></select>
-      <button id="collectPullsButton">Collect</button>
+      <button id="collectPullsButton" data-i18n="pulling.collect">Collect</button>
     </div>
 
     <div class="filters">
-      <label>URL <input id="urlFilter" placeholder="Filter by URL text" /></label>
-      <label>Element Type <select id="elementTypeFilter"><option value="">All</option></select></label>
-      <label><input type="checkbox" id="imagesFilter" /> Images</label>
-      <label><input type="checkbox" id="buttonsFilter" /> Buttons</label>
-      <label><input type="checkbox" id="inputsFilter" /> Inputs</label>
+      <label><span data-i18n="pulling.filters.url">URL</span> <input id="urlFilter" placeholder="Filter by URL text" data-i18n-placeholder="pulling.url_filter" /></label>
+      <label><span data-i18n="pulling.filters.element_type">Element Type</span> <select id="elementTypeFilter"><option value="" data-i18n="pulling.filters.all">All</option></select></label>
+      <label><input type="checkbox" id="imagesFilter" /> <span data-i18n="pulling.filters.images">Images</span></label>
+      <label><input type="checkbox" id="buttonsFilter" /> <span data-i18n="pulling.filters.buttons">Buttons</span></label>
+      <label><input type="checkbox" id="inputsFilter" /> <span data-i18n="pulling.filters.inputs">Inputs</span></label>
     </div>
-    <p class="inline-help">Decision guide: <code>IGNORE_ENTIRE_ELEMENT</code> excludes an item, <code>MASK_VARIABLE</code> keeps it but masks changing values, and <code>ALWAYS_COLLECT</code> always includes it.</p>
+    <p class="inline-help"><span data-i18n="pulling.decision_guide_prefix">Decision guide:</span> <code>IGNORE_ENTIRE_ELEMENT</code><span data-i18n="pulling.decision_guide.middle1"> excludes an item, </span><code>MASK_VARIABLE</code><span data-i18n="pulling.decision_guide.middle2"> keeps it but masks changing values, and </span><code>ALWAYS_COLLECT</code><span data-i18n="pulling.decision_guide.suffix"> always includes it.</span></p>
 
     <table>
       <thead>
         <tr>
-          <th>url</th><th>element_type</th><th>text</th><th>screenshot thumbnail</th><th>decision</th>
+          <th data-i18n="pulling.table.url">url</th><th data-i18n="pulling.table.element_type">element_type</th><th data-i18n="pulling.table.text">text</th><th data-i18n="pulling.table.screenshot_thumbnail">screenshot thumbnail</th><th data-i18n="pulling.table.decision">decision</th>
         </tr>
       </thead>
       <tbody id="pullRows"></tbody>
     </table>
 
     <div class="pagination">
-      <button id="prevPage">Prev</button>
+      <button id="prevPage" data-i18n="common.prev">Prev</button>
       <span id="pageLabel">Page 1 / 1</span>
-      <button id="nextPage">Next</button>
+      <button id="nextPage" data-i18n="common.next">Next</button>
     </div>
   </main>
 
   <div id="screenshotModal" class="modal hidden">
     <div class="modal-overlay"></div>
-    <img id="modalImage" alt="screenshot" />
+    <img id="modalImage" alt="screenshot" data-i18n-alt="pulling.modal.alt" />
   </div>
 
+  <script src="/static/i18n.js"></script>
   <script src="/static/tooltips.js"></script>
   <script src="/static/pulling.js"></script>
   <script src="/static/auth.js"></script>

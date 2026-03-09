@@ -1,15 +1,15 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Polyglot Watchdog - Internal Testbench</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
-<body>
-  <nav><a href="/">Issues</a> | <a href="/crawler">Crawler</a> | <a href="/pulling">Pulling</a> | <a href="/urls">URLs</a> | <a href="/about">About</a> | <a href="/testbench">Testbench</a> | <button id="logoutButton" type="button">Logout</button></nav>
+<body data-i18n-title="testbench.page_title">
+  <nav class="top-nav"><a href="/" data-i18n="nav.issues">Issues</a> | <a href="/crawler" data-i18n="nav.crawler">Crawler</a> | <a href="/pulling" data-i18n="nav.pulling">Pulling</a> | <a href="/urls" data-i18n="nav.urls">URLs</a> | <a href="/about" data-i18n="nav.about">About</a> | <a href="/testbench" data-i18n="nav.testbench">Testbench</a>  <span class="nav-right"><span class="lang-switcher" aria-label="Language switcher"><a href="#" data-locale="en">EN</a> | <a href="#" data-locale="ru">RU</a></span> | <button id="logoutButton" type="button" data-i18n="nav.logout">Logout</button></span></nav>
   <main>
-    <h1>INTERNAL TEST PAGE / NON-PRODUCTION</h1>
+    <h1 data-i18n="testbench.h1">INTERNAL TEST PAGE / NON-PRODUCTION</h1>
     <details class="page-help">
       <summary>What does this page do?</summary>
       <div class="page-help-content">
@@ -25,7 +25,7 @@
     <p>Manual module testing console for current and future Polyglot Watchdog phases.</p>
     <div class="testbench-layout">
       <aside>
-        <h2>Modules</h2>
+        <h2 data-i18n="testbench.modules">Modules</h2>
         <ul id="moduleList" class="module-list"></ul>
       </aside>
       <section>
@@ -33,6 +33,7 @@
       </section>
     </div>
   </main>
+  <script src="/static/i18n.js"></script>
   <script src="/static/testbench.js"></script>
   <script src="/static/auth.js"></script>
 </body>
