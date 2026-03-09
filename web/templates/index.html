@@ -31,15 +31,19 @@
       <input id="typeFilter" placeholder="issue type" />
       <input id="stateFilter" placeholder="state" />
       <input id="urlFilter" placeholder="url contains" />
+      <input id="domainFilter" placeholder="domain substring in URL" />
       <input id="issueQuery" placeholder="Enter URL or keyword" data-i18n-placeholder="index.query_placeholder" />
       <button id="applyIssueQuery" data-i18n="index.apply_query">Apply Query</button>
       <button id="exportIssues">Export JSON</button>
+      <button id="exportIssuesCsv">Export CSV</button>
     </div>
-    <p class="inline-help">URL filter uses substring match.</p>
+    <div id="issueError" class="hidden" style="color:#b00020; margin:8px 0;"></div>
+    <p class="inline-help">URL and domain filters both use URL substring matching.</p>
     <table id="issuesTable" class="hidden">
-      <thead><tr><th data-i18n="common.id">ID</th><th data-i18n="common.category">Category</th><th>URL</th><th data-i18n="common.message">Message</th></tr></thead>
+      <thead><tr><th>ID</th><th>Category</th><th>URL</th><th>Message</th><th>Severity</th><th>Context</th><th>Drill-down</th></tr></thead>
       <tbody></tbody>
     </table>
+    <section id="issueDetail"></section>
   </main>
   <script src="/static/i18n.js"></script>
   <script src="/static/tooltips.js"></script>

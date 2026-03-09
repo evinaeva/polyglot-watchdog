@@ -2,7 +2,6 @@ const PAGE_SIZE = 20;
 let allRows = [];
 let filteredRows = [];
 let currentPage = 1;
-let currentScale = 1;
 
 const domainDropdown = document.getElementById('domainDropdown');
 const collectPullsButton = document.getElementById('collectPullsButton');
@@ -11,61 +10,48 @@ const pullRows = document.getElementById('pullRows');
 const pageLabel = document.getElementById('pageLabel');
 const prevPage = document.getElementById('prevPage');
 const nextPage = document.getElementById('nextPage');
-
-const urlFilter = document.getElementById('urlFilter');
-const elementTypeFilter = document.getElementById('elementTypeFilter');
-const imagesFilter = document.getElementById('imagesFilter');
-const buttonsFilter = document.getElementById('buttonsFilter');
-const inputsFilter = document.getElementById('inputsFilter');
-
-const screenshotModal = document.getElementById('screenshotModal');
-const modalImage = document.getElementById('modalImage');
-const modalOverlay = document.querySelector('.modal-overlay');
 const pullError = document.getElementById('pullError');
 
+const urlFilter = document.getElementById('urlFilter');
+const stateFilter = document.getElementById('stateFilter');
+const languageFilter = document.getElementById('languageFilter');
+const viewportFilter = document.getElementById('viewportFilter');
+const tierFilter = document.getElementById('tierFilter');
+
+const DECISIONS = {
+  eligible: 'ALWAYS_COLLECT',
+  exclude: 'IGNORE_ENTIRE_ELEMENT',
+  'needs-fix': 'MASK_VARIABLE',
+};
 
 function setPullError(message) {
-  if (!pullError) return;
   pullError.textContent = message || '';
   pullError.classList.toggle('hidden', !message);
 }
 
-function uniqueSorted(values) {
-  return [...new Set(values)].sort((a, b) => a.localeCompare(b));
-}
-
-function populateFilterOptions() {
-  const types = uniqueSorted(allRows.map((row) => row.element_type));
-  elementTypeFilter.innerHTML = '<option value="">All</option>';
-  for (const type of types) {
-    const option = document.createElement('option');
-    option.value = type;
-    option.textContent = type;
-    elementTypeFilter.appendChild(option);
-  }
-}
-
 function applyFilters() {
-  const selectedUrlText = urlFilter.value.trim().toLowerCase();
-  const selectedType = elementTypeFilter.value;
-
+  const urlText = urlFilter.value.trim().toLowerCase();
+  const state = stateFilter.value.trim().toLowerCase();
+  const language = languageFilter.value.trim().toLowerCase();
+  const viewport = viewportFilter.value.trim().toLowerCase();
+  const tier = tierFilter.value.trim().toLowerCase();
   filteredRows = allRows.filter((row) => {
-    if (selectedUrlText && !row.url.toLowerCase().includes(selectedUrlText)) return false;
-    if (selectedType && row.element_type !== selectedType) return false;
-
-    const hasTypeCheckbox = imagesFilter.checked || buttonsFilter.checked || inputsFilter.checked;
-    if (hasTypeCheckbox) {
-      const imageMatch = imagesFilter.checked && row.element_type === 'img';
-      const buttonMatch = buttonsFilter.checked && row.element_type === 'button';
-      const inputMatch = inputsFilter.checked && row.element_type === 'input';
-      if (!(imageMatch || buttonMatch || inputMatch)) return false;
-    }
-
+    if (urlText && !String(row.url || '').toLowerCase().includes(urlText)) return false;
+    if (state && state !== String(row.state || '').toLowerCase()) return false;
+    if (language && language !== String(row.language || '').toLowerCase()) return false;
+    if (viewport && viewport !== String(row.viewport_kind || '').toLowerCase()) return false;
+    if (tier && tier !== String(row.user_tier || '').toLowerCase()) return false;
     return true;
   });
-
   currentPage = 1;
   renderRows();
+}
+
+function decisionLabel(ruleType) {
+  if (ruleType === 'ALWAYS_COLLECT') return 'eligible';
+  if (ruleType === 'IGNORE_ENTIRE_ELEMENT') return 'exclude';
+  if (ruleType === 'MASK_VARIABLE') return 'needs-fix';
+  return '';
 }
 
 function renderRows() {
@@ -73,45 +59,43 @@ function renderRows() {
   currentPage = Math.min(currentPage, totalPages);
   const start = (currentPage - 1) * PAGE_SIZE;
   const rows = filteredRows.slice(start, start + PAGE_SIZE);
-
   pullRows.innerHTML = '';
+
   for (const row of rows) {
     const tr = document.createElement('tr');
-    const decision = row.decision || '';
+    const decision = decisionLabel(row.decision);
+    const notFound = row.not_found ? 'NOT FOUND (rerun)' : '';
     tr.innerHTML = `
-      <td>${row.url}</td>
-      <td>${row.element_type}</td>
-      <td>${row.text}</td>
-      <td><img class="thumb" src="${row.screenshot_thumbnail}" alt="${i18n.t('pulling.thumbnail.alt')}" data-full="${row.screenshot_full}" title="${i18n.t('pulling.thumbnail.title')}" /></td>
+      <td>${row.item_id || ''}</td>
+      <td>${row.url || ''}</td>
+      <td>${row.state || ''}</td>
+      <td>${row.language || ''}</td>
+      <td>${row.viewport_kind || ''}</td>
+      <td>${row.user_tier || ''}</td>
+      <td>${row.element_type || ''}</td>
+      <td>${row.text || ''}</td>
+      <td>${notFound}</td>
       <td>
-        <select data-item-id="${row.item_id}" class="decision-select" title="${i18n.t('pulling.decision.select_title')}">
+        <select data-item-id="${row.item_id}" class="decision-select">
           <option value="" ${decision === '' ? 'selected' : ''}>--</option>
-          <option value="IGNORE_ENTIRE_ELEMENT" ${decision === 'IGNORE_ENTIRE_ELEMENT' ? 'selected' : ''} title="${i18n.t('pulling.decision.exclude_title')}">IGNORE_ENTIRE_ELEMENT</option>
-          <option value="MASK_VARIABLE" ${decision === 'MASK_VARIABLE' ? 'selected' : ''} title="${i18n.t('pulling.decision.mask_title')}">MASK_VARIABLE</option>
-          <option value="ALWAYS_COLLECT" ${decision === 'ALWAYS_COLLECT' ? 'selected' : ''} title="${i18n.t('pulling.decision.always_title')}">ALWAYS_COLLECT</option>
+          <option value="eligible" ${decision === 'eligible' ? 'selected' : ''}>eligible</option>
+          <option value="exclude" ${decision === 'exclude' ? 'selected' : ''}>exclude</option>
+          <option value="needs-fix" ${decision === 'needs-fix' ? 'selected' : ''}>needs-fix</option>
         </select>
       </td>`;
     pullRows.appendChild(tr);
   }
 
-  pageLabel.textContent = i18n.t('pulling.pagination.label', { currentPage, totalPages });
+  pageLabel.textContent = `Page ${currentPage} / ${totalPages}`;
   bindRowInteractions();
 }
 
 function bindRowInteractions() {
-  document.querySelectorAll('.thumb').forEach((thumb) => {
-    thumb.addEventListener('click', () => {
-      currentScale = 1;
-      modalImage.style.transform = `translateY(-50%) scale(${currentScale})`;
-      modalImage.src = thumb.dataset.full;
-      screenshotModal.classList.remove('hidden');
-    });
-  });
-
   document.querySelectorAll('.decision-select').forEach((select) => {
     select.addEventListener('change', async (event) => {
       const itemId = event.target.getAttribute('data-item-id');
-      const ruleType = event.target.value;
+      const selected = event.target.value;
+      const ruleType = DECISIONS[selected] || '';
       if (!ruleType) return;
       const row = allRows.find((entry) => entry.item_id === itemId);
       await fetch('/api/rules', {
@@ -157,7 +141,15 @@ async function loadPullRows() {
     return;
   }
   setPullError('');
-  const params = new URLSearchParams({ domain, run_id: runId });
+  const params = new URLSearchParams({
+    domain,
+    run_id: runId,
+    url: urlFilter.value,
+    state: stateFilter.value,
+    language: languageFilter.value,
+    viewport_kind: viewportFilter.value,
+    user_tier: tierFilter.value,
+  });
   const response = await fetch(`/api/pulls?${params.toString()}`);
   const payload = await response.json();
   if (!response.ok) {
@@ -167,36 +159,16 @@ async function loadPullRows() {
     renderRows();
     return;
   }
-  allRows = (payload.rows || []).sort((a, b) => a.item_id.localeCompare(b.item_id));
-  populateFilterOptions();
+  allRows = (payload.rows || []).sort((a, b) => String(a.item_id || '').localeCompare(String(b.item_id || '')));
   applyFilters();
 }
 
 collectPullsButton.addEventListener('click', loadPullRows);
-prevPage.addEventListener('click', () => {
-  currentPage = Math.max(1, currentPage - 1);
-  renderRows();
-});
-nextPage.addEventListener('click', () => {
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
-  currentPage = Math.min(totalPages, currentPage + 1);
-  renderRows();
-});
-
-[urlFilter, elementTypeFilter, imagesFilter, buttonsFilter, inputsFilter].forEach((input) => {
+prevPage.addEventListener('click', () => { currentPage = Math.max(1, currentPage - 1); renderRows(); });
+nextPage.addEventListener('click', () => { const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE)); currentPage = Math.min(totalPages, currentPage + 1); renderRows(); });
+[urlFilter, stateFilter, languageFilter, viewportFilter, tierFilter].forEach((input) => {
   input.addEventListener('input', applyFilters);
   input.addEventListener('change', applyFilters);
 });
 
-modalOverlay.addEventListener('click', () => screenshotModal.classList.add('hidden'));
-screenshotModal.addEventListener('wheel', (event) => {
-  event.preventDefault();
-  currentScale += event.deltaY < 0 ? 0.1 : -0.1;
-  currentScale = Math.max(0.2, Math.min(3, currentScale));
-  modalImage.style.transform = `translateY(-50%) scale(${currentScale})`;
-});
-
-document.addEventListener('pw:i18n:ready', () => {
-  loadDomains();
-  renderRows();
-});
+document.addEventListener('pw:i18n:ready', () => { loadDomains(); renderRows(); });
