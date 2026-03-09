@@ -6,6 +6,7 @@ let currentScale = 1;
 
 const domainDropdown = document.getElementById('domainDropdown');
 const collectPullsButton = document.getElementById('collectPullsButton');
+const runIdInput = document.getElementById('runIdInput');
 const pullRows = document.getElementById('pullRows');
 const pageLabel = document.getElementById('pageLabel');
 const prevPage = document.getElementById('prevPage');
@@ -20,6 +21,14 @@ const inputsFilter = document.getElementById('inputsFilter');
 const screenshotModal = document.getElementById('screenshotModal');
 const modalImage = document.getElementById('modalImage');
 const modalOverlay = document.querySelector('.modal-overlay');
+const pullError = document.getElementById('pullError');
+
+
+function setPullError(message) {
+  if (!pullError) return;
+  pullError.textContent = message || '';
+  pullError.classList.toggle('hidden', !message);
+}
 
 function uniqueSorted(values) {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b));
@@ -104,12 +113,22 @@ function bindRowInteractions() {
       const itemId = event.target.getAttribute('data-item-id');
       const ruleType = event.target.value;
       if (!ruleType) return;
+      const row = allRows.find((entry) => entry.item_id === itemId);
       await fetch('/api/rules', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ item_id: itemId, rule_type: ruleType }),
+        body: JSON.stringify({
+          domain: domainDropdown.value,
+          run_id: (runIdInput.value || '').trim(),
+          item_id: itemId,
+          url: row?.url || '',
+          state: row?.state || '',
+          language: row?.language || '',
+          viewport_kind: row?.viewport_kind || '',
+          user_tier: row?.user_tier || null,
+          rule_type: ruleType,
+        }),
       });
-      const row = allRows.find((entry) => entry.item_id === itemId);
       if (row) row.decision = ruleType;
     });
   });
@@ -128,8 +147,26 @@ async function loadDomains() {
 }
 
 async function loadPullRows() {
-  const response = await fetch('/api/pulls');
+  const domain = domainDropdown.value;
+  const runId = (runIdInput.value || '').trim();
+  if (!runId) {
+    setPullError('run_id is required');
+    allRows = [];
+    filteredRows = [];
+    renderRows();
+    return;
+  }
+  setPullError('');
+  const params = new URLSearchParams({ domain, run_id: runId });
+  const response = await fetch(`/api/pulls?${params.toString()}`);
   const payload = await response.json();
+  if (!response.ok) {
+    setPullError(payload.error || `Failed to load pulls (${response.status})`);
+    allRows = [];
+    filteredRows = [];
+    renderRows();
+    return;
+  }
   allRows = (payload.rows || []).sort((a, b) => a.item_id.localeCompare(b.item_id));
   populateFilterOptions();
   applyFilters();

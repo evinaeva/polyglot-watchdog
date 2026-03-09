@@ -21,14 +21,16 @@ function setError(message) {
 function render(data) {
   const urls = Array.isArray(data.urls) ? data.urls : [];
   updatedAt.textContent = data.updated_at || "-";
-  urlsMultiline.value = urls.join("\n");
+  urlsMultiline.value = urls.map((row) => typeof row === "string" ? row : (row.url || "")).filter(Boolean).join("\n");
   savedUrlsBody.innerHTML = "";
 
-  for (const url of urls) {
+  for (const row of urls) {
+    const url = typeof row === "string" ? row : (row.url || "");
     const tr = document.createElement("tr");
 
     const urlCell = document.createElement("td");
-    urlCell.textContent = url;
+    const recipes = typeof row === "object" && Array.isArray(row.recipe_ids) ? row.recipe_ids : [];
+    urlCell.textContent = `${url}${recipes.length ? ` [${recipes.join(",")}]` : ""}`;
 
     const actionCell = document.createElement("td");
     const deleteButton = document.createElement("button");
