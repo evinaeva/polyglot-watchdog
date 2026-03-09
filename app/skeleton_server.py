@@ -96,6 +96,7 @@ RULE_DECISIONS: dict[str, str] = {}
 
 # In-memory job status store (cleared on restart — for UI feedback only)
 _jobs: dict[str, dict] = {}
+_template_cache: dict[Path, tuple[int, str]] = {}
 
 
 class _ReviewConfigStore:
@@ -222,6 +223,15 @@ def _run_phase3_async(job_id: str, domain: str, run_id: str) -> None:
 
 
 class SkeletonHandler(BaseHTTPRequestHandler):
+    def _read_template_cached(self, path: Path) -> str:
+        stat = path.stat()
+        cached = _template_cache.get(path)
+        if cached and cached[0] == stat.st_mtime_ns:
+            return cached[1]
+        contents = path.read_text(encoding="utf-8")
+        _template_cache[path] = (stat.st_mtime_ns, contents)
+        return contents
+
     def _auth_enabled(self) -> bool:
         mode = os.environ.get("AUTH_MODE", AUTH_MODE).strip().upper()
         return mode != "OFF"
@@ -808,7 +818,10 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         if not path.exists():
             self.send_error(HTTPStatus.NOT_FOUND, "Template not found")
             return
-        html = path.read_text(encoding="utf-8")
+        html = self._read_template_cached(path)
+        header_path = TEMPLATES_DIR / "_header.html"
+        header_html = self._read_template_cached(header_path) if header_path.exists() else ""
+        html = html.replace("{{header}}", header_html)
         html = html.replace(
             "{{logout_button}}",
             '<button id="logoutButton" type="button" data-i18n="nav.logout">Logout</button>' if self._auth_enabled() else "",
