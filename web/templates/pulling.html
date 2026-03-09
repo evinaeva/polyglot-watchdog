@@ -10,61 +10,40 @@
 <body data-i18n-title="pulling.page_title">
   {{header}}
   <main>
-    <h1 data-i18n="pulling.h1">Pulling</h1>
-    <details class="page-help">
-      <summary><span data-i18n="common.page_help">What does this page do?</span></summary>
-      <div class="page-help-content">
-        <p data-i18n="pulling.help.p1">Inspect pulled page elements, filter rows, and assign annotation decisions.</p>
-        <ul>
-          <li><strong data-i18n="pulling.collect">Collect</strong><span data-i18n="pulling.help.li1_tail"> loads pull rows.</span></li>
-          <li data-i18n="pulling.help.li2">Filters narrow rows by URL text and element type.</li>
-          <li data-i18n="pulling.help.li3">Screenshot thumbnails open a larger preview.</li>
-          <li data-i18n="pulling.help.li4">Decision dropdown saves row-level rule choices.</li>
-        </ul>
-        <p data-i18n="pulling.help.p2">This page reads real Phase 1 artifacts and stores annotation decisions as persisted Phase 2 outputs.</p>
-      </div>
-    </details>
+    <h1>Pulling / Annotation</h1>
     <div class="controls">
-      <input id="languageSubdomain" value="fr.example.com" aria-label="language subdomain" />
       <select id="domainDropdown"></select>
       <input id="runIdInput" placeholder="run id" />
-      <button id="collectPullsButton" data-i18n="pulling.collect">Collect</button>
+      <button id="collectPullsButton">Load elements</button>
     </div>
 
     <div id="pullError" class="hidden" style="color:#b00020; margin:8px 0;"></div>
 
     <div class="filters">
-      <label><span data-i18n="pulling.filters.url">URL</span> <input id="urlFilter" placeholder="Filter by URL text" data-i18n-placeholder="pulling.url_filter" /></label>
-      <label><span data-i18n="pulling.filters.element_type">Element Type</span> <select id="elementTypeFilter"><option value="" data-i18n="pulling.filters.all">All</option></select></label>
-      <label><input type="checkbox" id="imagesFilter" /> <span data-i18n="pulling.filters.images">Images</span></label>
-      <label><input type="checkbox" id="buttonsFilter" /> <span data-i18n="pulling.filters.buttons">Buttons</span></label>
-      <label><input type="checkbox" id="inputsFilter" /> <span data-i18n="pulling.filters.inputs">Inputs</span></label>
+      <input id="urlFilter" placeholder="url contains" />
+      <input id="stateFilter" placeholder="state" />
+      <input id="languageFilter" placeholder="language" />
+      <input id="viewportFilter" placeholder="viewport" />
+      <input id="tierFilter" placeholder="tier" />
     </div>
-    <p class="inline-help"><span data-i18n="pulling.decision_guide_prefix">Decision guide:</span> <code>IGNORE_ENTIRE_ELEMENT</code><span data-i18n="pulling.decision_guide.middle1"> excludes an item, </span><code>MASK_VARIABLE</code><span data-i18n="pulling.decision_guide.middle2"> keeps it but masks changing values, and </span><code>ALWAYS_COLLECT</code><span data-i18n="pulling.decision_guide.suffix"> always includes it.</span></p>
 
     <table>
       <thead>
         <tr>
-          <th data-i18n="pulling.table.url">url</th><th data-i18n="pulling.table.element_type">element_type</th><th data-i18n="pulling.table.text">text</th><th data-i18n="pulling.table.screenshot_thumbnail">screenshot thumbnail</th><th data-i18n="pulling.table.decision">decision</th>
+          <th>item_id</th><th>url</th><th>state</th><th>language</th><th>viewport</th><th>tier</th><th>type</th><th>text</th><th>rerun note</th><th>decision</th>
         </tr>
       </thead>
       <tbody id="pullRows"></tbody>
     </table>
 
     <div class="pagination">
-      <button id="prevPage" data-i18n="common.prev">Prev</button>
+      <button id="prevPage">Prev</button>
       <span id="pageLabel">Page 1 / 1</span>
-      <button id="nextPage" data-i18n="common.next">Next</button>
+      <button id="nextPage">Next</button>
     </div>
   </main>
 
-  <div id="screenshotModal" class="modal hidden">
-    <div class="modal-overlay"></div>
-    <img id="modalImage" alt="screenshot" data-i18n-alt="pulling.modal.alt" />
-  </div>
-
   <script src="/static/i18n.js"></script>
-  <script src="/static/tooltips.js"></script>
   <script src="/static/pulling.js"></script>
   <script src="/static/nav-active.js"></script>
   <script src="/static/auth.js"></script>

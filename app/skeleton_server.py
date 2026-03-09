@@ -8,6 +8,8 @@ AUTH_MODE = "ON"
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import os
 import re
@@ -70,6 +72,39 @@ def _read_json_safe(domain: str, run_id: str, filename: str, default):
         return default
 
 
+
+
+def _artifact_exists(domain: str, run_id: str, filename: str) -> bool:
+    from pipeline.storage import artifact_path, list_run_artifacts
+
+    try:
+        return artifact_path(domain, run_id, filename) in list_run_artifacts(domain, run_id)
+    except Exception:
+        return False
+
+
+def _capture_context_id_from_page(domain: str, page: dict) -> str:
+    from pipeline.interactive_capture import CaptureContext, build_capture_context_id
+
+    ctx = CaptureContext(
+        domain=domain,
+        url=str(page.get("url", "")),
+        language=str(page.get("language", "")),
+        viewport_kind=str(page.get("viewport_kind", "")),
+        state=str(page.get("state", "")),
+        user_tier=page.get("user_tier") or None,
+    )
+    return build_capture_context_id(ctx)
+
+
+def _to_rule_type(decision: str) -> str:
+    value = str(decision or "").strip().lower()
+    mapping = {
+        "eligible": "ALWAYS_COLLECT",
+        "exclude": "IGNORE_ENTIRE_ELEMENT",
+        "needs-fix": "MASK_VARIABLE",
+    }
+    return mapping.get(value, decision)
 def _list_domains() -> list[str]:
     payload = _read_json_safe("_system", "manual", "domains.json", {"domains": []})
     values = payload.get("domains") if isinstance(payload, dict) else []
@@ -116,16 +151,26 @@ def _upsert_job_status(domain: str, run_id: str, job_record: dict) -> None:
 
 
 def _load_phase2_decisions(domain: str, run_id: str) -> list[dict]:
-    payload = _read_json_safe(domain, run_id, "phase2_decisions.json", {"decisions": []})
-    if not isinstance(payload, dict) or not isinstance(payload.get("decisions"), list):
+    payload = _read_json_safe(domain, run_id, "template_rules.json", [])
+    if not isinstance(payload, list):
         return []
-    return [row for row in payload.get("decisions", []) if isinstance(row, dict)]
+    rows: list[dict] = []
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+        rows.append({
+            "item_id": str(row.get("item_id", "")),
+            "url": str(row.get("url", "")),
+            "rule_type": str(row.get("rule_type", "")),
+            "updated_at": str(row.get("created_at", "")),
+        })
+    return rows
 
 
 def _save_phase2_decisions(domain: str, run_id: str, decisions: list[dict]) -> None:
-    from pipeline.storage import write_json_artifact
-
-    write_json_artifact(domain, run_id, "phase2_decisions.json", {"decisions": decisions})
+    # Canonical persistence for annotation decisions is template_rules.json via run_phase2.
+    # This helper remains for compatibility in tests, but intentionally no-ops.
+    _ = (domain, run_id, decisions)
 
 
 def _decision_key(row: dict) -> tuple:
@@ -141,11 +186,8 @@ def _decision_key(row: dict) -> tuple:
 
 
 def _upsert_phase2_decision(domain: str, run_id: str, decision: dict) -> dict:
-    decisions = _load_phase2_decisions(domain, run_id)
-    by_key = {_decision_key(row): row for row in decisions}
-    by_key[_decision_key(decision)] = decision
-    merged = [by_key[key] for key in sorted(by_key.keys())]
-    _save_phase2_decisions(domain, run_id, merged)
+    # Canonical write happens via pipeline.run_phase2.run -> template_rules.json
+    _ = (domain, run_id)
     return decision
 
 
@@ -161,6 +203,24 @@ def _estimate_severity(issue: dict) -> str:
     return "low"
 
 
+def _issues_to_csv(issues: list[dict]) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["id", "category", "severity", "language", "state", "url", "message"])
+    for issue in issues:
+        evidence = issue.get("evidence", {}) if isinstance(issue.get("evidence"), dict) else {}
+        writer.writerow([
+            str(issue.get("id", "")),
+            str(issue.get("category", "")),
+            _estimate_severity(issue),
+            str(issue.get("language", "")),
+            str(issue.get("state", "")),
+            str(evidence.get("url", "")),
+            str(issue.get("message", "")).replace("\n", " "),
+        ])
+    return output.getvalue()
+
+
 def _filter_issues(issues: list[dict], query: dict[str, list[str]]) -> list[dict]:
     q = query.get("q", [""])[0].strip().lower()
     issue_type = query.get("type", [""])[0].strip().lower()
@@ -168,6 +228,7 @@ def _filter_issues(issues: list[dict], query: dict[str, list[str]]) -> list[dict
     severity = query.get("severity", [""])[0].strip().lower()
     state = query.get("state", [""])[0].strip().lower()
     url_filter = query.get("url", [""])[0].strip().lower()
+    domain_filter = query.get("domain_filter", [""])[0].strip().lower()
 
     filtered = []
     for issue in issues:
@@ -187,6 +248,8 @@ def _filter_issues(issues: list[dict], query: dict[str, list[str]]) -> list[dict
         if severity and derived["severity"] != severity:
             continue
         if state and derived["state"] != state:
+            continue
+        if domain_filter and domain_filter not in derived["url"]:
             continue
         if url_filter and url_filter not in derived["url"]:
             continue
@@ -251,7 +314,7 @@ class _ReviewConfigStore:
 
 
 def _parse_rerun_payload(payload: dict) -> dict:
-    required = ["domain", "run_id", "url", "viewport_kind", "state", "language"]
+    required = ["domain", "run_id", "url", "viewport_kind", "state", "language", "capture_context_id"]
     missing = [k for k in required if not str(payload.get(k, "")).strip()]
     if missing:
         raise ValueError(f"missing required fields: {', '.join(missing)}")
@@ -263,6 +326,7 @@ def _parse_rerun_payload(payload: dict) -> dict:
         "state": str(payload.get("state", "")).strip(),
         "user_tier": payload.get("user_tier") or None,
         "url": str(payload.get("url", "")).strip(),
+        "capture_context_id": str(payload.get("capture_context_id", "")).strip() or None,
     }
     load_phase1_runtime_config(runtime_payload)
     return runtime_payload
@@ -345,6 +409,7 @@ def _run_rerun_async(job_id: str, runtime_payload: dict) -> None:
             state=str(runtime_payload.get("state")),
             user_tier=runtime_payload.get("user_tier"),
             language=str(runtime_payload.get("language")),
+            original_context_id=runtime_payload.get("capture_context_id"),
         )
         _jobs[job_id]["status"] = "done"
         _upsert_job_status(str(runtime_payload.get("domain")), str(runtime_payload.get("run_id")), {"job_id": job_id, "status": "succeeded", "context": runtime_payload, "type": "rerun"})
@@ -533,15 +598,33 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             if not domain or not run_id:
                 self._json_response({"error": "domain and run_id required"}, status=HTTPStatus.BAD_REQUEST)
                 return
+            if not _artifact_exists(domain, run_id, "collected_items.json"):
+                self._json_response({"error": "collected_items artifact missing", "status": "not_ready"}, status=HTTPStatus.NOT_FOUND)
+                return
             items = _read_json_safe(domain, run_id, "collected_items.json", [])
+            universal_sections = _read_json_safe(domain, run_id, "universal_sections.json", [])
             decisions = _load_phase2_decisions(domain, run_id)
-            decisions_by_key = {_decision_key(row): row for row in decisions}
+            decisions_by_item_url = {(str(row.get("item_id", "")), str(row.get("url", ""))): row for row in decisions}
+            url_filter = query.get("url", [""])[0].strip().lower()
+            state_filter = query.get("state", [""])[0].strip().lower()
+            language_filter = query.get("language", [""])[0].strip().lower()
+            viewport_filter = query.get("viewport_kind", [""])[0].strip().lower()
+            tier_filter = query.get("user_tier", [""])[0].strip().lower()
             rows = []
             for row in items:
                 if not isinstance(row, dict):
                     continue
-                key = _decision_key(row)
-                decision = decisions_by_key.get(key, {})
+                if url_filter and url_filter not in str(row.get("url", "")).lower():
+                    continue
+                if state_filter and state_filter != str(row.get("state", "")).lower():
+                    continue
+                if language_filter and language_filter != str(row.get("language", "")).lower():
+                    continue
+                if viewport_filter and viewport_filter != str(row.get("viewport_kind", "")).lower():
+                    continue
+                if tier_filter and tier_filter != str(row.get("user_tier") or "").lower():
+                    continue
+                decision = decisions_by_item_url.get((str(row.get("item_id", "")), str(row.get("url", ""))), {})
                 rows.append({
                     "item_id": row.get("item_id", ""),
                     "url": row.get("url", ""),
@@ -551,10 +634,29 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                     "user_tier": row.get("user_tier"),
                     "element_type": row.get("element_type", ""),
                     "text": row.get("text", ""),
+                    "not_found": bool(row.get("not_found", False)),
                     "decision": decision.get("rule_type", ""),
                 })
+            for section in universal_sections if isinstance(universal_sections, list) else []:
+                if not isinstance(section, dict):
+                    continue
+                section_id = str(section.get("section_id", "")).strip()
+                if not section_id:
+                    continue
+                rows.append({
+                    "item_id": f"universal-{section_id}",
+                    "url": section.get("representative_url", ""),
+                    "state": "universal",
+                    "language": "en",
+                    "viewport_kind": "any",
+                    "user_tier": None,
+                    "element_type": "universal_section",
+                    "text": section.get("label", "universal section"),
+                    "not_found": False,
+                    "decision": "",
+                })
             rows.sort(key=lambda item: item.get("item_id", ""))
-            self._json_response({"rows": rows})
+            self._json_response({"rows": rows, "missing_universal_sections": not _artifact_exists(domain, run_id, "universal_sections.json")})
             return
         if parsed.path == "/api/rules":
             if not self._require_auth(api=True):
@@ -577,10 +679,62 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             if not domain or not run_id:
                 self._json_response({"error": "domain and run_id required"}, status=HTTPStatus.BAD_REQUEST)
                 return
+            if not _artifact_exists(domain, run_id, "issues.json"):
+                self._json_response({"error": "issues artifact missing", "status": "not_ready"}, status=HTTPStatus.NOT_FOUND)
+                return
             issues = _read_json_safe(domain, run_id, "issues.json", [])
             filtered = _filter_issues(issues if isinstance(issues, list) else [], query)
+            if parsed.path.endswith("/export") and query.get("format", ["json"])[0].strip().lower() == "csv":
+                encoded = _issues_to_csv(filtered).encode("utf-8")
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "text/csv; charset=utf-8")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.end_headers()
+                self.wfile.write(encoded)
+                return
             self._json_response({"issues": filtered, "count": len(filtered)})
             return
+        if parsed.path == "/api/issues/detail":
+            if not self._require_auth(api=True):
+                return
+            query = parse_qs(parsed.query)
+            domain = query.get("domain", [""])[0]
+            run_id = query.get("run_id", [""])[0]
+            issue_id = query.get("id", [""])[0]
+            if not domain or not run_id or not issue_id:
+                self._json_response({"error": "domain, run_id and id required"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            if not _artifact_exists(domain, run_id, "issues.json"):
+                self._json_response({"error": "issues artifact missing", "status": "not_ready"}, status=HTTPStatus.NOT_FOUND)
+                return
+            issues = _read_json_safe(domain, run_id, "issues.json", [])
+            issue = next((i for i in issues if isinstance(i, dict) and str(i.get("id", "")) == issue_id), None)
+            if issue is None:
+                self._json_response({"error": "issue not found"}, status=HTTPStatus.NOT_FOUND)
+                return
+            evidence = issue.get("evidence", {}) if isinstance(issue.get("evidence"), dict) else {}
+            item_id = str(evidence.get("item_id", ""))
+            page_screens = _read_json_safe(domain, run_id, "page_screenshots.json", [])
+            collected = _read_json_safe(domain, run_id, "collected_items.json", [])
+            item = next((r for r in collected if isinstance(r, dict) and str(r.get("item_id", "")) == item_id), None)
+            page = None
+            if item is not None:
+                page = next((p for p in page_screens if isinstance(p, dict) and p.get("page_id") == item.get("page_id")), None)
+            self._json_response({
+                "issue": issue,
+                "drilldown": {
+                    "screenshot_uri": (page or {}).get("storage_uri") or evidence.get("storage_uri", ""),
+                    "page": page,
+                    "element": item,
+                    "artifact_refs": {
+                        "issues": f"{domain}/{run_id}/issues.json",
+                        "page_screenshots": f"{domain}/{run_id}/page_screenshots.json",
+                        "collected_items": f"{domain}/{run_id}/collected_items.json",
+                    },
+                },
+            })
+            return
+
         if parsed.path == "/api/seed-urls":
             if not self._require_auth(api=True):
                 return
@@ -628,8 +782,14 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             query = parse_qs(parsed.query)
             domain = query.get("domain", [""])[0]
             run_id = query.get("run_id", [""])[0]
-            pages = _read_json_safe(domain, run_id, "page_screenshots.json", []) if domain and run_id else []
-            elements = _read_json_safe(domain, run_id, "collected_items.json", []) if domain and run_id else []
+            if not domain or not run_id:
+                self._json_response({"error": "domain and run_id required"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            if not _artifact_exists(domain, run_id, "page_screenshots.json"):
+                self._json_response({"error": "page_screenshots artifact missing", "status": "not_ready"}, status=HTTPStatus.NOT_FOUND)
+                return
+            pages = _read_json_safe(domain, run_id, "page_screenshots.json", [])
+            elements = _read_json_safe(domain, run_id, "collected_items.json", [])
             by_page = {}
             for row in elements:
                 page_id = row.get("page_id") if isinstance(row, dict) else None
@@ -640,11 +800,14 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             for page in pages:
                 if not isinstance(page, dict):
                     continue
+                capture_context_id = _capture_context_id_from_page(domain, page)
                 contexts.append({
+                    "capture_context_id": capture_context_id,
                     "page_id": page.get("page_id"),
                     "url": page.get("url"),
                     "viewport_kind": page.get("viewport_kind"),
                     "state": page.get("state"),
+                    "language": page.get("language"),
                     "user_tier": page.get("user_tier"),
                     "storage_uri": page.get("storage_uri"),
                     "elements_count": by_page.get(page.get("page_id"), 0),
@@ -999,7 +1162,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             run_id = str(payload.get("run_id", "")).strip()
             item_id = str(payload.get("item_id", "")).strip()
             url = str(payload.get("url", "")).strip()
-            rule_type = str(payload.get("rule_type", "")).strip()
+            rule_type = _to_rule_type(str(payload.get("rule_type", "")).strip())
             allowed = {"IGNORE_ENTIRE_ELEMENT", "MASK_VARIABLE", "ALWAYS_COLLECT"}
             if not domain or not run_id or not item_id or not url or rule_type not in allowed:
                 self._json_response({"status": "error", "message": "domain, run_id, item_id, url and valid rule_type required"}, status=HTTPStatus.BAD_REQUEST)

@@ -31,6 +31,16 @@ class ReviewAndRerunTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "missing required fields"):
             _parse_rerun_payload({"domain": "example.com", "run_id": "r1", "url": "https://example.com/"})
 
+
+
+    def test_rerun_payload_requires_capture_context_id(self):
+        with self.assertRaisesRegex(ValueError, "capture_context_id"):
+            _parse_rerun_payload({"domain": "example.com", "run_id": "r1", "url": "https://example.com/", "viewport_kind": "desktop", "state": "guest", "language": "en"})
+
+    def test_rerun_payload_accepts_capture_context_id(self):
+        payload = _parse_rerun_payload({"domain": "example.com", "run_id": "r1", "url": "https://example.com/", "viewport_kind": "desktop", "state": "guest", "language": "en", "capture_context_id": "ctx-1"})
+        self.assertEqual(payload["capture_context_id"], "ctx-1")
+
     def test_exact_context_job_resolves_single_job(self):
         recipes = {
             "profile": Recipe(

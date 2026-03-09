@@ -3,36 +3,45 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Polyglot Watchdog - Crawler</title>
+  <title>Polyglot Watchdog - Capture Console</title>
   <link rel="stylesheet" href="/static/styles.css" />
   <link rel="stylesheet" href="/static/theme-graph.css" />
 </head>
-<body data-i18n-title="crawler.page_title">
+<body>
   {{header}}
   <main>
-    <h1 data-i18n="crawler.h1">Crawler</h1>
-    <details class="page-help">
-      <summary><span data-i18n="common.page_help">What does this page do?</span></summary>
-      <div class="page-help-content">
-        <p><span data-i18n="crawler.help.p1">Inspect URL inventory for a selected domain.</span></p>
-        <ul>
-          <li><strong data-i18n="crawler.collect">Collect URLs</strong><span data-i18n="crawler.help.li1_tail"> loads inventory rows into the table.</span></li>
-          <li><span data-i18n="crawler.help.li2">This page currently reads the mock inventory route from frontend JS.</span></li>
-          <li><span data-i18n="crawler.help.li3">Real pipeline Phase 0 endpoints exist separately.</span></li>
-        </ul>
-      </div>
-    </details>
+    <h1>Capture Console + Review</h1>
     <div class="controls">
-      <input id="domainInput" value="en.example.com" aria-label="domain" data-i18n-title="crawler.domain_aria" />
-      <button id="collectUrlsButton" data-i18n="crawler.collect">Collect URLs</button>
+      <input id="domainInput" value="en.example.com" placeholder="domain" />
+      <input id="runIdInput" placeholder="run id" />
+      <input id="languagesInput" value="en,fr" placeholder="languages csv" />
+      <input id="viewportsInput" value="desktop,mobile" placeholder="viewports csv" />
+      <input id="tiersInput" value="guest" placeholder="tiers csv" />
+      <label><input type="checkbox" id="includeRecipes" /> baseline + recipes</label>
+      <button id="planButton">Plan</button>
+      <button id="startButton">Start capture jobs</button>
+      <button id="refreshButton">Refresh status</button>
     </div>
+    <div id="captureError" class="hidden" style="color:#b00020; margin:8px 0;"></div>
+
+    <h2>Deterministic capture plan</h2>
     <table>
-      <thead><tr><th><span data-i18n="crawler.table">URL Inventory (placeholder)</span></th></tr></thead>
-      <tbody id="urlInventoryBody"></tbody>
+      <thead><tr><th>#</th><th>url</th><th>recipe</th><th>language</th><th>viewport</th><th>tier</th><th>state</th><th>mode</th></tr></thead>
+      <tbody id="planBody"></tbody>
+    </table>
+
+    <h2>Run progress</h2>
+    <table>
+      <thead><tr><th>run_id</th><th>job_id</th><th>status</th><th>type</th></tr></thead>
+      <tbody id="runsBody"></tbody>
+    </table>
+
+    <h2>Capture contexts review</h2>
+    <table>
+      <thead><tr><th>context_id</th><th>url</th><th>language</th><th>state</th><th>viewport</th><th>tier</th><th>elements</th><th>screenshot_uri</th><th>comment</th><th>actions</th></tr></thead>
+      <tbody id="contextsBody"></tbody>
     </table>
   </main>
-  <script src="/static/i18n.js"></script>
-  <script src="/static/tooltips.js"></script>
   <script src="/static/crawler.js"></script>
   <script src="/static/nav-active.js"></script>
   <script src="/static/auth.js"></script>
