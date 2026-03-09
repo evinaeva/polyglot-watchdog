@@ -9,9 +9,10 @@ from http.server import ThreadingHTTPServer
 from app.skeleton_server import SkeletonHandler
 
 
-class AuthFlowTests(unittest.TestCase):
+class AuthFlowOnTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        os.environ["AUTH_MODE"] = "ON"
         os.environ["WATCHDOG_PASSWORD"] = "test-password"
         os.environ["SESSION_SIGNING_SECRET"] = "test-signing-secret"
         cls.server = ThreadingHTTPServer(("127.0.0.1", 0), SkeletonHandler)
@@ -99,6 +100,35 @@ class AuthFlowTests(unittest.TestCase):
     def test_login_sets_session_cookie(self):
         session_cookie, _ = self._login()
         self.assertTrue(session_cookie.startswith("pw_session="))
+
+
+class AuthFlowOffTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        os.environ["AUTH_MODE"] = "OFF"
+        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), SkeletonHandler)
+        cls.port = cls.server.server_address[1]
+        cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
+        cls.thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.thread.join(timeout=2)
+
+    def request(self, method, path, body=None, headers=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request(method, path, body=body, headers=headers or {})
+        response = conn.getresponse()
+        payload = response.read()
+        header_items = response.getheaders()
+        conn.close()
+        return response.status, header_items, payload
+
+    def test_main_page_is_public_without_redirect(self):
+        status, headers, _ = self.request("GET", "/")
+        self.assertEqual(status, HTTPStatus.OK)
+        self.assertNotIn(("Location", "/login"), headers)
 
 
 if __name__ == "__main__":
