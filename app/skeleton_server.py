@@ -153,6 +153,22 @@ def _require_artifact_exists(domain: str, run_id: str, filename: str) -> None:
     if not _artifact_exists_strict(domain, run_id, filename):
         raise FileNotFoundError(f"{filename} artifact missing")
 
+
+def _capture_artifacts_ready(domain: str, run_id: str) -> bool:
+    return _artifact_exists(domain, run_id, "page_screenshots.json") and _artifact_exists(domain, run_id, "collected_items.json")
+
+
+def _structured_not_ready(action: str, error: str, *, previous_state: str = "not_ready", next_expected_state: str = "ready") -> dict:
+    return {
+        "status": "not_ready",
+        "action": action,
+        "error": error,
+        "previous_state": previous_state,
+        "resulting_state": "not_ready",
+        "next_expected_state": next_expected_state,
+        "remediation": ["complete prerequisite workflow step", "refresh workflow status", "resolve capture runner prerequisites"],
+    }
+
 def _capture_context_id_from_page(domain: str, page: dict) -> str:
     from pipeline.interactive_capture import CaptureContext, build_capture_context_id
 
@@ -551,6 +567,8 @@ def _persist_capture_review(payload: dict) -> dict:
     return {"record": record, "storage_uri": uri}
 
 
+
+
 def _run_phase0_async(job_id: str, domain: str, run_id: str) -> None:
     """Run Phase 0 in a background thread."""
     _jobs[job_id] = {"status": "running", "phase": "0", "domain": domain, "run_id": run_id}
@@ -579,7 +597,11 @@ def _run_phase1_async(job_id: str, runtime_payload: dict) -> None:
     except Exception as exc:
         _jobs[job_id]["status"] = "error"
         _jobs[job_id]["error"] = str(exc)
-        _upsert_job_status(str(runtime_payload.get("domain")), str(runtime_payload.get("run_id")), {"job_id": job_id, "status": "failed", "error": str(exc), "context": runtime_payload})
+        _upsert_job_status(
+            str(runtime_payload.get("domain")),
+            str(runtime_payload.get("run_id")),
+            {"job_id": job_id, "status": "failed", "error": str(exc), "context": runtime_payload, "type": "capture"},
+        )
 
 
 def _run_rerun_async(job_id: str, runtime_payload: dict) -> None:
@@ -617,6 +639,154 @@ def _run_phase3_async(job_id: str, domain: str, run_id: str) -> None:
     except Exception as exc:
         _jobs[job_id]["status"] = "error"
         _jobs[job_id]["error"] = str(exc)
+
+
+def _run_phase6_async(job_id: str, domain: str, run_id: str, en_run_id: str) -> None:
+    _jobs[job_id] = {"status": "running", "phase": "6", "domain": domain, "run_id": run_id, "en_run_id": en_run_id}
+    try:
+        from pipeline.run_phase6 import run as phase6_run
+
+        phase6_run(domain=domain, en_run_id=en_run_id, target_run_id=run_id)
+        _jobs[job_id]["status"] = "done"
+        _upsert_job_status(domain, run_id, {"job_id": job_id, "status": "succeeded", "phase": "6", "en_run_id": en_run_id})
+    except Exception as exc:
+        _jobs[job_id]["status"] = "error"
+        _jobs[job_id]["error"] = str(exc)
+        _upsert_job_status(domain, run_id, {"job_id": job_id, "status": "failed", "phase": "6", "en_run_id": en_run_id, "error": str(exc)})
+
+
+def _workflow_section_status(*, has_artifact: bool, count: int | None = None, pending_on: bool = False) -> str:
+    if has_artifact:
+        if count is not None and count == 0:
+            return "empty"
+        return "ready"
+    if pending_on:
+        return "not_ready"
+    return "not_started"
+
+
+def _workflow_status_payload(domain: str, run_id: str) -> dict:
+    seed_payload = _read_json_safe(domain, "manual", "seed_urls.json", {"urls": []})
+    seed_urls = seed_payload.get("urls") if isinstance(seed_payload, dict) else []
+    seed_count = len([row for row in seed_urls if isinstance(row, dict) and str(row.get("url", "")).strip() and bool(row.get("active", True))])
+
+    pages = _read_json_safe(domain, run_id, "page_screenshots.json", None)
+    items = _read_json_safe(domain, run_id, "collected_items.json", None)
+    rules = _read_json_safe(domain, run_id, "template_rules.json", None)
+    dataset = _read_json_safe(domain, run_id, "eligible_dataset.json", None)
+    issues = _read_json_safe(domain, run_id, "issues.json", None)
+
+    pages_count = len(pages) if isinstance(pages, list) else 0
+    items_count = len(items) if isinstance(items, list) else 0
+    rules_count = len(rules) if isinstance(rules, list) else 0
+    dataset_count = len(dataset) if isinstance(dataset, list) else 0
+    issues_count = len(issues) if isinstance(issues, list) else 0
+
+    contexts = [{"capture_context_id": _capture_context_id_from_page(domain, row), "language": str(row.get("language", ""))} for row in (pages or []) if isinstance(row, dict)]
+    reviews = list(_load_review_statuses_for_contexts(domain, contexts).values()) if contexts else []
+    reviewed_count = len(reviews)
+
+    run_meta = next((row for row in _load_runs(domain).get("runs", []) if str(row.get("run_id", "")) == run_id), None)
+    jobs = run_meta.get("jobs", []) if isinstance(run_meta, dict) else []
+    running = [j for j in jobs if str(j.get("status", "")).lower() in {"running", "queued"}]
+    failed = [j for j in jobs if str(j.get("status", "")).lower() in {"failed", "error"}]
+    capture_jobs = [
+        j for j in jobs
+        if str(j.get("type", "")).lower() == "capture" or str(j.get("phase", "")).lower() == "1" or str(j.get("job_id", "")).startswith("phase1-")
+    ]
+    capture_attempted = bool(capture_jobs)
+    capture_running = any(str(j.get("status", "")).lower() in {"running", "queued"} for j in capture_jobs)
+    capture_failed_jobs = [j for j in capture_jobs if str(j.get("status", "")).lower() in {"failed", "error"}]
+    capture_last_failure = capture_failed_jobs[-1] if capture_failed_jobs else None
+
+    capture_status = "not_started"
+    if capture_running:
+        capture_status = "in_progress"
+    elif isinstance(pages, list):
+        capture_status = "ready" if pages_count > 0 else "empty"
+    elif capture_last_failure is not None:
+        capture_status = "failed"
+    elif capture_attempted:
+        capture_status = "not_ready"
+    elif seed_count:
+        capture_status = "not_ready"
+    review_status = "not_started"
+    if isinstance(pages, list):
+        if pages_count == 0:
+            review_status = "empty"
+        elif reviewed_count == 0:
+            review_status = "not_ready"
+        elif reviewed_count < pages_count:
+            review_status = "in_progress"
+        else:
+            review_status = "ready"
+
+    annotation_status = _workflow_section_status(
+        has_artifact=isinstance(rules, list),
+        count=rules_count,
+        pending_on=reviewed_count >= pages_count and pages_count > 0,
+    )
+    if isinstance(rules, list) and rules_count < items_count and items_count > 0:
+        annotation_status = "partial"
+
+    run_status = "not_started"
+    if running:
+        run_status = "in_progress"
+    elif failed:
+        run_status = "failed"
+    elif isinstance(pages, list):
+        run_status = "ready"
+
+    next_action = "configure_seed_urls"
+    if capture_status in {"not_started", "not_ready", "failed"} and seed_count:
+        next_action = "start_capture"
+    elif capture_status == "in_progress":
+        next_action = "wait_for_capture"
+    elif isinstance(pages, list) and reviewed_count < pages_count:
+        next_action = "complete_review"
+    elif reviewed_count >= pages_count and not isinstance(rules, list):
+        next_action = "save_annotation_rules"
+    elif isinstance(rules, list) and not isinstance(dataset, list):
+        next_action = "generate_eligible_dataset"
+    elif isinstance(dataset, list) and not isinstance(issues, list):
+        next_action = "generate_issues"
+    elif isinstance(issues, list):
+        next_action = "review_issues"
+
+    first_issue_id = ""
+    if isinstance(issues, list) and issues:
+        first_issue_id = str(sorted([row for row in issues if isinstance(row, dict)], key=_issue_sort_key)[0].get("id", ""))
+
+    return {
+        "state_enum": ["not_started", "in_progress", "ready", "empty", "not_ready", "partial", "failed", "out_of_scope"],
+        "seed_urls": {"status": "ready" if seed_count else "empty", "configured": bool(seed_count), "count": seed_count},
+        "run": {
+            "status": run_status,
+            "run_id": run_id,
+            "domain": domain,
+            "jobs_total": len(jobs),
+            "jobs_running": len(running),
+            "jobs_failed": len(failed),
+        },
+        "capture": {
+            "status": capture_status,
+            "contexts": pages_count,
+            "items": items_count,
+            "artifacts_present": isinstance(pages, list),
+            "error": str((capture_last_failure or {}).get("error", "")),
+            "remediation": [
+                "check capture runner prerequisites",
+                "see logs",
+                "verify env config",
+            ] if capture_status == "failed" else [],
+        },
+        "review": {"status": review_status, "total": pages_count, "reviewed": reviewed_count},
+        "annotation": {"status": annotation_status, "rules_count": rules_count},
+        "eligible_dataset": {"status": _workflow_section_status(has_artifact=isinstance(dataset, list), count=dataset_count, pending_on=isinstance(rules, list)), "record_count": dataset_count},
+        "issues": {"status": _workflow_section_status(has_artifact=isinstance(issues, list), count=issues_count, pending_on=isinstance(dataset, list)), "count": issues_count, "first_issue_id": first_issue_id},
+        "next_recommended_action": next_action,
+    }
+
 
 
 class SkeletonHandler(BaseHTTPRequestHandler):
@@ -754,6 +924,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             "/testbench": "testbench.html",
             "/urls": "urls.html",
             "/runs": "runs.html",
+            "/workflow": "workflow.html",
             "/contexts": "contexts.html",
             "/pulls": "pulls.html",
             "/issues/detail": "issues/detail.html",
@@ -1105,6 +1276,22 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             reviews.sort(key=lambda row: (str(row.get("capture_context_id", "")), str(row.get("timestamp", ""))))
             self._json_response({"reviews": reviews})
             return
+        if parsed.path == "/api/workflow/status":
+            if not self._require_auth(api=True):
+                return
+            query = parse_qs(parsed.query)
+            required, missing = _require_query_params(query, "domain", "run_id")
+            if missing:
+                self._json_response(_missing_required_query_params(*missing), status=HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                payload = _workflow_status_payload(required["domain"], required["run_id"])
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self._json_response(payload)
+            return
+
         if parsed.path == "/api/job":
             if not self._require_auth(api=True):
                 return
@@ -1306,9 +1493,31 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 _register_domain(valid_domain)
                 self._json_response({"recipe": saved, "recipes": list_recipes(valid_domain)})
             except ValueError as exc:
-                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                self._json_response(
+                    {
+                        "status": "failed",
+                        "error": str(exc),
+                        "action": "start_capture",
+                        "previous_state": "not_started",
+                        "resulting_state": "failed",
+                        "next_expected_state": "not_started",
+                        "remediation": ["check capture runner prerequisites", "see logs", "verify env config"],
+                    },
+                    status=HTTPStatus.BAD_REQUEST,
+                )
             except Exception as exc:
-                self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                self._json_response(
+                    {
+                        "status": "failed",
+                        "error": str(exc),
+                        "action": "start_capture",
+                        "previous_state": "not_started",
+                        "resulting_state": "failed",
+                        "next_expected_state": "not_started",
+                        "remediation": ["check capture runner prerequisites", "see logs", "verify env config"],
+                    },
+                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
             return
 
         if self.path == "/api/recipes/delete":
@@ -1322,9 +1531,31 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 recipes = delete_recipe(valid_domain, recipe_id)
                 self._json_response({"recipes": recipes})
             except ValueError as exc:
-                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                self._json_response(
+                    {
+                        "status": "failed",
+                        "error": str(exc),
+                        "action": "start_capture",
+                        "previous_state": "not_started",
+                        "resulting_state": "failed",
+                        "next_expected_state": "not_started",
+                        "remediation": ["check capture runner prerequisites", "see logs", "verify env config"],
+                    },
+                    status=HTTPStatus.BAD_REQUEST,
+                )
             except Exception as exc:
-                self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                self._json_response(
+                    {
+                        "status": "failed",
+                        "error": str(exc),
+                        "action": "start_capture",
+                        "previous_state": "not_started",
+                        "resulting_state": "failed",
+                        "next_expected_state": "not_started",
+                        "remediation": ["check capture runner prerequisites", "see logs", "verify env config"],
+                    },
+                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
             return
 
         if self.path == "/api/seed-urls/row-upsert":
@@ -1351,9 +1582,31 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 _register_domain(valid_domain)
                 self._json_response(saved)
             except ValueError as exc:
-                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                self._json_response(
+                    {
+                        "status": "failed",
+                        "error": str(exc),
+                        "action": "start_capture",
+                        "previous_state": "not_started",
+                        "resulting_state": "failed",
+                        "next_expected_state": "not_started",
+                        "remediation": ["check capture runner prerequisites", "see logs", "verify env config"],
+                    },
+                    status=HTTPStatus.BAD_REQUEST,
+                )
             except Exception as exc:
-                self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                self._json_response(
+                    {
+                        "status": "failed",
+                        "error": str(exc),
+                        "action": "start_capture",
+                        "previous_state": "not_started",
+                        "resulting_state": "failed",
+                        "next_expected_state": "not_started",
+                        "remediation": ["check capture runner prerequisites", "see logs", "verify env config"],
+                    },
+                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
             return
 
         if self.path == "/api/capture/plan":
@@ -1553,6 +1806,117 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 return
             result = run_module_test(module_id, case_key if isinstance(case_key, str) else None, inline_payload)
             self._json_response(result)
+            return
+
+        if self.path == "/api/workflow/start-capture":
+            payload = self._read_json_payload()
+            domain = str(payload.get("domain", "")).strip()
+            run_id = str(payload.get("run_id", "")).strip() or str(uuid.uuid4())
+            language = str(payload.get("language", "en")).strip() or "en"
+            viewport_kind = str(payload.get("viewport_kind", "desktop")).strip() or "desktop"
+            state = str(payload.get("state", "guest")).strip() or "guest"
+            user_tier = payload.get("user_tier") or None
+            runtime_payload = {"domain": domain, "run_id": run_id, "language": language, "viewport_kind": viewport_kind, "state": state, "user_tier": user_tier}
+            try:
+                load_phase1_runtime_config(runtime_payload)
+                _register_domain(validate_domain(domain))
+                job_id = f"phase1-{run_id}-{language}-{viewport_kind}-{state}"
+                _upsert_job_status(domain, run_id, {"job_id": job_id, "status": "queued", "context": runtime_payload, "type": "capture"})
+                t = threading.Thread(target=_run_phase1_async, args=(job_id, runtime_payload), daemon=True)
+                t.start()
+                self._json_response({"status": "started", "job_id": job_id, "run_id": run_id, "action": "start_capture", "previous_state": "run_not_started", "resulting_state": "phase_in_progress", "next_expected_state": "phase_completed"})
+            except ValueError as exc:
+                self._json_response(
+                    {
+                        "status": "failed",
+                        "error": str(exc),
+                        "action": "start_capture",
+                        "previous_state": "not_started",
+                        "resulting_state": "failed",
+                        "next_expected_state": "not_started",
+                        "remediation": ["check capture runner prerequisites", "see logs", "verify env config"],
+                    },
+                    status=HTTPStatus.BAD_REQUEST,
+                )
+            except Exception as exc:
+                self._json_response(
+                    {
+                        "status": "failed",
+                        "error": str(exc),
+                        "action": "start_capture",
+                        "previous_state": "not_started",
+                        "resulting_state": "failed",
+                        "next_expected_state": "not_started",
+                        "remediation": ["check capture runner prerequisites", "see logs", "verify env config"],
+                    },
+                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
+            return
+
+        if self.path == "/api/workflow/rerun-context":
+            payload = self._read_json_payload()
+            try:
+                runtime_payload = _parse_rerun_payload(payload)
+                job_id = f"rerun-{runtime_payload['run_id']}-{runtime_payload['capture_context_id']}-{int(time.time())}"
+                _upsert_job_status(runtime_payload["domain"], runtime_payload["run_id"], {"job_id": job_id, "status": "queued", "context": runtime_payload, "type": "rerun"})
+                t = threading.Thread(target=_run_rerun_async, args=(job_id, runtime_payload), daemon=True)
+                t.start()
+                self._json_response({"job_id": job_id, "status": "running", "action": "rerun_context", "type": "rerun", "previous_state": "phase_completed", "resulting_state": "phase_in_progress", "next_expected_state": "phase_completed", "context": runtime_payload}, status=HTTPStatus.ACCEPTED)
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            except Exception as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        if self.path == "/api/workflow/generate-eligible-dataset":
+            payload = self._read_json_payload()
+            domain = payload.get("domain", "").strip()
+            run_id = payload.get("run_id", "").strip()
+            if not domain or not run_id:
+                self._json_response({"status": "error", "message": "domain and run_id required"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            if not _capture_artifacts_ready(domain, run_id):
+                self._json_response(
+                    _structured_not_ready(
+                        "generate_eligible_dataset",
+                        "capture artifacts missing: page_screenshots.json and/or collected_items.json",
+                        previous_state="capture_not_ready",
+                        next_expected_state="capture_ready",
+                    ),
+                    status=HTTPStatus.CONFLICT,
+                )
+                return
+            job_id = f"phase3-{run_id}"
+            _upsert_job_status(domain, run_id, {"job_id": job_id, "status": "queued", "phase": "3", "type": "eligible_dataset"})
+            t = threading.Thread(target=_run_phase3_async, args=(job_id, domain, run_id), daemon=True)
+            t.start()
+            self._json_response({"status": "started", "job_id": job_id, "run_id": run_id, "action": "generate_eligible_dataset", "previous_state": "eligible_dataset_pending", "resulting_state": "in_progress", "next_expected_state": "eligible_dataset_ready"})
+            return
+
+        if self.path == "/api/workflow/generate-issues":
+            payload = self._read_json_payload()
+            domain = str(payload.get("domain", "")).strip()
+            run_id = str(payload.get("run_id", "")).strip()
+            en_run_id = str(payload.get("en_run_id", "")).strip() or run_id
+            if not domain or not run_id:
+                self._json_response({"status": "error", "message": "domain and run_id required"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            if not _artifact_exists(domain, run_id, "eligible_dataset.json"):
+                self._json_response(
+                    _structured_not_ready(
+                        "generate_issues",
+                        "eligible_dataset artifact missing",
+                        previous_state="eligible_dataset_not_ready",
+                        next_expected_state="eligible_dataset_ready",
+                    ),
+                    status=HTTPStatus.CONFLICT,
+                )
+                return
+            job_id = f"phase6-{run_id}"
+            _upsert_job_status(domain, run_id, {"job_id": job_id, "status": "queued", "phase": "6", "type": "issues", "en_run_id": en_run_id})
+            t = threading.Thread(target=_run_phase6_async, args=(job_id, domain, run_id, en_run_id), daemon=True)
+            t.start()
+            self._json_response({"status": "started", "job_id": job_id, "run_id": run_id, "en_run_id": en_run_id, "action": "generate_issues", "previous_state": "issue_generation_pending", "resulting_state": "in_progress", "next_expected_state": "issues_ready"})
             return
 
         # Phase 3 trigger — EN Reference Build
