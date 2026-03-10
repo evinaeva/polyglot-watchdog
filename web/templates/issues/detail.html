@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Polyglot Watchdog - Issue Detail</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  {{header}}
+  <main>
+    <h1>Issue Detail</h1>
+    <p>
+      <a id="detailBackToIssues" href="#">Back to Issues</a> |
+      <a id="detailOpenContexts" href="#">Open related Contexts</a> |
+      <a id="detailOpenPulls" href="#">Open Items/Pulls</a>
+    </p>
+    <div id="issueDetailStatus"></div>
+    <section id="issueCore"></section>
+    <section id="issueEvidence"></section>
+  </main>
+  <script src="/static/i18n.js"></script>
+  <script src="/static/api-client.js"></script>
+  <script src="/static/issues-detail.js"></script>
+  <script src="/static/nav-active.js"></script>
+  <script src="/static/auth.js"></script>
+</body>
+</html>

@@ -11,42 +11,30 @@
   {{header}}
   <main>
     <h1><span data-i18n="index.h1">Issues Explorer</span></h1>
-    <details class="page-help">
-      <summary><span data-i18n="common.page_help">What does this page do?</span></summary>
-      <div class="page-help-content">
-        <p><span data-i18n="index.help.p1">Use this page to query localization issues by URL fragment or keyword.</span></p>
-        <ul>
-          <li><strong data-i18n="index.apply_query">Apply Query</strong><span data-i18n="index.help.li1_tail"> calls the issues endpoint and fills the table.</span></li>
-          <li><span data-i18n="index.help.li2">The table stays empty until you run a query.</span></li>
-          <li><span data-i18n="index.help.li3">Results are loaded from persisted Phase 6 issue artifacts for the selected domain and run.</span></li>
-        </ul>
-      </div>
-    </details>
-    <p><span data-i18n="index.note">Issues are shown only after applying a query.</span></p>
-        <div class="controls">
+    <p><a id="issuesBackToRunHub" href="/runs">Back to Run Hub</a></p>
+    <div class="controls">
       <input id="domainInput" placeholder="domain" />
       <input id="runIdInput" placeholder="run id" />
-      <input id="languageFilter" placeholder="language" />
-      <input id="severityFilter" placeholder="severity (high|medium|low)" />
+      <input id="issueQuery" placeholder="keyword" />
       <input id="typeFilter" placeholder="issue type" />
+      <input id="languageFilter" placeholder="language" />
+      <input id="severityFilter" placeholder="severity" />
       <input id="stateFilter" placeholder="state" />
       <input id="urlFilter" placeholder="url contains" />
       <input id="domainFilter" placeholder="domain substring in URL" />
-      <input id="issueQuery" placeholder="Enter URL or keyword" data-i18n-placeholder="index.query_placeholder" />
-      <button id="applyIssueQuery" data-i18n="index.apply_query">Apply Query</button>
-      <button id="exportIssues">Export JSON</button>
-      <button id="exportIssuesCsv">Export CSV</button>
+      <button id="applyIssueQuery" type="button">Apply Filters</button>
+      <button id="exportIssuesCsv" type="button">Export CSV</button>
     </div>
-    <div id="issueError" class="hidden" style="color:#b00020; margin:8px 0;"></div>
-    <p class="inline-help">URL and domain filters both use URL substring matching.</p>
+    <div id="issueStatus"></div>
+    <p id="issueCount" class="hidden"></p>
     <table id="issuesTable" class="hidden">
-      <thead><tr><th>ID</th><th>Category</th><th>URL</th><th>Message</th><th>Severity</th><th>Context</th><th>Drill-down</th></tr></thead>
+      <thead><tr><th>ID</th><th>Category</th><th>URL</th><th>Message</th><th>Severity</th><th>Language</th><th>State</th><th>Detail</th></tr></thead>
       <tbody></tbody>
     </table>
-    <section id="issueDetail"></section>
   </main>
   <script src="/static/i18n.js"></script>
   <script src="/static/tooltips.js"></script>
+  <script src="/static/api-client.js"></script>
   <script src="/static/index.js"></script>
   <script src="/static/nav-active.js"></script>
   <script src="/static/auth.js"></script>

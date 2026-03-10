@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Polyglot Watchdog - Contexts</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  {{header}}
+  <main>
+    <h1>Capture Contexts</h1>
+    <p>
+      <a id="backToRunHub" href="/runs">Back to Run Hub</a> |
+      <a id="openIssuesLink" href="#">Open Issues for this Run</a> |
+      <a id="openPullsLink" href="#">Open Items/Pulls for this Run</a>
+    </p>
+    <div id="contextsStatus"></div>
+    <table id="contextsTable" class="hidden">
+      <thead><tr><th>URL</th><th>Language</th><th>State</th><th>Viewport</th><th>User tier</th><th>Elements</th><th>Screenshot</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </main>
+  <script src="/static/i18n.js"></script>
+  <script src="/static/api-client.js"></script>
+  <script src="/static/contexts.js"></script>
+  <script src="/static/nav-active.js"></script>
+  <script src="/static/auth.js"></script>
+</body>
+</html>
