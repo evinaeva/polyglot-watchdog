@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Polyglot Watchdog - Workflow Hub</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  {{header}}
+  <main>
+    <h1>Workflow Hub</h1>
+    <p>Operator entry point for the v1 workflow.</p>
+    <div class="controls">
+      <label for="wfDomain">Domain</label>
+      <select id="wfDomain"></select>
+      <label for="wfRun">Run ID</label>
+      <input id="wfRun" placeholder="run id" />
+      <button id="wfLoad" type="button">Load Status</button>
+      <button id="wfRefresh" type="button">Refresh</button>
+    </div>
+    <div class="controls">
+      <button id="wfStartCapture" type="button">Start Capture</button>
+      <button id="wfGenerateDataset" type="button">Generate Eligible Dataset</button>
+      <button id="wfGenerateIssues" type="button">Generate Issues</button>
+    </div>
+    <div class="controls">
+      <input id="wfRerunContext" placeholder="capture_context_id for rerun" />
+      <input id="wfRerunUrl" placeholder="context url" />
+      <button id="wfRerun" type="button">Rerun Context</button>
+    </div>
+    <div id="wfStatus"></div>
+    <pre id="wfPayload"></pre>
+    <h3>Transition</h3>
+    <pre id="wfTransition"></pre>
+    <p>
+      <a id="wfOpenContexts" href="#">Open Contexts</a> |
+      <a id="wfOpenPulls" href="#">Open Pulls</a> |
+      <a id="wfOpenIssues" href="#">Open Issues</a> |
+      <a id="wfOpenIssueDetail" href="#">Open First Issue Detail</a>
+    </p>
+  </main>
+  <script src="/static/i18n.js"></script>
+  <script src="/static/api-client.js"></script>
+  <script src="/static/workflow.js"></script>
+  <script src="/static/nav-active.js"></script>
+  <script src="/static/auth.js"></script>
+</body>
+</html>

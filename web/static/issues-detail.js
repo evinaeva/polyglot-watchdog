@@ -27,6 +27,7 @@ async function loadIssueDetailPage() {
   document.getElementById('detailOpenContexts').href = `/contexts?${new URLSearchParams({ domain, run_id: runId }).toString()}`;
   document.getElementById('detailOpenPulls').href = `/pulls?${new URLSearchParams({ domain, run_id: runId }).toString()}`;
 
+  setDetailStatus("Loading issue detail…");
   const response = await fetch(`/api/issues/detail?${new URLSearchParams({ domain, run_id: runId, id }).toString()}`);
   const payload = await safeReadPayload(response);
   if (!response.ok) {

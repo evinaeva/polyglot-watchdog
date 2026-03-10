@@ -48,7 +48,7 @@ function syncDefaultsFromQuery() {
 }
 
 async function loadIssues() {
-  setStatus('');
+  setStatus('Loading…');
   issueCount.classList.add('hidden');
   tbody.innerHTML = '';
   const response = await fetch(`/api/issues?${buildParams().toString()}`);
