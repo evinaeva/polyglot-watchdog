@@ -245,9 +245,25 @@ def _load_phase2_decisions(domain: str, run_id: str) -> list[dict]:
 
 
 def _save_phase2_decisions(domain: str, run_id: str, decisions: list[dict]) -> None:
-    # Canonical persistence for annotation decisions is template_rules.json via run_phase2.
-    # This helper remains for compatibility in tests, but intentionally no-ops.
-    _ = (domain, run_id, decisions)
+    """Persist decisions via canonical Phase 2 writer (template_rules.json)."""
+    ordered = sorted(
+        [row for row in decisions if isinstance(row, dict)],
+        key=lambda row: (
+            str(row.get("item_id", "")),
+            str(row.get("url", "")),
+            str(_to_rule_type(str(row.get("rule_type", "")))),
+            str(row.get("capture_context_id", "")),
+            str(row.get("state", "")),
+            str(row.get("language", "")),
+            str(row.get("viewport_kind", "")),
+            str(row.get("user_tier", "")),
+            str(row.get("created_at") or row.get("updated_at") or ""),
+        ),
+    )
+    for idx, row in enumerate(ordered):
+        if not str(row.get("item_id", "")).strip() or not str(row.get("url", "")).strip():
+            raise ValueError(f"invalid phase2 decision at index={idx}: item_id and url are required")
+        _upsert_phase2_decision(domain, run_id, row)
 
 
 def _decision_key(row: dict) -> tuple:
@@ -263,9 +279,98 @@ def _decision_key(row: dict) -> tuple:
 
 
 def _upsert_phase2_decision(domain: str, run_id: str, decision: dict) -> dict:
-    # Canonical write happens via pipeline.run_phase2.run -> template_rules.json
-    _ = (domain, run_id)
-    return decision
+    from pipeline.run_phase2 import run as phase2_run
+
+    item_id = str(decision.get("item_id", "")).strip()
+    url = str(decision.get("url", "")).strip()
+    rule_type = _to_rule_type(str(decision.get("rule_type", "")).strip())
+    saved = phase2_run(domain=domain, run_id=run_id, item_id=item_id, url=url, rule_type=rule_type, note=None)
+    out = dict(decision)
+    out["rule_type"] = str(saved.get("rule_type", rule_type))
+    out["created_at"] = str(saved.get("created_at", decision.get("created_at", "")))
+    out["updated_at"] = out["created_at"]
+    return out
+
+
+def _review_status_key(domain: str, capture_context_id: str, language: str) -> str:
+    from pipeline.storage import BUCKET_NAME
+
+    review_bucket = os.environ.get("REVIEW_BUCKET", BUCKET_NAME)
+    writer = GCSArtifactWriter(_ReviewConfigStore(), BUCKET_NAME, review_bucket)
+    return writer.review_status_key(domain, capture_context_id, language)
+
+
+def _read_review_status_record(domain: str, capture_context_id: str, language: str) -> dict | None:
+    from pipeline.storage import BUCKET_NAME, _gcs_client
+
+    key = _review_status_key(domain, capture_context_id, language)
+    review_bucket = os.environ.get("REVIEW_BUCKET", BUCKET_NAME)
+    bucket = _gcs_client().bucket(review_bucket)
+    blob = bucket.blob(key)
+    try:
+        raw = json.loads(blob.download_as_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(raw, dict):
+        return None
+    return {
+        "capture_context_id": str(raw.get("capture_context_id", capture_context_id)),
+        "status": str(raw.get("status", "")).strip(),
+        "reviewer": str(raw.get("reviewer", "")).strip(),
+        "timestamp": str(raw.get("timestamp", "")).strip(),
+        "language": language,
+    }
+
+
+def _load_review_statuses_for_contexts(domain: str, contexts: list[dict], language: str = "") -> dict[tuple[str, str], dict]:
+    rows: dict[tuple[str, str], dict] = {}
+    for context in contexts:
+        if not isinstance(context, dict):
+            continue
+        capture_context_id = str(context.get("capture_context_id", "")).strip()
+        row_language = str(context.get("language", "")).strip()
+        if not capture_context_id or not row_language:
+            continue
+        if language and row_language != language:
+            continue
+        record = _read_review_status_record(domain, capture_context_id, row_language)
+        if record is None:
+            continue
+        rows[(capture_context_id, row_language)] = {
+            "capture_context_id": record["capture_context_id"],
+            "status": record["status"],
+            "reviewer": record["reviewer"],
+            "timestamp": record["timestamp"],
+        }
+    return rows
+
+
+def _load_all_review_statuses(domain: str, language: str = "") -> list[dict]:
+    from pipeline.storage import BUCKET_NAME, _gcs_client
+
+    review_bucket = os.environ.get("REVIEW_BUCKET", BUCKET_NAME)
+    bucket = _gcs_client().bucket(review_bucket)
+    sample_key = _review_status_key(domain, "__ctx__", "__lang__")
+    prefix = sample_key.split("__ctx__", 1)[0]
+    by_key: dict[tuple[str, str], dict] = {}
+    for blob_meta in bucket.list_blobs(prefix=prefix):
+        name = str(getattr(blob_meta, "name", ""))
+        suffix = name.removeprefix(prefix)
+        if "__" not in suffix or not suffix.endswith(".json"):
+            continue
+        capture_context_id, raw_language = suffix[:-5].split("__", 1)
+        if language and raw_language != language:
+            continue
+        record = _read_review_status_record(domain, capture_context_id, raw_language)
+        if record is None:
+            continue
+        key = (str(record.get("capture_context_id", "")), str(record.get("language", "")))
+        existing = by_key.get(key)
+        if existing is None or str(record.get("timestamp", "")) >= str(existing.get("timestamp", "")):
+            by_key[key] = record
+    rows = list(by_key.values())
+    rows.sort(key=lambda row: (row.get("capture_context_id", ""), row.get("language", ""), row.get("timestamp", "")))
+    return rows
 
 
 def _estimate_severity(issue: dict) -> str:
@@ -431,7 +536,10 @@ def _persist_capture_review(payload: dict) -> dict:
         "reviewer": reviewer,
         "timestamp": timestamp,
     }
-    validate("capture_review_status", record)
+    try:
+        validate("capture_review_status", record)
+    except Exception as exc:
+        raise ValueError(str(exc)) from exc
 
     from pipeline.storage import BUCKET_NAME
 
@@ -714,6 +822,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 decision = decisions_by_item_url.get((str(row.get("item_id", "")), str(row.get("url", ""))), {})
                 rows.append({
                     "item_id": str(row.get("item_id", "")),
+                    "capture_context_id": _capture_context_id_from_page(domain, row),
                     "url": str(row.get("url", "")),
                     "state": str(row.get("state", "")),
                     "language": str(row.get("language", "")),
@@ -732,6 +841,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                     continue
                 rows.append({
                     "item_id": f"universal-{section_id}",
+                    "capture_context_id": "",
                     "url": str(section.get("representative_url", "")),
                     "state": "universal",
                     "language": "en",
@@ -895,6 +1005,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 return
             domain = required["domain"]
             run_id = required["run_id"]
+            language_filter = str(query.get("language", [""])[0]).strip()
             try:
                 _require_artifact_exists(domain, run_id, "page_screenshots.json")
                 pages = _read_list_artifact_required(domain, run_id, "page_screenshots.json")
@@ -916,6 +1027,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             for page in pages:
                 if not isinstance(page, dict):
                     continue
+                if language_filter and str(page.get("language", "")).strip() != language_filter:
+                    continue
                 capture_context_id = _capture_context_id_from_page(domain, page)
                 contexts.append({
                     "capture_context_id": capture_context_id,
@@ -928,8 +1041,42 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                     "storage_uri": str(page.get("storage_uri", "")),
                     "elements_count": by_page.get(page.get("page_id"), 0),
                 })
+            reviews_by_key = _load_review_statuses_for_contexts(domain, contexts, language=language_filter)
+            for context in contexts:
+                context["review_status"] = reviews_by_key.get((str(context.get("capture_context_id", "")), str(context.get("language", ""))))
             contexts.sort(key=lambda row: (str(row.get("capture_context_id", "")), str(row.get("page_id", "")), str(row.get("url", ""))))
             self._json_response({"contexts": contexts})
+            return
+        if parsed.path == "/api/capture/reviews":
+            if not self._require_auth(api=True):
+                return
+            query = parse_qs(parsed.query)
+            required, missing = _require_query_params(query, "domain", "run_id")
+            if missing:
+                self._json_response(_missing_required_query_params(*missing), status=HTTPStatus.BAD_REQUEST)
+                return
+            domain = required["domain"]
+            run_id = required["run_id"]
+            language_filter = str(query.get("language", [""])[0]).strip()
+            if not _artifact_exists_strict(domain, run_id, "page_screenshots.json"):
+                self._json_response({"status": "not_ready", "error": "page_screenshots artifact missing"}, status=HTTPStatus.NOT_FOUND)
+                return
+            try:
+                pages = _read_list_artifact_required(domain, run_id, "page_screenshots.json")
+            except ValueError as exc:
+                self._json_response({"error": str(exc), "status": "artifact_invalid"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+            contexts = [
+                {
+                    "capture_context_id": _capture_context_id_from_page(domain, page),
+                    "language": str(page.get("language", "")),
+                }
+                for page in pages
+                if isinstance(page, dict)
+            ]
+            reviews = list(_load_review_statuses_for_contexts(domain, contexts, language=language_filter).values())
+            reviews.sort(key=lambda row: (str(row.get("capture_context_id", "")), str(row.get("timestamp", ""))))
+            self._json_response({"reviews": reviews})
             return
         if parsed.path == "/api/job":
             if not self._require_auth(api=True):
@@ -1231,7 +1378,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
 
-        if self.path == "/api/capture/review":
+        if self.path in {"/api/capture/review", "/api/capture/reviews"}:
             payload = self._read_json_payload()
             try:
                 result = _persist_capture_review(payload)
@@ -1246,27 +1393,25 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             payload = self._read_json_payload()
             try:
                 runtime_payload = _parse_rerun_payload(payload)
-                from pipeline.run_phase1 import build_exact_context_job
-
-                job = build_exact_context_job(
-                    domain=runtime_payload["domain"],
-                    url=runtime_payload["url"],
-                    language=runtime_payload["language"],
-                    viewport_kind=runtime_payload["viewport_kind"],
-                    state=runtime_payload["state"],
-                    user_tier=runtime_payload["user_tier"],
-                )
-                job_id = f"rerun-{runtime_payload['run_id']}-{runtime_payload['language']}-{runtime_payload['state']}"
+                job_id = f"rerun-{runtime_payload['run_id']}-{runtime_payload['capture_context_id']}-{int(time.time())}"
                 _upsert_job_status(runtime_payload["domain"], runtime_payload["run_id"], {"job_id": job_id, "status": "queued", "context": runtime_payload, "type": "rerun"})
                 t = threading.Thread(target=_run_rerun_async, args=(job_id, runtime_payload), daemon=True)
                 t.start()
-                self._json_response({"status": "started", "job_id": job_id, "resolved_context": {
-                    "url": job.context.url,
-                    "viewport_kind": job.context.viewport_kind,
-                    "state": job.context.state,
-                    "user_tier": job.context.user_tier,
-                    "language": job.context.language,
-                }, "job_count": 1})
+                self._json_response({
+                    "job_id": job_id,
+                    "status": "running",
+                    "type": "rerun",
+                    "context": {
+                        "domain": runtime_payload["domain"],
+                        "run_id": runtime_payload["run_id"],
+                        "url": runtime_payload["url"],
+                        "viewport_kind": runtime_payload["viewport_kind"],
+                        "state": runtime_payload["state"],
+                        "language": runtime_payload["language"],
+                        "user_tier": runtime_payload["user_tier"],
+                        "capture_context_id": runtime_payload["capture_context_id"],
+                    },
+                }, status=HTTPStatus.ACCEPTED)
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             except Exception as exc:
@@ -1279,10 +1424,11 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             run_id = str(payload.get("run_id", "")).strip()
             item_id = str(payload.get("item_id", "")).strip()
             url = str(payload.get("url", "")).strip()
-            rule_type = _to_rule_type(str(payload.get("rule_type", "")).strip())
+            requested_decision = str(payload.get("decision", payload.get("rule_type", ""))).strip()
+            rule_type = _to_rule_type(requested_decision)
             allowed = {"IGNORE_ENTIRE_ELEMENT", "MASK_VARIABLE", "ALWAYS_COLLECT"}
             if not domain or not run_id or not item_id or not url or rule_type not in allowed:
-                self._json_response({"status": "error", "message": "domain, run_id, item_id, url and valid rule_type required"}, status=HTTPStatus.BAD_REQUEST)
+                self._json_response({"status": "error", "message": "domain, run_id, item_id, url and valid decision/rule_type required"}, status=HTTPStatus.BAD_REQUEST)
                 return
             decision = {
                 "capture_context_id": str(payload.get("capture_context_id", "")),
@@ -1295,16 +1441,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 "rule_type": rule_type,
                 "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             }
-            _upsert_phase2_decision(domain, run_id, decision)
-            phase2_applied = True
-            phase2_error = ""
-            try:
-                from pipeline.run_phase2 import run as phase2_run
-                phase2_run(domain=domain, run_id=run_id, item_id=item_id, url=url, rule_type=rule_type, note=None)
-            except Exception as exc:
-                phase2_applied = False
-                phase2_error = str(exc)
-            self._json_response({"status": "ok", "decision": decision, "phase2_applied": phase2_applied, "phase2_error": phase2_error})
+            saved = _upsert_phase2_decision(domain, run_id, decision)
+            self._json_response({"status": "ok", "decision": saved, "rule_type": saved.get("rule_type"), "source_ref": {"item_id": item_id, "url": url, "capture_context_id": decision.get("capture_context_id", "")}})
             return
 
         # Phase 0 trigger — real pipeline

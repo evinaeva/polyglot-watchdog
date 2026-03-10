@@ -39,7 +39,7 @@ def test_upsert_job_status_last_write_wins(monkeypatch):
     assert jobs == [{"job_id": "j1", "status": "succeeded"}]
 
 
-def test_phase2_decision_upsert_is_passthrough_for_canonical_template_rules():
+def test_phase2_decision_upsert_writes_via_phase2_runner(monkeypatch):
     decision = {
         "capture_context_id": "ctx1",
         "item_id": "i1",
@@ -50,8 +50,10 @@ def test_phase2_decision_upsert_is_passthrough_for_canonical_template_rules():
         "user_tier": "guest",
         "rule_type": "MASK_VARIABLE",
     }
+    monkeypatch.setattr("pipeline.run_phase2.run", lambda **kwargs: {"rule_type": kwargs["rule_type"], "created_at": "2026-03-10T00:00:00Z"})
     out = _upsert_phase2_decision("example.com", "run-1", decision)
-    assert out == decision
+    assert out["rule_type"] == "MASK_VARIABLE"
+    assert out["updated_at"] == "2026-03-10T00:00:00Z"
     assert _decision_key(out) == _decision_key(decision)
 
 

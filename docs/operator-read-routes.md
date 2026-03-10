@@ -117,3 +117,67 @@ Query: `domain`, `run_id`.
 Requires `page_screenshots.json` (`404 not_ready` if missing, `page_screenshots artifact missing`) and returns contexts with `elements_count` derived from `collected_items.json` when present.
 
 Contexts are returned in deterministic order by `(capture_context_id, page_id, url)`.
+
+## Stage B additions (canonical review + rerun + annotation write flow)
+
+### Capture context identity
+
+`capture_context_id` is derived from canonical context fields only:
+`domain, url, language, viewport_kind, state, user_tier`.
+
+### `GET /api/capture/contexts`
+
+Now returns joined review state persisted in canonical review storage using the key derived by
+`GCSArtifactWriter.review_status_key(domain, capture_context_id, language)`.
+
+`review_status` is `null` when no persisted record exists.
+
+### `GET /api/capture/reviews`
+
+Query: `domain`, `run_id`, optional `language`.
+
+Returns run-scoped persisted review records by intersecting canonical review storage with capture contexts for the requested run.
+
+If `page_screenshots.json` is not available yet for the run, this endpoint returns `404` with
+`{"status": "not_ready", "error": "page_screenshots artifact missing"}`.
+
+### `POST /api/capture/reviews` (alias: `/api/capture/review`)
+
+Writes canonical `capture_review_status` via `_persist_capture_review` + `GCSArtifactWriter.set_review_status`.
+
+Supported status enum is schema-driven from `capture_review_status.schema.json`:
+- `valid`
+- `retry_requested`
+- `blocked_by_overlay`
+- `not_found`
+
+### `POST /api/capture/rerun`
+
+Exact-context rerun only. Required fields:
+`domain, run_id, url, viewport_kind, state, language, capture_context_id`.
+
+Returns `202 Accepted` with `{job_id,status:"running",type:"rerun",context:{...}}`.
+Poll with `GET /api/job?id=<job_id>`.
+
+### `POST /api/rules`
+
+Canonical Phase 2 write path now persists through `pipeline.run_phase2.run(...)` to `template_rules.json`.
+
+Operator decision mapping:
+- `eligible` -> `ALWAYS_COLLECT`
+- `exclude` -> `IGNORE_ENTIRE_ELEMENT`
+- `needs-fix` -> `MASK_VARIABLE`
+
+Payload may send `decision` or canonical `rule_type`; route normalizes and persists canonical `rule_type`.
+
+
+### Phase 3 linkage (operator persistence)
+
+Phase 3 consumes:
+- persisted review statuses from canonical review storage, and
+- persisted Phase 2 `template_rules.json` records.
+
+Deterministic integration coverage (`tests/test_stage_b_phase3_linkage.py`) asserts:
+- `blocked_by_overlay`/`not_found` statuses are reflected in Phase 3 manifest `error_records`,
+- blocked-overlay contexts are counted in summary counters,
+- canonical rule writes (`eligible`/`exclude`/`needs-fix`) affect `eligible_dataset.json` rows.

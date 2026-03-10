@@ -109,6 +109,7 @@ def test_pulls_happy_path_with_universal_and_decisions(api_env):
     universal = payload["rows"][1]
     assert universal == {
         "item_id": "universal-header",
+        "capture_context_id": "",
         "url": "https://a",
         "state": "universal",
         "language": "en",
