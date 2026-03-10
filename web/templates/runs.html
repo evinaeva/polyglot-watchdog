@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Polyglot Watchdog - Run Hub</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  {{header}}
+  <main>
+    <h1>Run Hub</h1>
+    <p>Select a domain and run, then open operator views for that run.</p>
+    <div class="controls">
+      <label for="runDomainSelect">Domain</label>
+      <select id="runDomainSelect"></select>
+      <button id="refreshRuns" type="button">Refresh runs</button>
+    </div>
+    <div class="controls">
+      <label for="selectedRunId">Selected run</label>
+      <input id="selectedRunId" readonly placeholder="Pick a run from the table" />
+      <a id="selectedOpenContexts" href="#">Open Contexts</a>
+      <a id="selectedOpenPulls" href="#">Open Items/Pulls</a>
+      <a id="selectedOpenIssues" href="#">Open Issues</a>
+      <a id="selectedExportCsv" href="#">Export Issues CSV</a>
+    </div>
+    <div id="runHubError" class="hidden" style="color:#b00020; margin:8px 0;"></div>
+    <table id="runsTable" class="hidden">
+      <thead><tr><th>Run ID</th><th>Created</th><th>Jobs</th><th>Actions</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </main>
+  <script src="/static/i18n.js"></script>
+  <script src="/static/api-client.js"></script>
+  <script src="/static/runs.js"></script>
+  <script src="/static/nav-active.js"></script>
+  <script src="/static/auth.js"></script>
+</body>
+</html>

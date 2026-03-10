@@ -746,11 +746,22 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             self._serve_template("login.html", replacements={"{{error_block}}": "", "{{csrf_token}}": csrf_token}, extra_set_cookies=[self._build_cookie_header(CSRF_COOKIE, csrf_token, max_age=SESSION_MAX_AGE_SECONDS, http_only=False)])
             return
 
-        if parsed.path in {"/", "/crawler", "/pulling", "/about", "/testbench", "/urls"}:
+        page_templates = {
+            "/": "index.html",
+            "/crawler": "crawler.html",
+            "/pulling": "pulling.html",
+            "/about": "about.html",
+            "/testbench": "testbench.html",
+            "/urls": "urls.html",
+            "/runs": "runs.html",
+            "/contexts": "contexts.html",
+            "/pulls": "pulls.html",
+            "/issues/detail": "issues/detail.html",
+        }
+        if parsed.path in page_templates:
             if not self._require_auth(api=False):
                 return
-            template_name = "index.html" if parsed.path == "/" else f"{parsed.path.strip('/')}.html"
-            self._serve_template(template_name)
+            self._serve_template(page_templates[parsed.path])
             return
         if parsed.path == "/watchdog-fixture" or parsed.path.startswith("/watchdog-fixture/"):
             fixture_relative = parsed.path.removeprefix("/watchdog-fixture").lstrip("/")
@@ -941,10 +952,22 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             page = None
             if item is not None:
                 page = next((p for p in page_rows if isinstance(p, dict) and p.get("page_id") == item.get("page_id")), None)
+            missing_refs: list[str] = []
+            if not _artifact_exists(domain, run_id, "page_screenshots.json"):
+                missing_refs.append("page_screenshots")
+            if not _artifact_exists(domain, run_id, "collected_items.json"):
+                missing_refs.append("collected_items")
+            if item_id and item is None:
+                missing_refs.append("element")
+            if item is not None and page is None:
+                missing_refs.append("page")
+            screenshot_uri = str((page or {}).get("storage_uri") or evidence.get("storage_uri", "") or "")
+            if not screenshot_uri:
+                missing_refs.append("screenshot")
             self._json_response({
                 "issue": issue,
                 "drilldown": {
-                    "screenshot_uri": str((page or {}).get("storage_uri") or evidence.get("storage_uri", "") or ""),
+                    "screenshot_uri": screenshot_uri,
                     "page": page,
                     "element": item,
                     "artifact_refs": {
@@ -952,6 +975,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                         "page_screenshots": f"{domain}/{run_id}/page_screenshots.json",
                         "collected_items": f"{domain}/{run_id}/collected_items.json",
                     },
+                    "missing_refs": sorted(set(missing_refs)),
+                    "partial": bool(missing_refs),
                 },
             })
             return

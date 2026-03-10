@@ -27,7 +27,7 @@ What is already real in the repository:
 
 What is not yet complete:
 
-- the full visible operator workflow is not fully integrated end-to-end;
+- operator workflow pages are now visibly linked via global navigation and run-scoped actions (`/urls`, `/runs`, `/contexts`, `/pulls`, `/`, `/issues/detail`);
 - some UI routes still rely on mock-backed or incomplete flows;
 - README, About text, and implementation status previously drifted and must stay aligned going forward.
 
