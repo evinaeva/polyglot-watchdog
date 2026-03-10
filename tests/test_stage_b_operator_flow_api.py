@@ -174,6 +174,43 @@ def test_review_validation_and_rerun_contract(api_env, monkeypatch):
     assert payload_rerun["status"] == "running"
 
 
+def test_rerun_job_failure_is_reflected_via_job_status(api_env, monkeypatch):
+    domain = "example.com"
+    run_id = "run-rerun-fail"
+
+    def _explode(*args, **kwargs):
+        raise RuntimeError("rerun boom")
+
+    monkeypatch.setattr("pipeline.run_phase1.run_exact_context", _explode)
+
+    status_rerun, payload_rerun = _request("POST", api_env, "/api/capture/rerun", {
+        "domain": domain,
+        "run_id": run_id,
+        "url": "https://a",
+        "viewport_kind": "desktop",
+        "state": "baseline",
+        "language": "en",
+        "user_tier": None,
+        "capture_context_id": "ctx-1",
+    })
+    assert status_rerun == HTTPStatus.ACCEPTED
+
+    job_id = payload_rerun["job_id"]
+    for _ in range(100):
+        status_job, payload_job = _request("GET", api_env, f"/api/job?id={job_id}")
+        assert status_job == HTTPStatus.OK
+        if payload_job.get("status") in {"done", "error"}:
+            break
+    assert payload_job["status"] == "error"
+    assert "rerun boom" in payload_job.get("error", "")
+
+    runs_payload = storage.read_json_artifact(domain, "manual", "capture_runs.json")
+    run_row = next(row for row in runs_payload["runs"] if row.get("run_id") == run_id)
+    failed_job = next(row for row in run_row.get("jobs", []) if row.get("job_id") == job_id)
+    assert failed_job["status"] == "failed"
+    assert failed_job["type"] == "rerun"
+
+
 def test_reviews_route_returns_not_ready_without_phase1_artifacts(api_env):
     domain = "example.com"
     run_id = "run-no-phase1"

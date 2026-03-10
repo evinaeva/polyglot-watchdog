@@ -292,12 +292,15 @@ def _upsert_phase2_decision(domain: str, run_id: str, decision: dict) -> dict:
     return out
 
 
-def _review_status_key(domain: str, capture_context_id: str, language: str) -> str:
+def _review_writer() -> GCSArtifactWriter:
     from pipeline.storage import BUCKET_NAME
 
     review_bucket = os.environ.get("REVIEW_BUCKET", BUCKET_NAME)
-    writer = GCSArtifactWriter(_ReviewConfigStore(), BUCKET_NAME, review_bucket)
-    return writer.review_status_key(domain, capture_context_id, language)
+    return GCSArtifactWriter(_ReviewConfigStore(), BUCKET_NAME, review_bucket)
+
+
+def _review_status_key(domain: str, capture_context_id: str, language: str) -> str:
+    return _review_writer().review_status_key(domain, capture_context_id, language)
 
 
 def _read_review_status_record(domain: str, capture_context_id: str, language: str) -> dict | None:
@@ -350,8 +353,7 @@ def _load_all_review_statuses(domain: str, language: str = "") -> list[dict]:
 
     review_bucket = os.environ.get("REVIEW_BUCKET", BUCKET_NAME)
     bucket = _gcs_client().bucket(review_bucket)
-    sample_key = _review_status_key(domain, "__ctx__", "__lang__")
-    prefix = sample_key.split("__ctx__", 1)[0]
+    prefix = _review_writer().review_status_prefix(domain)
     by_key: dict[tuple[str, str], dict] = {}
     for blob_meta in bucket.list_blobs(prefix=prefix):
         name = str(getattr(blob_meta, "name", ""))

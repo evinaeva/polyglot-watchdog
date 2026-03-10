@@ -169,6 +169,10 @@ def test_phase3_consumes_persisted_reviews_and_rules_via_canonical_flow(api_env)
     assert [row["item_id"] for row in eligible_rows] == ["i3"]
     assert eligible_rows[0]["mask_applied"] is True
 
+    eligible_dataset = storage.read_json_artifact(domain, run_id, "eligible_dataset.json")
+    assert [row["item_id"] for row in eligible_dataset] == ["i3"]
+    assert eligible_dataset[0]["mask_applied"] is True
+
     manifest = storage.read_json_artifact(domain, run_id, "phase3_manifest.json")
     assert manifest["summary_counters"]["blocked_overlay_contexts"] == 1
     error_records = {(rec["capture_context_id"], rec["status"]) for rec in manifest["error_records"]}
