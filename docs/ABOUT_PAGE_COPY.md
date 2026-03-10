@@ -46,4 +46,16 @@ Current stage: **late prototype / pre-production / operator-console-in-progress*
 
 The product should not yet be described as production-ready until the visible operator workflow and repository documentation are fully aligned with the release criteria.
 
+### Stage D release-gate outcome
+
+Release gate decision: **pre_production** (failed gate).
+
+Production-ready wording is currently disallowed because required release criteria still contain blockers in the Stage D audit (`docs/RELEASE_READINESS.md`).
+
+What remains:
+
+- complete required criterion 4 (review/annotation flow coherence in visible required workflow);
+- complete required criterion 7 (visible operator workflow coherence);
+- keep About/README/criteria/truth-set wording synchronized.
+
 ---

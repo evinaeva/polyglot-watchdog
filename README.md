@@ -11,6 +11,9 @@ This README is the product truth-set entry point for contributors. For v1.0 scop
 - `docs/Implementation Playbook.md`
 - `docs/operator-read-routes.md`
 - `RELEASE_CRITERIA.md`
+- `docs/RELEASE_READINESS.md`
+- `docs/RELEASE_EVIDENCE.md`
+- `docs/MESSAGING_STATE.md`
 - `docs/PRODUCT_TRUTHSET.md`
 
 ## Current product status
@@ -30,6 +33,21 @@ What is not yet complete:
 - operator workflow pages are now visibly linked via global navigation and run-scoped actions (`/urls`, `/runs`, `/contexts`, `/pulls`, `/`, `/issues/detail`);
 - some UI routes still rely on mock-backed or incomplete flows;
 - README, About text, and implementation status previously drifted and must stay aligned going forward.
+
+### Stage D release-gate outcome
+
+Release gate decision: **pre_production** (failed gate).
+
+Why production-ready wording is blocked right now:
+
+- at least one required v1.0 release criterion is still marked `fail` in `docs/RELEASE_READINESS.md`;
+- visible operator workflow coherence is still documented as incomplete for required flow paths.
+
+What remains before production wording is allowed:
+
+- close required criterion 4 (review/annotation flow completeness for visible required workflow);
+- close required criterion 7 (visible operator workflow coherence without hidden/manual gaps);
+- keep all four truth surfaces synchronized.
 
 ## v1.0 scope
 
@@ -51,7 +69,7 @@ The following are explicitly **deferred** from blocking v1.0:
 
 When changing the product:
 
-- do not describe the repository as “all mock” or “no phases implemented”;
+- do not describe the repository as entirely mock-backed or as lacking meaningful implemented phases;
 - do not describe the product as production-ready unless the release criteria are met;
 - treat the contract as normative for artifact semantics and phase boundaries;
 - treat `RELEASE_CRITERIA.md` as the release-ready checklist;
@@ -69,8 +87,8 @@ Use these statements consistently:
 
 Avoid these outdated statements:
 
-- “No pipeline phases are implemented.”
-- “All API responses are mock/static.”
+- “No meaningful pipeline implementation exists.”
+- “Every API response is static stub data.”
 - “The repository is only a UI scaffold.”
 - “The current product is production-ready.”
 
