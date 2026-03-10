@@ -23,6 +23,7 @@ COPY web/ ./web/
 COPY pipeline/ ./pipeline/
 COPY utils/ ./utils/
 COPY contract/ ./contract/
+COPY favicon.png .
 
 # Ensure Python output is flushed immediately.
 ENV PYTHONUNBUFFERED=1
