@@ -45,7 +45,7 @@ The following statements are allowed and should be treated as true:
 
 The following statements are considered outdated and should not be reintroduced:
 
-- “No pipeline phases are implemented.”
+- “No meaningful pipeline implementation exists.”
 - “All data returned by the API is mock/static.”
 - “This repo is only a front-end scaffold.”
 - “The product is production-ready.”
@@ -64,7 +64,19 @@ For messaging and planning, v1.0 includes:
 Deferred and still acceptable for v1.0:
 
 - OCR / Phase 4 work;
-- crawler improvements beyond manual seed URL flow.
+- crawler improvements beyond manual seed URL workflow.
+
+
+## Stage D gate state
+
+Current release-gate state is **pre_production**.
+
+- Deterministic rule: `GATE_PASSED = all(required_v1_0_criteria == pass)`
+- Current result: gate failed (required blockers remain)
+- Audit source: `docs/RELEASE_READINESS.md`
+- Evidence package: `docs/RELEASE_EVIDENCE.md`
+
+Because the gate is failed, this repository must not use production-ready wording.
 
 ## Precedence order
 

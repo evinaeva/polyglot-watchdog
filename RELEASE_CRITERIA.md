@@ -94,3 +94,17 @@ Once all required criteria are satisfied, maintainers may describe the project a
 - “contract-aligned for the documented v1.0 flow”
 
 Until then, use only the current pre-production stage language.
+
+## Stage D release-gate verification
+
+Stage D uses `docs/RELEASE_READINESS.md` as the audit artifact and applies this decision rule:
+
+`GATE_PASSED = all(required_v1_0_criteria_status == pass)`
+
+If `GATE_PASSED` is false, only pre-production wording is allowed on release-facing docs.
+If `GATE_PASSED` is true, wording may switch to “production-ready for the documented v1.0 scope”.
+
+Validation checks for drift prevention are defined in:
+
+- `tests/test_docs_alignment.py`
+- `scripts/release_gate.py`
