@@ -221,8 +221,11 @@ class GCSArtifactWriter:
         url_hash = deterministic_url_hash(context.url)
         return f"{context.language}/{url_hash}/{context.state}/{context.viewport_kind}/{context.user_tier or 'null'}"
 
+    def review_status_prefix(self, domain: str) -> str:
+        return f"{domain}/capture_status/"
+
     def review_status_key(self, domain: str, capture_context_id: str, language: str) -> str:
-        return f"{domain}/capture_status/{capture_context_id}__{language}.json"
+        return f"{self.review_status_prefix(domain)}{capture_context_id}__{language}.json"
 
     def write_capture(self, context: CaptureContext, page_artifact: dict[str, Any], elements_artifact: list[dict[str, Any]], screenshot_bytes: bytes) -> dict[str, str]:
         suffix = self._capture_suffix(context)

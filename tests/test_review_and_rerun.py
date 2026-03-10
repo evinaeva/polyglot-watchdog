@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 
 from app.skeleton_server import _parse_rerun_payload, _persist_capture_review
-from pipeline.interactive_capture import CapturePoint, Recipe, RecipeStep
+from pipeline.interactive_capture import CapturePoint, InMemoryStore, Recipe, RecipeStep, GCSArtifactWriter
 from pipeline.run_phase1 import build_exact_context_job, run_exact_context
 
 
@@ -12,6 +12,14 @@ class ReviewAndRerunTests(unittest.TestCase):
             _persist_capture_review({"domain": "example.com", "language": "en", "status": "valid", "timestamp": "2026-01-01T00:00:00Z"})
         with self.assertRaisesRegex(ValueError, "language is required"):
             _persist_capture_review({"domain": "example.com", "capture_context_id": "abc", "status": "valid", "timestamp": "2026-01-01T00:00:00Z"})
+
+    def test_review_status_prefix_and_key_are_canonical(self):
+        writer = GCSArtifactWriter(InMemoryStore(), "data-bucket", "review-bucket")
+        self.assertEqual(writer.review_status_prefix("example.com"), "example.com/capture_status/")
+        self.assertEqual(
+            writer.review_status_key("example.com", "ctx-1", "en"),
+            "example.com/capture_status/ctx-1__en.json",
+        )
 
     def test_review_persistence_validates_and_writes(self):
         payload = {
