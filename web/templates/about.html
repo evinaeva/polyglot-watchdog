@@ -10,86 +10,86 @@
 <body data-i18n-title="about.page_title">
   {{header}}
   <main class="about-layout">
-    <h1>About Polyglot Watchdog</h1>
+    <h1 data-i18n="about.h1">About Polyglot Watchdog</h1>
 
     <section>
-      <h2>Overview</h2>
-      <p>Polyglot Watchdog is a pipeline and operator interface for building an English reference dataset and detecting localization issues across languages.</p>
-      <p>It combines automated capture, structured extraction, operator review, deterministic element pairing, and issue generation. This repository UI mainly acts as an operator/development console for those workflows.</p>
+      <h2 data-i18n="about.overview.h2">Overview</h2>
+      <p data-i18n="about.overview.p1">Polyglot Watchdog is a pipeline and operator interface for building an English reference dataset and detecting localization issues across languages.</p>
+      <p data-i18n="about.overview.p2">It combines automated capture, structured extraction, operator review, deterministic element pairing, and issue generation. This repository UI mainly acts as an operator/development console for those workflows.</p>
     </section>
 
     <section>
-      <h2>The problem it addresses</h2>
-      <p>Localization QA is difficult to automate because pages include dynamic content, repeated templates, and elements that should not always be compared one-to-one.</p>
-      <p>Polyglot Watchdog addresses this by capturing pages under controlled contexts, extracting stable elements, applying operator rules, and comparing eligible EN reference data with target-language captures.</p>
-      <p class="doc-note"><strong>Current UI reality:</strong> issue artifacts can be produced by backend phases, but parts of the visible UI still use mock-backed paths.</p>
+      <h2 data-i18n="about.problem.h2">The problem it addresses</h2>
+      <p data-i18n="about.problem.p1">Localization QA is difficult to automate because pages include dynamic content, repeated templates, and elements that should not always be compared one-to-one.</p>
+      <p data-i18n="about.problem.p2">Polyglot Watchdog addresses this by capturing pages under controlled contexts, extracting stable elements, applying operator rules, and comparing eligible EN reference data with target-language captures.</p>
+      <p class="doc-note"><strong data-i18n="about.problem.current_ui_reality_label">Current UI reality:</strong> <span data-i18n="about.problem.current_ui_reality_text">issue artifacts can be produced by backend phases, but parts of the visible UI still use mock-backed paths.</span></p>
     </section>
 
     <section>
-      <h2>Pipeline summary</h2>
-      <h3>Phase 0 — URL discovery</h3>
-      <p>Builds URL inventory artifacts for a domain and run.</p>
-      <h3>Phase 1 — Page capture</h3>
-      <p>Captures screenshots and extracts page items (text, images, buttons, inputs) with stable identifiers.</p>
-      <h3>Phase 2 — Element annotation</h3>
-      <p>Stores rules such as <code>IGNORE_ENTIRE_ELEMENT</code>, <code>MASK_VARIABLE</code>, and <code>ALWAYS_COLLECT</code>.</p>
-      <h3>Phase 3 — English reference dataset</h3>
-      <p>Builds the eligible EN dataset by applying rules and review status filters.</p>
-      <h3>Phase 6 — Localization comparison</h3>
-      <p>Pairs EN and target-language items, then writes issue records with contextual evidence such as IDs, bounding boxes, and screenshot references.</p>
-      <p class="doc-note"><strong>Scope note:</strong> pairing and issue writing are implemented, but this UI does not yet expose every backend comparison detail as a dedicated operator screen.</p>
+      <h2 data-i18n="about.pipeline.h2">Pipeline summary</h2>
+      <h3 data-i18n="about.pipeline.phase0.h3">Phase 0 — URL discovery</h3>
+      <p data-i18n="about.pipeline.phase0.p">Builds URL inventory artifacts for a domain and run.</p>
+      <h3 data-i18n="about.pipeline.phase1.h3">Phase 1 — Page capture</h3>
+      <p data-i18n="about.pipeline.phase1.p">Captures screenshots and extracts page items (text, images, buttons, inputs) with stable identifiers.</p>
+      <h3 data-i18n="about.pipeline.phase2.h3">Phase 2 — Element annotation</h3>
+      <p><span data-i18n="about.pipeline.phase2.rules_prefix">Stores rules such as</span> <code data-i18n="about.pipeline.phase2.rule_ignore">IGNORE_ENTIRE_ELEMENT</code>, <code data-i18n="about.pipeline.phase2.rule_mask">MASK_VARIABLE</code><span data-i18n="about.pipeline.phase2.rules_middle">, and</span> <code data-i18n="about.pipeline.phase2.rule_always">ALWAYS_COLLECT</code>.</p>
+      <h3 data-i18n="about.pipeline.phase3.h3">Phase 3 — English reference dataset</h3>
+      <p data-i18n="about.pipeline.phase3.p">Builds the eligible EN dataset by applying rules and review status filters.</p>
+      <h3 data-i18n="about.pipeline.phase6.h3">Phase 6 — Localization comparison</h3>
+      <p data-i18n="about.pipeline.phase6.p">Pairs EN and target-language items, then writes issue records with contextual evidence such as IDs, bounding boxes, and screenshot references.</p>
+      <p class="doc-note"><strong data-i18n="about.pipeline.scope_note_label">Scope note:</strong> <span data-i18n="about.pipeline.scope_note_text">pairing and issue writing are implemented, but this UI does not yet expose every backend comparison detail as a dedicated operator screen.</span></p>
     </section>
 
     <section>
-      <h2>Capture contexts and deterministic pairing</h2>
-      <p>A capture context includes URL, viewport kind, state, and optional user tier. Language is runtime configuration but excluded from context identity.</p>
-      <p>Page and element IDs are deterministic so matching is stable across runs. Element identity excludes text content to avoid translation text changing identity.</p>
+      <h2 data-i18n="about.capture_contexts.h2">Capture contexts and deterministic pairing</h2>
+      <p data-i18n="about.capture_contexts.p1">A capture context includes URL, viewport kind, state, and optional user tier. Language is runtime configuration but excluded from context identity.</p>
+      <p data-i18n="about.capture_contexts.p2">Page and element IDs are deterministic so matching is stable across runs. Element identity excludes text content to avoid translation text changing identity.</p>
     </section>
 
     <section>
-      <h2>Review, rerun, and issue generation</h2>
-      <p>Review records are saved by capture context and language and are consumed when building eligible EN data. Operators can request exact-context reruns using the same runtime dimensions.</p>
-      <p>Later comparison phases generate issue artifacts for target runs.</p>
+      <h2 data-i18n="about.review_rerun.h2">Review, rerun, and issue generation</h2>
+      <p data-i18n="about.review_rerun.p1">Review records are saved by capture context and language and are consumed when building eligible EN data. Operators can request exact-context reruns using the same runtime dimensions.</p>
+      <p data-i18n="about.review_rerun.p2">Later comparison phases generate issue artifacts for target runs.</p>
     </section>
 
     <section>
-      <h2>Artifacts produced</h2>
+      <h2 data-i18n="about.artifacts.h2">Artifacts produced</h2>
       <ul>
-        <li><code>url_inventory.json</code></li>
-        <li><code>page_screenshots.json</code></li>
-        <li><code>collected_items.json</code></li>
-        <li><code>universal_sections.json</code></li>
-        <li><code>template_rules.json</code></li>
-        <li><code>eligible_dataset.json</code></li>
-        <li><code>issues.json</code></li>
+        <li><code data-i18n="about.artifacts.url_inventory">url_inventory.json</code></li>
+        <li><code data-i18n="about.artifacts.page_screenshots">page_screenshots.json</code></li>
+        <li><code data-i18n="about.artifacts.collected_items">collected_items.json</code></li>
+        <li><code data-i18n="about.artifacts.universal_sections">universal_sections.json</code></li>
+        <li><code data-i18n="about.artifacts.template_rules">template_rules.json</code></li>
+        <li><code data-i18n="about.artifacts.eligible_dataset">eligible_dataset.json</code></li>
+        <li><code data-i18n="about.artifacts.issues">issues.json</code></li>
       </ul>
-      <p>Artifacts are stored per domain/run, with screenshots kept under deterministic page IDs.</p>
+      <p data-i18n="about.artifacts.p">Artifacts are stored per domain/run, with screenshots kept under deterministic page IDs.</p>
     </section>
 
     <section>
-      <h2>Typical operator workflow</h2>
+      <h2 data-i18n="about.workflow.h2">Typical operator workflow</h2>
       <ol>
-        <li>Manage seed URLs in <code>/urls</code>.</li>
-        <li>Discover or inspect URLs.</li>
-        <li>Capture EN pages.</li>
-        <li>Review and annotate elements.</li>
-        <li>Build the EN eligible dataset.</li>
-        <li>Capture target-language pages and run comparison.</li>
-        <li>Query issues in <code>/</code>.</li>
+        <li><span data-i18n="about.workflow.li1.prefix">Manage seed URLs in</span> <code data-i18n="about.workflow.li1.path">/urls</code>.</li>
+        <li data-i18n="about.workflow.li2">Discover or inspect URLs.</li>
+        <li data-i18n="about.workflow.li3">Capture EN pages.</li>
+        <li data-i18n="about.workflow.li4">Review and annotate elements.</li>
+        <li data-i18n="about.workflow.li5">Build the EN eligible dataset.</li>
+        <li data-i18n="about.workflow.li6">Capture target-language pages and run comparison.</li>
+        <li><span data-i18n="about.workflow.li7.prefix">Query issues in</span> <code data-i18n="about.workflow.li7.path">/</code>.</li>
       </ol>
-      <p>Some steps are currently triggered through backend endpoints that are not yet fully represented by dedicated UI pages.</p>
+      <p data-i18n="about.workflow.p">Some steps are currently triggered through backend endpoints that are not yet fully represented by dedicated UI pages.</p>
     </section>
 
     <section>
-      <h2>Glossary</h2>
+      <h2 data-i18n="about.glossary.h2">Glossary</h2>
       <ul>
-        <li><strong>Seed URLs:</strong> manually managed canonical URL list.</li>
-        <li><strong>Capture context:</strong> runtime capture dimensions for a page (identity excludes language).</li>
-        <li><strong>page_id:</strong> deterministic page identifier from context identity fields.</li>
-        <li><strong>item_id:</strong> deterministic element identifier from domain/URL/selector/bbox/type.</li>
-        <li><strong>Template rules:</strong> annotation decisions that shape the eligible dataset.</li>
-        <li><strong>Eligible dataset:</strong> filtered English reference artifact used for comparison.</li>
-        <li><strong>Exact context rerun:</strong> replaying capture with the same context parameters.</li>
+        <li><strong data-i18n="about.glossary.seed_urls_label">Seed URLs:</strong> <span data-i18n="about.glossary.seed_urls_text">manually managed canonical URL list.</span></li>
+        <li><strong data-i18n="about.glossary.capture_context_label">Capture context:</strong> <span data-i18n="about.glossary.capture_context_text">runtime capture dimensions for a page (identity excludes language).</span></li>
+        <li><strong data-i18n="about.glossary.page_id_label">page_id:</strong> <span data-i18n="about.glossary.page_id_text">deterministic page identifier from context identity fields.</span></li>
+        <li><strong data-i18n="about.glossary.item_id_label">item_id:</strong> <span data-i18n="about.glossary.item_id_text">deterministic element identifier from domain/URL/selector/bbox/type.</span></li>
+        <li><strong data-i18n="about.glossary.template_rules_label">Template rules:</strong> <span data-i18n="about.glossary.template_rules_text">annotation decisions that shape the eligible dataset.</span></li>
+        <li><strong data-i18n="about.glossary.eligible_dataset_label">Eligible dataset:</strong> <span data-i18n="about.glossary.eligible_dataset_text">filtered English reference artifact used for comparison.</span></li>
+        <li><strong data-i18n="about.glossary.exact_context_rerun_label">Exact context rerun:</strong> <span data-i18n="about.glossary.exact_context_rerun_text">replaying capture with the same context parameters.</span></li>
       </ul>
     </section>
   </main>
