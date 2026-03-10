@@ -5,9 +5,12 @@ include in the default test suite. In CI without Playwright the test simply repo
 
     SKIPPED [reason: Playwright Chromium binary not found ...]
 
-In a Playwright-ready environment it proves the full v1.0 operator journey end-to-end:
+The deterministic, clean-env way to run this test is via Docker:
 
-    seed URLs → capture → review → annotate → eligible dataset → issues
+    bash scripts/run_e2e_happy_path.sh
+
+Inside Dockerfile.e2e, PLAYWRIGHT_BROWSERS_PATH=/ms-playwright is pre-installed
+at image-build time, so the probe always returns (True, 'ok') and the test runs.
 
 Constraints enforced by this test:
 - No phase runner functions are monkeypatched.
@@ -31,7 +34,10 @@ from tests.playwright_probe import playwright_ready
 
 _READY, _REASON = playwright_ready()
 
-pytestmark = pytest.mark.skipif(not _READY, reason=_REASON)
+pytestmark = [
+    pytest.mark.skipif(not _READY, reason=_REASON),
+    pytest.mark.e2e_happy_path,
+]
 
 # ---------------------------------------------------------------------------
 # Shared fake GCS infrastructure (same pattern as existing acceptance tests)
@@ -125,15 +131,15 @@ def _poll_until(port: int, path: str, accept, timeout: float = 180.0, interval: 
 def api_env(monkeypatch):
     """Spin up the real SkeletonHandler server with fake GCS storage.
 
-    PLAYWRIGHT_BROWSERS_PATH is intentionally NOT set here, so the real
-    Playwright browser path is used and captures can succeed.
+    PLAYWRIGHT_BROWSERS_PATH is intentionally NOT overridden here.
+    Inside Dockerfile.e2e it is already set to /ms-playwright (pre-installed).
+    On a developer machine it should point to the local Playwright cache.
     """
     from app.skeleton_server import SkeletonHandler
     from pipeline import storage
 
     objects: dict = {}
     monkeypatch.setenv("AUTH_MODE", "OFF")
-    # Do NOT set PLAYWRIGHT_BROWSERS_PATH — allow real Playwright to run.
     monkeypatch.setattr(storage, "BUCKET_NAME", "test-bucket-e2e")
     monkeypatch.setattr(storage, "validate", lambda *a, **kw: None)
     monkeypatch.setattr(storage, "_gcs_client", lambda: _FakeClient(objects))
@@ -168,7 +174,7 @@ def test_full_v1_operator_journey_happy_path(api_env):
       3. Poll until capture.status == ready
       4. Save one review decision via canonical review API
       5. Save one annotation rule via canonical rules API (if items present)
-      6. Generate eligible dataset; poll until ready or empty
+      6. Generate eligible dataset; poll until terminal
       7. Generate issues (self-comparison: EN vs EN → 0 issues = empty-success)
          poll until issues.status is ready or empty
       8. GET /api/issues — assert well-formed response
@@ -178,22 +184,16 @@ def test_full_v1_operator_journey_happy_path(api_env):
     domain = "fixture.local"
     run_id = f"happy-{uuid.uuid4().hex[:10]}"
 
-    # The fixture pages are served by the running SkeletonHandler itself
-    # under /watchdog-fixture/.  Point the seed URL at that local server.
     fixture_url = f"http://127.0.0.1:{port}/watchdog-fixture/index.html"
 
-    # ------------------------------------------------------------------
     # Step 1: Configure seed URL
-    # ------------------------------------------------------------------
     status, payload = _req("POST", port, "/api/seed-urls/add", {
         "domain": domain,
         "urls_multiline": fixture_url,
     })
     assert status == HTTPStatus.OK, f"seed-urls/add failed: {payload}"
 
-    # ------------------------------------------------------------------
     # Step 2: Start EN capture
-    # ------------------------------------------------------------------
     status, payload = _req("POST", port, "/api/workflow/start-capture", {
         "domain": domain,
         "run_id": run_id,
@@ -204,9 +204,7 @@ def test_full_v1_operator_journey_happy_path(api_env):
     assert status == HTTPStatus.OK, f"start-capture failed: {payload}"
     assert payload.get("status") == "started"
 
-    # ------------------------------------------------------------------
     # Step 3: Poll until capture reaches a terminal state; assert ready
-    # ------------------------------------------------------------------
     status_payload = _poll_until(
         port,
         f"/api/workflow/status?domain={domain}&run_id={run_id}",
@@ -221,9 +219,7 @@ def test_full_v1_operator_journey_happy_path(api_env):
     assert status_payload["capture"]["artifacts_present"] is True
     assert status_payload["capture"]["contexts"] >= 1
 
-    # ------------------------------------------------------------------
     # Step 4: Fetch contexts and save at least one review decision
-    # ------------------------------------------------------------------
     ctx_status, ctx_payload = _req(
         "GET", port, f"/api/capture/contexts?domain={domain}&run_id={run_id}"
     )
@@ -246,9 +242,7 @@ def test_full_v1_operator_journey_happy_path(api_env):
     assert rev_status == HTTPStatus.OK, f"capture/reviews POST failed: {rev_payload}"
     assert rev_payload.get("record", {}).get("status") == "valid"
 
-    # ------------------------------------------------------------------
     # Step 5: Fetch pulls and save one annotation rule (if items present)
-    # ------------------------------------------------------------------
     pulls_status, pulls_payload = _req(
         "GET", port, f"/api/pulls?domain={domain}&run_id={run_id}"
     )
@@ -267,9 +261,7 @@ def test_full_v1_operator_journey_happy_path(api_env):
         assert rule_status == HTTPStatus.OK, f"POST /api/rules failed: {rule_payload}"
         assert rule_payload.get("status") == "ok"
 
-    # ------------------------------------------------------------------
     # Step 6: Generate eligible dataset; poll until terminal
-    # ------------------------------------------------------------------
     gen_status, gen_payload = _req("POST", port, "/api/workflow/generate-eligible-dataset", {
         "domain": domain,
         "run_id": run_id,
@@ -284,14 +276,11 @@ def test_full_v1_operator_journey_happy_path(api_env):
         timeout=60,
     )
 
-    # ------------------------------------------------------------------
     # Step 7: Generate issues; poll until terminal (ready or empty)
-    # Self-comparison (EN vs EN) yields 0 issues — empty is a valid success state.
-    # ------------------------------------------------------------------
     iss_status, iss_payload = _req("POST", port, "/api/workflow/generate-issues", {
         "domain": domain,
         "run_id": run_id,
-        "en_run_id": run_id,  # same run — no translation differences
+        "en_run_id": run_id,
     })
     assert iss_status == HTTPStatus.OK, f"generate-issues failed: {iss_payload}"
     assert iss_payload.get("status") == "started"
@@ -303,51 +292,34 @@ def test_full_v1_operator_journey_happy_path(api_env):
         timeout=60,
     )
 
-    issues_terminal = final_status["issues"]["status"]
-    assert issues_terminal in {"ready", "empty"}, (
-        f"Expected issues.status ready or empty, got {issues_terminal!r}"
-    )
+    assert final_status["issues"]["status"] in {"ready", "empty"}
 
-    # ------------------------------------------------------------------
     # Step 8: GET /api/issues — well-formed response
-    # ------------------------------------------------------------------
     iss_get_status, iss_get_payload = _req(
         "GET", port, f"/api/issues?domain={domain}&run_id={run_id}"
     )
-    assert iss_get_status == HTTPStatus.OK, f"GET /api/issues failed: {iss_get_payload}"
+    assert iss_get_status == HTTPStatus.OK
     assert "issues" in iss_get_payload
     assert "count" in iss_get_payload
     assert iss_get_payload["count"] == len(iss_get_payload["issues"])
 
-    # ------------------------------------------------------------------
     # Step 9: GET /api/issues/detail (only if issues exist)
-    # ------------------------------------------------------------------
     if iss_get_payload["count"] > 0:
         first_issue_id = iss_get_payload["issues"][0]["id"]
         detail_status, detail_payload = _req(
             "GET", port,
             f"/api/issues/detail?domain={domain}&run_id={run_id}&id={first_issue_id}",
         )
-        assert detail_status == HTTPStatus.OK, f"GET /api/issues/detail failed: {detail_payload}"
+        assert detail_status == HTTPStatus.OK
         drilldown = detail_payload.get("drilldown", {})
         artifact_refs = drilldown.get("artifact_refs", {})
-        # Contract: evidence must carry canonical artifact path refs
-        assert artifact_refs.get("issues"), "issues artifact_ref must be non-empty"
-        assert artifact_refs.get("page_screenshots"), "page_screenshots artifact_ref must be non-empty"
-        assert artifact_refs.get("collected_items"), "collected_items artifact_ref must be non-empty"
+        assert artifact_refs.get("issues")
+        assert artifact_refs.get("page_screenshots")
+        assert artifact_refs.get("collected_items")
     else:
-        # 0 issues is a valid empty-success outcome — workflow ran to completion
         assert isinstance(iss_get_payload["issues"], list)
 
-    # ------------------------------------------------------------------
-    # Final invariant: confirm capture artifacts are real (Playwright-produced)
-    # ------------------------------------------------------------------
-    assert final_status["capture"]["artifacts_present"] is True, (
-        "Capture artifacts must be real (produced by Playwright), not synthetic"
-    )
-    assert final_status["eligible_dataset"]["status"] in {"ready", "empty"}, (
-        "Eligible dataset must be in a terminal success state"
-    )
-    assert final_status["issues"]["status"] in {"ready", "empty"}, (
-        "Issues must be in a terminal success state"
-    )
+    # Final invariant: capture artifacts are real (Playwright-produced)
+    assert final_status["capture"]["artifacts_present"] is True
+    assert final_status["eligible_dataset"]["status"] in {"ready", "empty"}
+    assert final_status["issues"]["status"] in {"ready", "empty"}

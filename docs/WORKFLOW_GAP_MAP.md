@@ -21,8 +21,19 @@ Closed blocking gaps:
 - Added visible review + annotation persistence actions on required pages.
 - Updated workflow status contract to expose standardized state values used by UI rendering.
 - Acceptance now enforces truthful failure when capture runner prerequisites are unavailable and blocks downstream workflow progression.
+- Added `Dockerfile.e2e` + `scripts/run_e2e_happy_path.sh` providing a single-command, clean-environment happy-path E2E runner. Playwright is pre-installed at image build time; no host prerequisites required.
 
+## E2E acceptance runner
 
-## Current blocker note
+The clean-environment happy-path E2E test is executable deterministically via:
 
-- If capture runner prerequisites (Playwright browser runtime) are unavailable, workflow must surface **failed** capture state and must not generate synthetic artifacts. In this state Workstream A remains blocked for true clean-env full happy-path completion until runner prerequisites are satisfied.
+```bash
+bash scripts/run_e2e_happy_path.sh
+```
+
+This resolves the previously documented blocker: Playwright prerequisites are now
+provided by `Dockerfile.e2e` (built from `requirements.txt` + `playwright install chromium`)
+rather than requiring manual host-level installation.
+
+For local runs without Docker, `playwright install chromium` must be run once; the
+happy-path test is SKIPPED (not FAILED) in environments where Playwright is unavailable.

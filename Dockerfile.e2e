@@ -1,0 +1,55 @@
+# Dockerfile.e2e — Playwright-ready test runner for the happy-path E2E acceptance test.
+#
+# This image:
+#   - installs Python dependencies
+#   - installs Playwright + Chromium during the BUILD step (not at runtime)
+#   - sets PLAYWRIGHT_BROWSERS_PATH so the readiness probe finds the binaries
+#
+# Usage:
+#   docker build -f Dockerfile.e2e -t watchdog-e2e .
+#   docker run --rm watchdog-e2e
+#
+# Or via the helper script:
+#   bash scripts/run_e2e_happy_path.sh
+
+FROM python:3.12-slim
+
+# System deps required by Chromium
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    wget \
+    gnupg \
+    libnss3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libgbm1 \
+    libxkbcommon0 \
+    libasound2 \
+    libpangocairo-1.0-0 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libgtk-3-0 \
+    fonts-liberation \
+    xvfb \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements.txt .
+
+# Install Python deps
+RUN pip install --no-cache-dir -r requirements.txt pytest
+
+# Install Playwright browsers into a deterministic path inside the image
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN playwright install chromium --with-deps
+
+# Copy source
+COPY . .
+
+# Run only the happy-path E2E marker by default
+CMD ["python", "-m", "pytest", "-m", "e2e_happy_path", "-v", "--tb=short"]

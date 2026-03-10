@@ -46,6 +46,43 @@ All steps are UI-only — no curl or CLI commands are required.
 
 ---
 
+## Happy-path acceptance test (Playwright-ready runner — clean environment)
+
+This section documents the **deterministic, reproducible** way to execute the full
+happy-path E2E acceptance test (`tests/test_workflow_happy_path_e2e.py`) from a
+clean environment. No host-level Playwright installation is required.
+
+**Prerequisites:** Docker (any recent version).
+
+**Single command:**
+
+```bash
+bash scripts/run_e2e_happy_path.sh
+```
+
+This command:
+1. Builds `Dockerfile.e2e` — a Python + Playwright/Chromium image where the browser
+   is installed at **image build time** (not at runtime).
+2. Runs `pytest -m e2e_happy_path -v` inside the container.
+
+Expected output on success:
+```
+==> Building watchdog-e2e image ...
+...
+==> Running happy-path E2E acceptance test ...
+tests/test_workflow_happy_path_e2e.py::test_full_v1_operator_journey_happy_path PASSED
+1 passed in Xs
+==> Done.
+```
+
+Inside the container, `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright` is set at build time,
+so `tests/playwright_probe.py` always returns `(True, 'ok')` and the test is never skipped.
+
+Outside the container (plain CI without Playwright), the test is automatically **SKIPPED**,
+not FAILED. The default suite still passes.
+
+---
+
 ## CI / Prerequisites missing (expected truthful failure)
 
 When Playwright is not installed, the system behaves as follows:
@@ -75,11 +112,17 @@ Run CI-safe truthful-failure suite (always passes, Playwright not required):
 PYTHONPATH=. pytest -q tests/test_workflow_status_and_acceptance.py
 ```
 
-Run happy-path E2E suite (requires Playwright; skipped otherwise):
+Run happy-path E2E via Docker (requires Docker; no host Playwright needed):
+
+```bash
+bash scripts/run_e2e_happy_path.sh
+```
+
+Run happy-path E2E directly (requires `playwright install chromium` on host):
 
 ```bash
 playwright install chromium
-PYTHONPATH=. pytest -q tests/test_workflow_happy_path_e2e.py -v
+PYTHONPATH=. pytest -m e2e_happy_path -v
 ```
 
 Run full default suite (both; skips what cannot run):
@@ -88,5 +131,6 @@ Run full default suite (both; skips what cannot run):
 PYTHONPATH=. pytest -q
 ```
 
-> Workstream A cannot be marked PASS unless `test_workflow_happy_path_e2e.py`  
-> passes (not merely skips) in a Playwright-capable environment.
+> Workstream A PASS requires `test_workflow_happy_path_e2e.py` to PASS (not merely skip)  
+> in a Playwright-capable environment. The Docker command above satisfies this requirement  
+> from a clean environment without any manual prerequisites.

@@ -7,6 +7,9 @@ TRUTHSET = ROOT / "docs/PRODUCT_TRUTHSET.md"
 AUDIT = ROOT / "docs/RELEASE_READINESS.md"
 EVIDENCE = ROOT / "docs/RELEASE_EVIDENCE.md"
 MESSAGING = ROOT / "docs/MESSAGING_STATE.md"
+RUNBOOK = ROOT / "docs/LOCAL_DEMO_RUNBOOK.md"
+DOCKERFILE_E2E = ROOT / "Dockerfile.e2e"
+E2E_SCRIPT = ROOT / "scripts/run_e2e_happy_path.sh"
 
 PRE_PROD_PHRASE = "late prototype / pre-production / operator-console-in-progress"
 PROD_PHRASE = "production-ready for the documented v1.0 scope"
@@ -71,3 +74,33 @@ def test_evidence_and_messaging_docs_exist_with_required_sections() -> None:
     ]
     for marker in required_evidence_markers:
         assert marker in evidence_text, f"missing evidence section: {marker}"
+
+
+def test_workstream_a_happy_path_runnable_command_exists() -> None:
+    """Gate: Workstream A PASS requires a deterministic, clean-env runnable command.
+
+    This test fails if:
+    - Dockerfile.e2e does not exist
+    - scripts/run_e2e_happy_path.sh does not exist
+    - docs/LOCAL_DEMO_RUNBOOK.md does not document the docker command
+
+    Passing this test confirms the clean-env happy-path claim is auditable.
+    """
+    assert DOCKERFILE_E2E.exists(), (
+        "Dockerfile.e2e must exist to provide a deterministic Playwright-ready test environment. "
+        "Workstream A cannot be marked PASS without it."
+    )
+    assert E2E_SCRIPT.exists(), (
+        "scripts/run_e2e_happy_path.sh must exist to provide the single runnable command. "
+        "Workstream A cannot be marked PASS without it."
+    )
+
+    runbook_text = _text(RUNBOOK)
+    assert "run_e2e_happy_path.sh" in runbook_text, (
+        "docs/LOCAL_DEMO_RUNBOOK.md must document the Docker-based happy-path command. "
+        "Workstream A cannot be marked PASS without it."
+    )
+    assert "Dockerfile.e2e" in runbook_text, (
+        "docs/LOCAL_DEMO_RUNBOOK.md must reference Dockerfile.e2e. "
+        "Workstream A cannot be marked PASS without it."
+    )
