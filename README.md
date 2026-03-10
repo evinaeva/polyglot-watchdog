@@ -1,107 +1,94 @@
-# Polyglot Watchdog — Skeleton UI
+# Polyglot Watchdog
 
-Minimal skeleton web UI service for Polyglot Watchdog.
+Polyglot Watchdog is a contract-first operator console and pipeline for localization QA across baseline and target-language web experiences.
 
-This is an early-stage scaffold. No pipeline phases (0–6) are implemented yet.
-All data returned by the API endpoints is mock/static.
+This repository is **not** a blank scaffold. It already contains a real artifact model, canonical storage paths, multiple implemented phase runners, and an operator UI that is partially backed by persisted artifacts. At the same time, it is **not yet production-ready**: some visible operator screens are still mock-backed or incomplete, and the documentation has drifted from the actual state of the codebase.
 
-## Available routes
+This README is the product truth-set entry point for contributors. For v1.0 scope and release readiness, also read:
 
-| Route | Description |
-|---|---|
-| `/login` | Login screen (used only when auth mode is ON) |
-| `/` | Issues explorer (returns results only when filters are applied) |
-| `/crawler` | URL crawler page |
-| `/pulling` | Content pulling and annotation page |
-| `/about` | Glossary (placeholder) |
-| `/testbench` | Internal testbench |
+- `contract/watchdog_contract_v1.0.md`
+- `docs/Interactive Capture Architecture.md`
+- `docs/Implementation Playbook.md`
+- `RELEASE_CRITERIA.md`
+- `docs/PRODUCT_TRUTHSET.md`
 
-## Authentication and CSRF
+## Current product status
 
-## Auth mode switch (one line)
+Current stage: **late prototype / pre-production / operator-console-in-progress**
 
-In `app/skeleton_server.py` there is a single toggle:
+What is already real in the repository:
 
-```python
-AUTH_MODE = "ON"
-```
+- canonical artifact storage paths and JSON artifact writers/readers;
+- deterministic pipeline/storage conventions for run-level artifacts;
+- implemented phase runners for key contract-aligned flows, including Phase 1, Phase 3, and Phase 6;
+- a `/urls` operator surface for managing seed URLs;
+- an issues explorer surface backed by persisted issue artifacts.
 
-Set it to `"OFF"` to disable login/session/CSRF checks and make all UI/API routes publicly accessible (no redirects to `/login`).
+What is not yet complete:
 
-⚠️ `AUTH_MODE = "OFF"` means public access for anyone with the URL.
+- the full visible operator workflow is not fully integrated end-to-end;
+- some UI routes still rely on mock-backed or incomplete flows;
+- README, About text, and implementation status previously drifted and must stay aligned going forward.
 
-The web app now uses the same model as PutThatBase:
+## v1.0 scope
 
-- Password login form on `/login`.
-- Signed session cookie (`pw_session`) after successful login.
-- CSRF cookie/token (`pw_csrf`) validation for all mutating requests (`POST`/`PUT`).
-- Protected pages and API endpoints redirect/deny access when unauthenticated (only when auth mode is ON).
-- Logout via `POST /logout`, which clears both session and CSRF cookies.
+v1.0 is defined by the contract and implementation docs. In practical terms, v1.0 means:
 
-Cookie policy:
+- seed URL management through the operator UI;
+- deterministic baseline and scripted-state capture planning;
+- canonical persisted artifacts for capture outputs;
+- annotation/review support for baseline, scripted, and universal items;
+- deterministic eligible dataset generation;
+- target-language comparison and issue generation through Phase 6.
 
-- `HttpOnly=true` for `pw_session`.
-- `SameSite=Lax` for session and CSRF cookies.
-- `Secure=true` automatically when running in Cloud Run (`K_SERVICE` present) or `ENV=production`.
-- Default max age: 8 hours (`SESSION_MAX_AGE_SECONDS`, minimum 5 minutes).
+The following are explicitly **deferred** from blocking v1.0:
 
-## Required environment variables
+- OCR / Phase 4 work;
+- crawler improvements beyond the accepted manual seed URL workflow.
 
-Do not hardcode secrets in code. Inject from Cloud Run + Secret Manager:
+## What contributors should assume
 
-- `WATCHDOG_PASSWORD`: login password for the web UI.
-- `SESSION_SIGNING_SECRET`: secret key used to sign session cookies.
-- `SESSION_MAX_AGE_SECONDS` (optional): session/csrf max age.
+When changing the product:
 
-## Run locally
+- do not describe the repository as “all mock” or “no phases implemented”;
+- do not describe the product as production-ready unless the release criteria are met;
+- treat the contract as normative for artifact semantics and phase boundaries;
+- treat `RELEASE_CRITERIA.md` as the release-ready checklist;
+- treat `docs/PRODUCT_TRUTHSET.md` as the status and messaging alignment document.
 
-```bash
-export WATCHDOG_PASSWORD='your-local-password'
-export SESSION_SIGNING_SECRET='long-random-local-secret'
-PORT=8080 python app/skeleton_server.py
-```
+## Canonical messaging rules
 
-Verify:
-```bash
-curl -i http://localhost:8080/
-```
-(with `AUTH_MODE="ON"`, should redirect to `/login` until authenticated).
+Use these statements consistently:
 
-## Build and deploy to Cloud Run
+- “Polyglot Watchdog is a contract-first localization QA pipeline and operator console.”
+- “The repository contains real artifact-backed pipeline components and partial operator UI integration.”
+- “The project is pre-production and not yet production-ready.”
+- “OCR is deferred from v1.0.”
+- “Manual seed URL workflow is valid for v1.0.”
 
-```bash
-gcloud builds submit \
-  --config=cloudbuild.yaml \
-  --substitutions=_SERVICE_NAME=polyglot-watchdog,_REGION=europe-west1
-```
+Avoid these outdated statements:
 
-`cloudbuild.yaml` now deploys with Secret Manager bindings:
+- “No pipeline phases are implemented.”
+- “All API responses are mock/static.”
+- “The repository is only a UI scaffold.”
+- “The current product is production-ready.”
 
-- `WATCHDOG_PASSWORD=WATCHDOG_PASSWORD:latest`
-- `SESSION_SIGNING_SECRET=SESSION_SIGNING_SECRET:latest`
+## Repo areas
 
-Create/update those secrets first:
+- `app/` — operator server and route handlers
+- `pipeline/` — phase runners, storage, runtime config, artifact logic
+- `web/` — templates and static UI assets
+- `tests/` — contract, pipeline, route, and review-related tests
+- `contract/` — normative contract documents
+- `docs/` — architecture and implementation guidance
 
-```bash
-printf '%s' 'your-strong-password' | gcloud secrets versions add WATCHDOG_PASSWORD --data-file=-
-printf '%s' 'your-long-random-signing-secret' | gcloud secrets versions add SESSION_SIGNING_SECRET --data-file=-
-```
+## Working agreement for future updates
 
-After deployment, verify:
+Any change to public-facing product positioning must keep these in sync:
 
-```bash
-curl -i https://<SERVICE_URL>/login
-```
+1. `README.md`
+2. About page copy
+3. `RELEASE_CRITERIA.md`
+4. `docs/PRODUCT_TRUTHSET.md`
 
-The service URL is printed at the end of `gcloud builds submit` output,
-or retrieve it with:
-
-```bash
-gcloud run services describe polyglot-watchdog --region=europe-west1 --format='value(status.url)'
-```
-
-## Internal testbench
-
-- Manual module playground: `/testbench`
-- Preferred test data format: universal suite files (`*.suite.json`, `*.tests.json`, `suite.json`)
-- Setup and extension guide: `docs/testbench.md`
+If implementation status changes and any of the above are not updated, the documentation is considered out of sync.
