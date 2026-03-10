@@ -105,7 +105,8 @@ def test_to_rule_type_maps_operator_decisions():
 
 
 def test_load_phase2_decisions_reads_template_rules(monkeypatch):
-    monkeypatch.setattr("app.skeleton_server._read_json_safe", lambda d, r, f, default: [{"item_id": "i1", "url": "https://a", "rule_type": "MASK_VARIABLE", "created_at": "t"}])
+    monkeypatch.setattr("app.skeleton_server._artifact_exists_strict", lambda d, r, f: True)
+    monkeypatch.setattr("app.skeleton_server._read_json_required", lambda d, r, f: [{"item_id": "i1", "url": "https://a", "rule_type": "MASK_VARIABLE", "created_at": "t"}])
     rows = _load_phase2_decisions("example.com", "run-1")
     assert rows == [{"item_id": "i1", "url": "https://a", "rule_type": "MASK_VARIABLE", "updated_at": "t"}]
 
@@ -115,3 +116,11 @@ def test_capture_context_payload_includes_language():
     from app.skeleton_server import _capture_context_id_from_page
     value = _capture_context_id_from_page("example.com", page)
     assert isinstance(value, str) and value
+
+
+def test_load_phase2_decisions_rejects_malformed_rows(monkeypatch):
+    monkeypatch.setattr("app.skeleton_server._artifact_exists_strict", lambda d, r, f: True)
+    monkeypatch.setattr("app.skeleton_server._read_json_required", lambda d, r, f: [{"item_id": "i1", "url": "https://a"}])
+    import pytest
+    with pytest.raises(ValueError, match="template_rules.json artifact_invalid"):
+        _load_phase2_decisions("example.com", "run-1")

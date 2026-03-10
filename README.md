@@ -9,6 +9,7 @@ This README is the product truth-set entry point for contributors. For v1.0 scop
 - `contract/watchdog_contract_v1.0.md`
 - `docs/Interactive Capture Architecture.md`
 - `docs/Implementation Playbook.md`
+- `docs/operator-read-routes.md`
 - `RELEASE_CRITERIA.md`
 - `docs/PRODUCT_TRUTHSET.md`
 
