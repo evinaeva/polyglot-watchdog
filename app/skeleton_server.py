@@ -646,6 +646,9 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             fixture_relative = parsed.path.removeprefix("/watchdog-fixture").lstrip("/")
             self._serve_fixture(fixture_relative)
             return
+        if parsed.path in {"/favicon.ico", "/favicon.png"}:
+            self._serve_favicon()
+            return
         if parsed.path.startswith("/static/"):
             self._serve_static(parsed.path.removeprefix("/static/"))
             return
@@ -1430,6 +1433,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         header_path = TEMPLATES_DIR / "_header.html"
         header_html = self._read_template_cached(header_path) if header_path.exists() else ""
         html = html.replace("{{header}}", header_html)
+        html = html.replace("</head>", '  <link rel="icon" type="image/png" href="/favicon.png" />\n</head>', 1)
         html = html.replace(
             "{{logout_button}}",
             '<button id="logoutButton" type="button" data-i18n="nav.logout">Logout</button>' if self._auth_enabled() else "",
@@ -1446,6 +1450,14 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+
+    def _serve_favicon(self) -> None:
+        path = BASE_DIR / "favicon.png"
+        if not path.exists() or not path.is_file():
+            self.send_error(HTTPStatus.NOT_FOUND, "Favicon not found")
+            return
+        self._send_file(path, "image/png")
 
     def _serve_static(self, relative_path: str) -> None:
         path = STATIC_DIR / relative_path
@@ -1480,6 +1492,10 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             content_type = "image/svg+xml"
         elif path.suffix == ".json":
             content_type = "application/json; charset=utf-8"
+        elif path.suffix == ".png":
+            content_type = "image/png"
+        elif path.suffix == ".ico":
+            content_type = "image/x-icon"
         return content_type
 
     def _send_file(self, path: Path, content_type: str) -> None:
