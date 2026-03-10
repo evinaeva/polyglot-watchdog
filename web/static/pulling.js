@@ -106,11 +106,12 @@ function bindRowInteractions() {
           run_id: (runIdInput.value || '').trim(),
           item_id: itemId,
           url: row?.url || '',
+          capture_context_id: row?.capture_context_id || '',
           state: row?.state || '',
           language: row?.language || '',
           viewport_kind: row?.viewport_kind || '',
           user_tier: row?.user_tier || null,
-          rule_type: ruleType,
+          decision: selected,
         }),
       });
       if (row) row.decision = ruleType;

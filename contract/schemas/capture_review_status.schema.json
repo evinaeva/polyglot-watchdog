@@ -20,7 +20,8 @@
       "enum": [
         "valid",
         "blocked_by_overlay",
-        "retry_requested"
+        "retry_requested",
+        "not_found"
       ]
     },
     "reviewer": {

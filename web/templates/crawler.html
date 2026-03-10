@@ -20,6 +20,7 @@
       <label><input type="checkbox" id="includeRecipes" /> baseline + recipes</label>
       <button id="planButton">Plan</button>
       <button id="startButton">Start capture jobs</button>
+      <select id="reviewStatusFilter"><option value="">all statuses</option><option value="valid">valid</option><option value="retry_requested">retry_requested</option><option value="blocked_by_overlay">blocked_by_overlay</option><option value="not_found">not_found</option></select>
       <button id="refreshButton">Refresh status</button>
     </div>
     <div id="captureError" class="hidden" style="color:#b00020; margin:8px 0;"></div>
@@ -38,7 +39,7 @@
 
     <h2>Capture contexts review</h2>
     <table>
-      <thead><tr><th>context_id</th><th>url</th><th>language</th><th>state</th><th>viewport</th><th>tier</th><th>elements</th><th>screenshot_uri</th><th>comment</th><th>actions</th></tr></thead>
+      <thead><tr><th>context_id</th><th>url</th><th>language</th><th>state</th><th>viewport</th><th>tier</th><th>elements</th><th>screenshot</th><th>review_status</th><th>actions</th></tr></thead>
       <tbody id="contextsBody"></tbody>
     </table>
   </main>
