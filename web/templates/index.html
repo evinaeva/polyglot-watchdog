@@ -13,18 +13,19 @@
     <h1>SEE ERRORS</h1>
     <p>Review and filter captured issues for a selected domain and run.</p>
     <p><a id="issuesBackToCheckLanguages" href="/pulls">Back to Check Languages</a></p>
+    <p id="workflowContextSummary" class="muted"></p>
 
     <div class="controls">
       <input id="domainInput" placeholder="domain" />
-      <input id="runIdInput" placeholder="run id" />
       <input id="languageFilter" placeholder="language" />
       <input id="issueQuery" placeholder="search" />
       <button id="applyIssueQuery" type="button">Apply</button>
     </div>
 
     <details>
-      <summary>Advanced filters</summary>
+      <summary>Advanced filters &amp; run override</summary>
       <div class="controls">
+        <input id="runIdInput" placeholder="run id (optional override)" />
         <input id="severityFilter" placeholder="severity" />
         <input id="stateFilter" placeholder="state" />
         <input id="typeFilter" placeholder="issue type" />
