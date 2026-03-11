@@ -13,7 +13,7 @@ const table = document.getElementById('issuesTable');
 const tbody = table.querySelector('tbody');
 const issueStatus = document.getElementById('issueStatus');
 const issueCount = document.getElementById('issueCount');
-const issuesBackToRunHub = document.getElementById('issuesBackToRunHub');
+const issuesBackToCheckLanguages = document.getElementById('issuesBackToCheckLanguages');
 
 function queryParamsFromLocation() {
   const params = new URLSearchParams(window.location.search);
@@ -43,7 +43,20 @@ function syncDefaultsFromQuery() {
   const { domain, runId } = queryParamsFromLocation();
   domainInput.value = domain;
   runIdInput.value = runId;
-  issuesBackToRunHub.href = `/runs?${new URLSearchParams({ domain }).toString()}`;
+  const params = new URLSearchParams();
+  if (domain) params.set('domain', domain);
+  if (runId) params.set('run_id', runId);
+  const checkLanguagesHref = `/check-languages${params.toString() ? `?${params.toString()}` : ''}`;
+  const pullsHref = `/pulls${params.toString() ? `?${params.toString()}` : ''}`;
+  issuesBackToCheckLanguages.href = checkLanguagesHref;
+
+  fetch(checkLanguagesHref, { method: 'HEAD' })
+    .then((response) => {
+      if (!response.ok) issuesBackToCheckLanguages.href = pullsHref;
+    })
+    .catch(() => {
+      issuesBackToCheckLanguages.href = pullsHref;
+    });
 }
 
 function issueLabel(issue) {
