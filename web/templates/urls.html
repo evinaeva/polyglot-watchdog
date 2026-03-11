@@ -10,10 +10,15 @@
 <body>
   {{header}}
   <main>
-    <h1>Seed URLs (source of truth)</h1>
+    <h1>ADD URL</h1>
+    <p>Choose a domain, load existing URLs, and update your working URL list.</p>
     <div class="controls">
-      <label>Domain <input id="domainInput" value="bongacams.com" /></label>
-      <button id="loadButton">Load</button>
+      <label>Domain
+        <select id="domainInput">
+          <option value="bongacams.com">bongacams.com</option>
+        </select>
+      </label>
+      <button id="loadButton">Load existing</button>
     </div>
     <p>Updated at: <span id="updatedAt">-</span></p>
     <div id="errorBox" class="hidden" role="alert" aria-live="assertive" style="color:#b00020; margin-bottom: 8px;"></div>
@@ -22,12 +27,13 @@
     <div class="controls urls-actions">
       <button id="replaceButton">Replace list</button>
       <button id="addButton">Add to list</button>
-      <button id="clearButton">Clear</button>
+      <button id="clearButton">Clear list</button>
+      <a id="continueFirstRun" class="ui-action-button" href="/workflow?domain=bongacams.com">Continue to First Run</a>
     </div>
 
     <h2>Domain URL config</h2>
     <table>
-      <thead><tr><th>URL</th><th>recipe_ids</th><th>active</th><th>has_recipe</th><th>status</th><th>actions</th></tr></thead>
+      <thead><tr><th>URL</th><th>Active</th><th>Save</th><th>Delete</th></tr></thead>
       <tbody id="savedUrlsBody"></tbody>
     </table>
   </main>

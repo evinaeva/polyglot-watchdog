@@ -8,6 +8,7 @@ const updatedAt = document.getElementById('updatedAt');
 const savedUrlsBody = document.getElementById('savedUrlsBody');
 const errorBox = document.getElementById('errorBox');
 const statusBox = document.getElementById('statusBox');
+const continueLink = document.getElementById('continueFirstRun');
 let recipes = [];
 
 const SAVE_SUCCESS_TIMEOUT_MS = 2000;
@@ -28,6 +29,16 @@ function formatUpdatedAt(value) {
 
 function t(key, fallback) {
   return window.i18n?.t?.(key) || fallback;
+}
+
+function selectedDomain() {
+  return (domainInput?.value || '').trim();
+}
+
+function syncContinueLink() {
+  if (!continueLink) return;
+  const domain = selectedDomain();
+  continueLink.href = `/workflow?${new URLSearchParams({ domain }).toString()}`;
 }
 
 function setStatus(message, type = 'info') {
@@ -112,47 +123,42 @@ function bindDirtyReset(tr, saveButton) {
   });
 }
 
+async function safeReadPayload(response) {
+  try {
+    return await response.json();
+  } catch (_error) {
+    return {};
+  }
+}
+
 async function callApi(path, method, payload) {
   const response = await fetch(path, {
     method,
     headers: { 'Content-Type': 'application/json' },
     body: payload ? JSON.stringify(payload) : undefined,
   });
-  const data = await response.json();
+  const data = await safeReadPayload(response);
   if (!response.ok) throw new Error(data.error || `Request failed: ${response.status}`);
   return data;
 }
 
 function renderRecipeChips(container, select) {
   container.innerHTML = '';
-  const selected = Array.from(select.selectedOptions).map((opt) => ({ id: opt.value, label: opt.textContent || opt.value }));
+  const selected = Array.from(select.selectedOptions)
+    .map((opt) => opt.value.trim())
+    .filter(Boolean);
+
   if (!selected.length) {
-    const empty = document.createElement('span');
-    empty.className = 'recipe-chip-empty';
-    empty.textContent = 'No recipes selected';
-    container.appendChild(empty);
+    container.textContent = t('urls.recipes.none', 'No recipes selected');
     return;
   }
 
-  for (const item of selected) {
+  selected.forEach((id) => {
     const chip = document.createElement('span');
     chip.className = 'recipe-chip';
-    chip.textContent = item.label;
-
-    const remove = document.createElement('button');
-    remove.type = 'button';
-    remove.className = 'recipe-chip-remove';
-    remove.textContent = '×';
-    remove.title = `Remove ${item.id}`;
-    remove.addEventListener('click', () => {
-      const option = Array.from(select.options).find((opt) => opt.value === item.id);
-      if (option) option.selected = false;
-      renderRecipeChips(container, select);
-    });
-
-    chip.appendChild(remove);
+    chip.textContent = id;
     container.appendChild(chip);
-  }
+  });
 }
 
 function buildRecipePicker(row) {
@@ -160,12 +166,13 @@ function buildRecipePicker(row) {
   wrap.className = 'recipe-picker';
 
   const select = document.createElement('select');
-  select.multiple = true;
   select.dataset.field = 'recipe_ids';
-  select.className = 'recipe-picker-select';
+  select.multiple = true;
+  select.size = Math.min(Math.max(recipes.length, 2), 6);
 
-  const selectedSet = new Set(Array.isArray(row.recipe_ids) ? row.recipe_ids.map(String) : []);
+  const selectedSet = new Set(Array.isArray(row.recipe_ids) ? row.recipe_ids.map((id) => String(id).trim()).filter(Boolean) : []);
   const knownIds = new Set();
+
   for (const recipe of recipes) {
     const id = String(recipe.recipe_id || '').trim();
     if (!id) continue;
@@ -197,6 +204,30 @@ function buildRecipePicker(row) {
   return wrap;
 }
 
+function createAdvancedDetails(row, hasRecipe, invalid) {
+  const details = document.createElement('details');
+  details.className = 'advanced-options';
+
+  const summary = document.createElement('summary');
+  summary.textContent = 'Advanced options';
+  details.appendChild(summary);
+
+  const recipeWrap = document.createElement('div');
+  const recipeLabel = document.createElement('div');
+  recipeLabel.textContent = 'recipe_ids';
+  recipeWrap.appendChild(recipeLabel);
+  recipeWrap.appendChild(buildRecipePicker(row));
+
+  const hasRecipeLine = document.createElement('div');
+  hasRecipeLine.textContent = `has_recipe: ${hasRecipe ? 'yes' : 'no'}`;
+
+  const statusLine = document.createElement('div');
+  statusLine.textContent = `status: ${invalid ? 'invalid' : 'valid'}`;
+
+  details.append(recipeWrap, hasRecipeLine, statusLine);
+  return details;
+}
+
 function render(data) {
   const urls = Array.isArray(data.urls) ? data.urls : [];
   updatedAt.textContent = formatUpdatedAt(data.updated_at);
@@ -218,9 +249,6 @@ function render(data) {
     });
     urlCell.appendChild(urlField);
 
-    const recipesCell = document.createElement('td');
-    recipesCell.appendChild(buildRecipePicker(row));
-
     const activeCell = document.createElement('td');
     const activeField = document.createElement('input');
     activeField.type = 'checkbox';
@@ -228,27 +256,27 @@ function render(data) {
     activeField.checked = row.active !== false;
     activeCell.appendChild(activeField);
 
-    const hasRecipeCell = document.createElement('td');
-    hasRecipeCell.textContent = hasRecipe ? 'has_recipe' : '-';
-
-    const statusCell = document.createElement('td');
-    statusCell.textContent = invalid ? 'invalid' : 'valid';
-
-    const actionsCell = document.createElement('td');
+    const saveCell = document.createElement('td');
     const saveButton = document.createElement('button');
     saveButton.className = 'save-row ui-action-button';
     saveButton.textContent = t('urls.button.save', 'Save');
     saveButton.dataset.defaultLabel = t('urls.button.save', 'Save');
+    saveCell.appendChild(saveButton);
 
+    const deleteCell = document.createElement('td');
     const deleteButton = document.createElement('button');
     deleteButton.className = 'delete-row ui-action-button';
     deleteButton.textContent = t('urls.button.delete', 'Delete');
     deleteButton.dataset.defaultLabel = t('urls.button.delete', 'Delete');
+    deleteCell.appendChild(deleteButton);
 
-    actionsCell.appendChild(saveButton);
-    actionsCell.appendChild(deleteButton);
+    tr.append(urlCell, activeCell, saveCell, deleteCell);
 
-    tr.append(urlCell, recipesCell, activeCell, hasRecipeCell, statusCell, actionsCell);
+    const advancedTr = document.createElement('tr');
+    const advancedTd = document.createElement('td');
+    advancedTd.colSpan = 4;
+    advancedTd.appendChild(createAdvancedDetails(row, hasRecipe, invalid));
+    advancedTr.appendChild(advancedTd);
 
     saveButton.addEventListener('click', async () => {
       setError('');
@@ -261,12 +289,12 @@ function render(data) {
       });
       try {
         const url = tr.querySelector('[data-field="URL"]').value.trim();
-        const recipeIds = Array.from(tr.querySelector('[data-field="recipe_ids"]').selectedOptions)
+        const recipeIds = Array.from(advancedTr.querySelector('[data-field="recipe_ids"]').selectedOptions)
           .map((opt) => opt.value.trim())
           .filter(Boolean);
         const active = tr.querySelector('[data-field="active"]').checked;
         const payload = await callApi('/api/seed-urls/row-upsert', 'POST', {
-          domain: domainInput.value,
+          domain: selectedDomain(),
           row: { url, recipe_ids: recipeIds, active },
         });
         setButtonState(saveButton, 'saved', {
@@ -275,7 +303,7 @@ function render(data) {
           successLabel: t('urls.button.saved', 'Saved'),
           errorLabel: t('urls.button.error', 'Failed'),
         });
-        setStatus(t('urls.status.saved', 'Row saved successfully.'), 'success');
+        setStatus('URLs saved', 'success');
         clearTimeout(saveStateTimers.get(saveButton));
         const timer = setTimeout(() => {
           setButtonState(saveButton, 'idle', {
@@ -319,7 +347,7 @@ function render(data) {
       });
       try {
         const url = tr.querySelector('[data-field="URL"]').value.trim();
-        const payload = await callApi('/api/seed-urls/delete', 'POST', { domain: domainInput.value, url });
+        const payload = await callApi('/api/seed-urls/delete', 'POST', { domain: selectedDomain(), url });
         setStatus(t('urls.status.deleted', 'Row deleted.'), 'success');
         render(payload);
       } catch (error) {
@@ -342,26 +370,49 @@ function render(data) {
       }
     });
 
-    bindDirtyReset(tr, saveButton);
+    bindDirtyReset(advancedTr, saveButton);
     savedUrlsBody.appendChild(tr);
+    savedUrlsBody.appendChild(advancedTr);
+  }
+}
+
+async function maybeLoadDomains() {
+  try {
+    const response = await fetch('/api/domains');
+    const payload = await safeReadPayload(response);
+    if (!response.ok || !Array.isArray(payload.items) || !payload.items.length) return;
+    const selected = selectedDomain() || 'bongacams.com';
+    domainInput.innerHTML = '';
+    for (const domain of payload.items) {
+      const option = document.createElement('option');
+      option.value = domain;
+      option.textContent = domain;
+      domainInput.appendChild(option);
+    }
+    if (payload.items.includes(selected)) {
+      domainInput.value = selected;
+    }
+  } catch (_error) {
+    // fallback to default domain options in HTML
   }
 }
 
 async function load() {
   setError('');
   setStatus('');
+  syncContinueLink();
   setButtonState(loadButton, 'loading', {
-    idleLabel: t('urls.load', 'Load'),
+    idleLabel: t('urls.load', 'Load existing'),
     loadingLabel: t('urls.button.loading', 'Loading...'),
     activatedLabel: t('urls.button.loaded', 'Loaded'),
     errorLabel: t('urls.button.error', 'Failed'),
   });
   try {
-    recipes = (await callApi(`/api/recipes?domain=${encodeURIComponent(domainInput.value)}`, 'GET')).recipes || [];
-    const data = await callApi(`/api/seed-urls?domain=${encodeURIComponent(domainInput.value)}`, 'GET');
+    recipes = (await callApi(`/api/recipes?domain=${encodeURIComponent(selectedDomain())}`, 'GET')).recipes || [];
+    const data = await callApi(`/api/seed-urls?domain=${encodeURIComponent(selectedDomain())}`, 'GET');
     render(data);
     markButtonActivated(loadButton, {
-      idleLabel: t('urls.load', 'Load'),
+      idleLabel: t('urls.load', 'Load existing'),
       loadingLabel: t('urls.button.loading', 'Loading...'),
       activatedLabel: t('urls.button.loaded', 'Loaded'),
       errorLabel: t('urls.button.error', 'Failed'),
@@ -369,14 +420,14 @@ async function load() {
     setStatus(t('urls.status.loaded', 'URLs loaded.'), 'success');
   } catch (error) {
     setButtonState(loadButton, 'error', {
-      idleLabel: t('urls.load', 'Load'),
+      idleLabel: t('urls.load', 'Load existing'),
       loadingLabel: t('urls.button.loading', 'Loading...'),
       activatedLabel: t('urls.button.loaded', 'Loaded'),
       errorLabel: t('urls.button.error', 'Failed'),
     });
     setError(error.message || t('urls.errors.load_failed', 'Failed to load'));
     setStatus(t('urls.status.load_failed', 'Load failed.'), 'error');
-    setTimeout(() => setButtonState(loadButton, 'idle', { idleLabel: t('urls.load', 'Load') }), ACTIVATION_TIMEOUT_MS);
+    setTimeout(() => setButtonState(loadButton, 'idle', { idleLabel: t('urls.load', 'Load existing') }), ACTIVATION_TIMEOUT_MS);
   }
 }
 
@@ -389,7 +440,7 @@ async function mutate(path, payload, button, labels) {
     const data = await callApi(path, method, payload);
     render(data);
     markButtonActivated(button, labels);
-    setStatus(t('urls.status.updated', 'Changes applied.'), 'success');
+    setStatus('URLs saved', 'success');
   } catch (error) {
     setButtonState(button, 'error', labels);
     setError(error.message || t('urls.errors.request_failed', 'Request failed'));
@@ -404,23 +455,31 @@ addButton.classList.add('ui-action-button');
 clearButton.classList.add('ui-action-button');
 
 loadButton.addEventListener('click', load);
-replaceButton.addEventListener('click', () => mutate('/api/seed-urls', { domain: domainInput.value, urls_multiline: urlsMultiline.value }, replaceButton, {
+replaceButton.addEventListener('click', () => mutate('/api/seed-urls', { domain: selectedDomain(), urls_multiline: urlsMultiline.value }, replaceButton, {
   idleLabel: t('urls.replace', 'Replace list'),
   loadingLabel: t('urls.button.applying', 'Applying...'),
   activatedLabel: t('urls.button.applied', 'Applied'),
   errorLabel: t('urls.button.error', 'Failed'),
 }));
-addButton.addEventListener('click', () => mutate('/api/seed-urls/add', { domain: domainInput.value, urls_multiline: urlsMultiline.value }, addButton, {
+addButton.addEventListener('click', () => mutate('/api/seed-urls/add', { domain: selectedDomain(), urls_multiline: urlsMultiline.value }, addButton, {
   idleLabel: t('urls.add', 'Add to list'),
   loadingLabel: t('urls.button.adding', 'Adding...'),
   activatedLabel: t('urls.button.added', 'Added'),
   errorLabel: t('urls.button.error', 'Failed'),
 }));
-clearButton.addEventListener('click', () => mutate('/api/seed-urls/clear', { domain: domainInput.value }, clearButton, {
-  idleLabel: t('urls.clear', 'Clear'),
+clearButton.addEventListener('click', () => mutate('/api/seed-urls/clear', { domain: selectedDomain() }, clearButton, {
+  idleLabel: t('urls.clear', 'Clear list'),
   loadingLabel: t('urls.button.clearing', 'Clearing...'),
   activatedLabel: t('urls.button.cleared', 'Cleared'),
   errorLabel: t('urls.button.error', 'Failed'),
 }));
 
-document.addEventListener('pw:i18n:ready', load);
+if (domainInput) {
+  domainInput.addEventListener('change', syncContinueLink);
+}
+
+document.addEventListener('pw:i18n:ready', async () => {
+  await maybeLoadDomains();
+  syncContinueLink();
+  await load();
+});
