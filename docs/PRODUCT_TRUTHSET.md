@@ -30,7 +30,31 @@ This means:
 
 - the codebase contains real pipeline and artifact-backed implementation;
 - some operator surfaces are already backed by persisted data;
-- the full visible product workflow is not yet fully integrated and release-ready.
+- the product is not yet production-ready.
+
+It does **not** mean that the product must expose a single-page workflow to be considered coherent.
+
+## Operator workflow model
+
+The canonical v1.0 operator workflow is **multi-page / multi-tab by design**.
+
+This means:
+
+- URL management may live on one page;
+- capture/run/context review may live on another page;
+- annotation/review may live on another page;
+- issue exploration may live on another page.
+
+This is an **official product workflow**, not a workaround and not a developer-only path.
+
+A multi-page workflow is acceptable for v1.0 as long as:
+
+- the required steps are available through official UI surfaces;
+- navigation between those surfaces is clear;
+- state is persisted across the workflow;
+- the operator does not need hidden routes or manual actions outside the product interface.
+
+The product should therefore be evaluated on **workflow completeness across official pages**, not on whether all steps are collapsed into a single screen.
 
 ## What is already true
 
@@ -39,6 +63,7 @@ The following statements are allowed and should be treated as true:
 - the repository contains real pipeline/storage implementation;
 - the repository is not just a UI mock scaffold;
 - some operator routes are backed by persisted artifacts;
+- the operator workflow is intentionally distributed across multiple pages/tabs;
 - the product is not yet production-ready.
 
 ## What is no longer allowed
@@ -48,6 +73,7 @@ The following statements are considered outdated and should not be reintroduced:
 - “No meaningful pipeline implementation exists.”
 - “All data returned by the API is mock/static.”
 - “This repo is only a front-end scaffold.”
+- “A multi-page operator workflow is automatically evidence of broken integration.”
 - “The product is production-ready.”
 
 ## v1.0 source-of-truth scope
@@ -64,15 +90,15 @@ For messaging and planning, v1.0 includes:
 Deferred and still acceptable for v1.0:
 
 - OCR / Phase 4 work;
-- crawler improvements beyond manual seed URL workflow.
-
+- crawler improvements beyond manual seed URL workflow;
+- keeping the operator workflow distributed across multiple pages/tabs instead of consolidating it into one screen.
 
 ## Stage D gate state
 
 Current release-gate state is **pre_production**.
 
 - Deterministic rule: `GATE_PASSED = all(required_v1_0_criteria == pass)`
-- Current result: gate failed (required blockers remain)
+- Current result: gate failed if required blockers remain
 - Audit source: `docs/RELEASE_READINESS.md`
 - Evidence package: `docs/RELEASE_EVIDENCE.md`
 
@@ -101,8 +127,11 @@ Whenever implementation status changes, update all of the following together:
 
 ## Maintainer note
 
-This file exists because implementation status and public-facing messaging drifted. Future edits should preserve a single coherent story:
+This file exists because implementation status and public-facing messaging drifted.
+
+Future edits should preserve a single coherent story:
 
 - real backend/artifact implementation exists;
-- visible workflow integration is still incomplete;
-- production-ready claims are blocked until release criteria are met.
+- the operator workflow may be intentionally split across multiple pages/tabs;
+- that multi-page structure is acceptable when it is the official product flow;
+- production-ready claims remain blocked until release criteria are met.
