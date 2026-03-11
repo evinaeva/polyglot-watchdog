@@ -34,7 +34,7 @@
     <section>
       <h2>Block C · Capture status</h2>
       <div id="wfStatus"></div>
-      <pre id="wfStatusMeta"></pre>
+      <dl id="wfStatusSummary" class="key-value"></dl>
       <details>
         <summary>Technical details</summary>
         <h3>Status payload</h3>
@@ -47,9 +47,15 @@
     <section>
       <h2>Block D · Next step</h2>
       <div class="controls">
-        <button id="wfGenerateDataset" type="button" disabled>Prepare captured data</button>
         <a id="wfContinuePulls" href="#" aria-disabled="true">Continue to Choose Needed</a>
       </div>
+      <details>
+        <summary>Advanced: dataset generation</summary>
+        <p>Use this only when you need to rebuild eligible dataset internals for diagnostics or reprocessing.</p>
+        <div class="controls">
+          <button id="wfGenerateDataset" type="button" disabled>Prepare captured data</button>
+        </div>
+      </details>
     </section>
   </main>
   <script src="/static/i18n.js"></script>
