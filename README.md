@@ -2,18 +2,19 @@
 
 Polyglot Watchdog is a contract-first operator console and pipeline for localization QA across baseline and target-language web experiences.
 
-This repository is **not** a blank scaffold. It already contains a real artifact model, canonical storage paths, multiple implemented phase runners, and an operator UI that is partially backed by persisted artifacts. At the same time, it is **not yet production-ready**: some visible operator screens are still mock-backed or incomplete, and the documentation has drifted from the actual state of the codebase.
+This repository is **not** a blank scaffold. It already contains a real artifact model, canonical storage paths, multiple implemented phase runners, and operator-facing UI surfaces backed in part by persisted artifacts.
 
-This README is the product truth-set entry point for contributors. For v1.0 scope and release readiness, also read:
+At the same time, it is **not yet production-ready**. Some operator flows are still incomplete or partially mock-backed, and release-facing documentation must remain aligned with the actual state of the codebase.
+
+This README is the product truth-set entry point for contributors.
+
+For v1.0 scope and release readiness, also read:
 
 - `contract/watchdog_contract_v1.0.md`
 - `docs/Interactive Capture Architecture.md`
 - `docs/Implementation Playbook.md`
 - `docs/operator-read-routes.md`
 - `RELEASE_CRITERIA.md`
-- `docs/RELEASE_READINESS.md`
-- `docs/RELEASE_EVIDENCE.md`
-- `docs/MESSAGING_STATE.md`
 - `docs/PRODUCT_TRUTHSET.md`
 
 ## Current product status
@@ -26,32 +27,19 @@ What is already real in the repository:
 - deterministic pipeline/storage conventions for run-level artifacts;
 - implemented phase runners for key contract-aligned flows, including Phase 1, Phase 3, and Phase 6;
 - a `/urls` operator surface for managing seed URLs;
-- an issues explorer surface backed by persisted issue artifacts.
+- operator-facing issue exploration backed by persisted issue artifacts.
 
 What is not yet complete:
 
-- operator workflow pages are now visibly linked via global navigation and run-scoped actions (`/urls`, `/runs`, `/contexts`, `/pulls`, `/`, `/issues/detail`);
-- some UI routes still rely on mock-backed or incomplete flows;
-- README, About text, and implementation status previously drifted and must stay aligned going forward.
-
-### Stage D release-gate outcome
-
-Release gate decision: **pre_production** (failed gate).
-
-Why production-ready wording is blocked right now:
-
-- at least one required v1.0 release criterion is still marked `fail` in `docs/RELEASE_READINESS.md`;
-- visible operator workflow coherence is still documented as incomplete for required flow paths.
-
-What remains before production wording is allowed:
-
-- close required criterion 4 (review/annotation flow completeness for visible required workflow);
-- close required criterion 7 (visible operator workflow coherence without hidden/manual gaps);
-- keep all four truth surfaces synchronized.
+- some operator-visible flows are still incomplete or partially mock-backed;
+- not all required v1.0 screens are fully release-ready;
+- release-facing messaging must stay aligned with actual implementation status.
 
 ## v1.0 scope
 
-v1.0 is defined by the contract and implementation docs. In practical terms, v1.0 means:
+v1.0 is defined by the contract and implementation docs.
+
+In practical terms, v1.0 means:
 
 - seed URL management through the operator UI;
 - deterministic baseline and scripted-state capture planning;
@@ -65,12 +53,35 @@ The following are explicitly **deferred** from blocking v1.0:
 - OCR / Phase 4 work;
 - crawler improvements beyond the accepted manual seed URL workflow.
 
+## Operator workflow model
+
+The v1.0 operator workflow is **intentionally multi-page by design**.
+
+This means the operator may complete the workflow across multiple dedicated pages or tabs, for example:
+
+- URL management on one page;
+- run/capture review on another page;
+- annotation/review on another page;
+- issue exploration on another page.
+
+This is the **canonical product flow**, not a workaround.
+
+v1.0 does **not** require a single-screen or single-route experience.  
+It **does** require that all mandatory steps be available through the official product UI, with:
+
+- clear navigation between the required pages;
+- persisted state across steps;
+- no dependence on hidden routes;
+- no dependence on developer-only actions;
+- no required manual intervention outside the product interface.
+
 ## What contributors should assume
 
 When changing the product:
 
-- do not describe the repository as entirely mock-backed or as lacking meaningful implemented phases;
+- do not describe the repository as “all mock” or “no phases implemented”;
 - do not describe the product as production-ready unless the release criteria are met;
+- do not treat a multi-page operator workflow as a defect by itself;
 - treat the contract as normative for artifact semantics and phase boundaries;
 - treat `RELEASE_CRITERIA.md` as the release-ready checklist;
 - treat `docs/PRODUCT_TRUTHSET.md` as the status and messaging alignment document.
@@ -82,14 +93,16 @@ Use these statements consistently:
 - “Polyglot Watchdog is a contract-first localization QA pipeline and operator console.”
 - “The repository contains real artifact-backed pipeline components and partial operator UI integration.”
 - “The project is pre-production and not yet production-ready.”
+- “The operator workflow is multi-page by design.”
 - “OCR is deferred from v1.0.”
 - “Manual seed URL workflow is valid for v1.0.”
 
 Avoid these outdated statements:
 
-- “No meaningful pipeline implementation exists.”
-- “Every API response is static stub data.”
+- “No pipeline phases are implemented.”
+- “All API responses are mock/static.”
 - “The repository is only a UI scaffold.”
+- “The full operator workflow must exist on a single page to count as integrated.”
 - “The current product is production-ready.”
 
 ## Repo areas
