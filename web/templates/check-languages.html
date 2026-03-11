@@ -10,24 +10,35 @@
   {{header}}
   <main>
     <h1>CHECK LANGUAGES</h1>
-    <p>This page is a read-only checkpoint for language validation before pull selection. Use it to confirm that the current run metadata is correct and to align review context.</p>
-    <p>Interactive language verification controls are planned for the next iteration. For now, continue through the manual workflow links below when you need to inspect artifacts directly.</p>
+    <p>Use this checkpoint to confirm language-related run metadata before moving to pull selection.</p>
+    <p>This step is read-only for now; interactive review controls will be added in the next iteration.</p>
 
     <section>
-      <h2>Current run</h2>
-      <p><strong>Domain:</strong> <span id="checkLanguagesDomain">—</span></p>
-      <p><strong>Run ID:</strong> <span id="checkLanguagesRunId">—</span></p>
+      <h2>Block A · Current run</h2>
+      <div class="controls">
+        <div>
+          <label for="checkLanguagesDomain">Domain</label>
+          <input id="checkLanguagesDomain" type="text" value="" readonly placeholder="—" />
+        </div>
+        <div>
+          <label for="checkLanguagesRunId">Run ID</label>
+          <input id="checkLanguagesRunId" type="text" value="" readonly placeholder="—" />
+        </div>
+      </div>
     </section>
 
     <section>
-      <button type="button" disabled>Coming next</button>
+      <h2>Block B · Next action</h2>
+      <div class="controls">
+        <button id="checkLanguagesComingNext" type="button" class="ui-action-button" disabled aria-disabled="true">Coming next</button>
+      </div>
     </section>
 
     <details class="page-help">
       <summary>Technical/manual paths</summary>
       <div class="page-help-content">
         <ul>
-          <li><a id="checkLanguagesWorkflowLink" href="/workflow">Back to Workflow Hub</a></li>
+          <li><a href="/workflow">Back to Workflow Hub</a></li>
           <li><a id="checkLanguagesContextsLink" href="#">Open Contexts for this run</a></li>
           <li><a id="checkLanguagesPullsLink" href="#">Open Items/Pulls for this run</a></li>
         </ul>
@@ -40,8 +51,11 @@
       const domain = (params.get('domain') || '').trim();
       const runId = (params.get('run_id') || '').trim();
 
-      document.getElementById('checkLanguagesDomain').textContent = domain || '—';
-      document.getElementById('checkLanguagesRunId').textContent = runId || '—';
+      const domainInput = document.getElementById('checkLanguagesDomain');
+      const runIdInput = document.getElementById('checkLanguagesRunId');
+
+      domainInput.value = domain;
+      runIdInput.value = runId;
 
       if (domain && runId) {
         const query = `?domain=${encodeURIComponent(domain)}&run_id=${encodeURIComponent(runId)}`;
