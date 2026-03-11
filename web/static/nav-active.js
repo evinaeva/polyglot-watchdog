@@ -1,7 +1,15 @@
 (() => {
   const pathname = window.location.pathname;
-  const allowedPaths = new Set(["/", "/crawler", "/pulling", "/urls", "/about", "/testbench"]);
-  const activePath = allowedPaths.has(pathname) ? pathname : null;
+  const routeToNavPath = {
+    "/": "/",
+    "/urls": "/urls",
+    "/workflow": "/workflow",
+    "/pulls": "/pulls",
+    "/check-languages": "/check-languages",
+    "/about": "/about",
+    "/issues/detail": "/",
+  };
+  const activePath = routeToNavPath[pathname] ?? null;
   if (!activePath) return;
 
   const links = document.querySelectorAll('nav a[href]');
