@@ -3,21 +3,29 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Polyglot Watchdog - Items/Pulls</title>
+  <title>Polyglot Watchdog - CHOOSE NEEDED</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
   {{header}}
   <main>
-    <h1>Items/Pulls</h1>
+    <h1>CHOOSE NEEDED</h1>
+    <p>Select the items you want to keep or ignore for this run, then save your selection.</p>
     <p>
       <a id="pullsBackToRunHub" href="/workflow">Back to Workflow Hub</a> |
       <a id="pullsOpenContexts" href="#">Open Contexts</a> |
       <a id="pullsOpenIssues" href="#">Open Issues</a>
     </p>
+    <p>
+      <label for="pullsUrlSearch">Search by URL:</label>
+      <input id="pullsUrlSearch" type="search" placeholder="Type part of a URL" />
+    </p>
+    <p>
+      <a id="continueCheckLanguages" href="#">Continue to Check Languages</a>
+    </p>
     <div id="pullsStatus"></div>
     <table id="pullsTable" class="hidden">
-      <thead><tr><th>Item ID</th><th>URL</th><th>Language</th><th>State</th><th>Element Type</th><th>Decision</th><th>Save</th></tr></thead>
+      <thead><tr><th>URL</th><th>Item/Element ID</th><th>Element Type</th><th>Language</th><th>Preview/Snippet</th><th>Decision</th><th>Action</th></tr></thead>
       <tbody></tbody>
     </table>
   </main>
