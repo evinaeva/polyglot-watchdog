@@ -5,7 +5,7 @@ const wfStartCapture = document.getElementById('wfStartCapture');
 const wfGenerateDataset = document.getElementById('wfGenerateDataset');
 const wfContinuePulls = document.getElementById('wfContinuePulls');
 const wfStatus = document.getElementById('wfStatus');
-const wfStatusMeta = document.getElementById('wfStatusMeta');
+const wfStatusSummary = document.getElementById('wfStatusSummary');
 const wfPayload = document.getElementById('wfPayload');
 const wfTransition = document.getElementById('wfTransition');
 
@@ -53,22 +53,19 @@ function renderStatus(payload) {
   const cls = status === 'failed' ? 'error' : status === 'in_progress' ? 'warning' : status === 'ready' || status === 'empty' ? 'ok' : '';
   setStatus(`Capture status: ${human}`, cls);
 
-  const meta = {
-    run_id: activeRunId || run.run_id || null,
-    domain: wfDomain.value || run.domain || null,
-    progress_contexts: capture.contexts,
-    progress_items: capture.items,
-    jobs_running: run.jobs_running,
-    jobs_failed: run.jobs_failed,
-  };
+  const rows = [
+    ['Domain', wfDomain.value || run.domain || '—'],
+    ['Capture run', activeRunId || run.run_id || '—'],
+    ['Contexts processed', capture.contexts ?? '—'],
+    ['Items processed', capture.items ?? '—'],
+    ['Worker jobs running', run.jobs_running ?? '—'],
+    ['Worker jobs failed', run.jobs_failed ?? '—'],
+  ];
 
-  const optional = ['started_at', 'updated_at', 'completed_at', 'last_update', 'last_updated_at', 'timestamp'];
-  for (const key of optional) {
-    const value = capture[key] ?? run[key] ?? payload[key];
-    if (value) meta[key] = value;
-  }
+  const updatedAt = capture.updated_at || run.updated_at || payload.updated_at || capture.last_update || run.last_update || payload.last_update || capture.last_updated_at || run.last_updated_at || payload.last_updated_at || capture.timestamp || run.timestamp || payload.timestamp;
+  if (updatedAt) rows.push(['Last update', updatedAt]);
 
-  wfStatusMeta.textContent = JSON.stringify(meta, null, 2);
+  wfStatusSummary.innerHTML = rows.map(([label, value]) => `<dt>${label}</dt><dd>${value}</dd>`).join('');
 }
 
 function renderTechnicalDetails(payload) {
@@ -87,12 +84,10 @@ function setContinueLink(domain, runId, enabled) {
 
 function setActionAvailability(payload) {
   const captureStatus = readCaptureStatus(payload);
-  const datasetStatus = String(((payload || {}).eligible_dataset || {}).status || '').trim();
   const captureReady = captureStatus === 'ready' || captureStatus === 'empty';
-  const datasetReady = datasetStatus === 'ready' || datasetStatus === 'empty';
 
   wfGenerateDataset.disabled = !captureReady;
-  setContinueLink(wfDomain.value.trim(), activeRunId, datasetReady);
+  setContinueLink(wfDomain.value.trim(), activeRunId, captureReady);
 }
 
 function stopPolling() {
@@ -152,7 +147,7 @@ async function loadWorkflowStatus() {
   const runId = activeRunId.trim();
   if (!domain || !runId) {
     setStatus('Not started', 'warning');
-    wfStatusMeta.textContent = '';
+    wfStatusSummary.innerHTML = '';
     renderTechnicalDetails({});
     setActionAvailability({});
     return;
