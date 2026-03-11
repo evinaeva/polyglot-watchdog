@@ -1,23 +1,17 @@
 const wfDomain = document.getElementById('wfDomain');
-const wfRun = document.getElementById('wfRun');
-const wfLoad = document.getElementById('wfLoad');
-const wfRefresh = document.getElementById('wfRefresh');
+const wfRefreshUrls = document.getElementById('wfRefreshUrls');
+const wfSavedUrls = document.getElementById('wfSavedUrls');
 const wfStartCapture = document.getElementById('wfStartCapture');
 const wfGenerateDataset = document.getElementById('wfGenerateDataset');
-const wfGenerateIssues = document.getElementById('wfGenerateIssues');
-const wfRerunContext = document.getElementById('wfRerunContext');
-const wfRerunUrl = document.getElementById('wfRerunUrl');
-const wfRerun = document.getElementById('wfRerun');
+const wfContinuePulls = document.getElementById('wfContinuePulls');
 const wfStatus = document.getElementById('wfStatus');
+const wfStatusMeta = document.getElementById('wfStatusMeta');
 const wfPayload = document.getElementById('wfPayload');
 const wfTransition = document.getElementById('wfTransition');
 
-const wfOpenContexts = document.getElementById('wfOpenContexts');
-const wfOpenPulls = document.getElementById('wfOpenPulls');
-const wfOpenIssues = document.getElementById('wfOpenIssues');
-const wfOpenIssueDetail = document.getElementById('wfOpenIssueDetail');
-
 let lastPayload = null;
+let activeRunId = '';
+let pollTimer = null;
 
 function q() {
   const p = new URLSearchParams(window.location.search);
@@ -31,40 +25,95 @@ function setQuery(domain, runId) {
   window.history.replaceState({}, '', `/workflow?${p.toString()}`);
 }
 
-function setLinks(domain, runId) {
-  const qstr = new URLSearchParams({ domain, run_id: runId }).toString();
-  wfOpenContexts.href = `/contexts?${qstr}`;
-  wfOpenPulls.href = `/pulls?${qstr}`;
-  wfOpenIssues.href = `/?${qstr}`;
-  const firstId = (((lastPayload || {}).issues || {}).first_issue_id || '').trim();
-  wfOpenIssueDetail.href = firstId ? `/issues/detail?${new URLSearchParams({ domain, run_id: runId, id: firstId }).toString()}` : '#';
-}
-
-function renderState(status) {
-  if (!status) return 'not_started';
-  return String(status);
-}
-
-function setStatus(msg, cls = '') {
+function setStatus(message, cls = '') {
   wfStatus.className = cls;
-  wfStatus.textContent = msg;
+  wfStatus.textContent = message;
+}
+
+function readCaptureStatus(payload) {
+  return String(((payload || {}).capture || {}).status || '').trim();
+}
+
+function isCaptureTerminal(status) {
+  return ['ready', 'empty', 'failed'].includes(status);
+}
+
+function humanCaptureStatus(status) {
+  if (status === 'in_progress') return 'Running';
+  if (status === 'ready' || status === 'empty') return 'Completed';
+  if (status === 'failed') return 'Failed';
+  return 'Not started';
+}
+
+function renderStatus(payload) {
+  const capture = payload.capture || {};
+  const run = payload.run || {};
+  const status = readCaptureStatus(payload);
+  const human = humanCaptureStatus(status);
+  const cls = status === 'failed' ? 'error' : status === 'in_progress' ? 'warning' : status === 'ready' || status === 'empty' ? 'ok' : '';
+  setStatus(`Capture status: ${human}`, cls);
+
+  const meta = {
+    run_id: activeRunId || run.run_id || null,
+    domain: wfDomain.value || run.domain || null,
+    progress_contexts: capture.contexts,
+    progress_items: capture.items,
+    jobs_running: run.jobs_running,
+    jobs_failed: run.jobs_failed,
+  };
+
+  const optional = ['started_at', 'updated_at', 'completed_at', 'last_update', 'last_updated_at', 'timestamp'];
+  for (const key of optional) {
+    const value = capture[key] ?? run[key] ?? payload[key];
+    if (value) meta[key] = value;
+  }
+
+  wfStatusMeta.textContent = JSON.stringify(meta, null, 2);
+}
+
+function renderTechnicalDetails(payload) {
+  wfPayload.textContent = JSON.stringify(payload || {}, null, 2);
+}
+
+function setContinueLink(domain, runId, enabled) {
+  if (!domain || !runId || !enabled) {
+    wfContinuePulls.href = '#';
+    wfContinuePulls.setAttribute('aria-disabled', 'true');
+    return;
+  }
+  wfContinuePulls.href = `/pulls?${new URLSearchParams({ domain, run_id: runId }).toString()}`;
+  wfContinuePulls.setAttribute('aria-disabled', 'false');
 }
 
 function setActionAvailability(payload) {
-  const capture = payload.capture || {};
-  const eligible = payload.eligible_dataset || {};
-  const captureReady = capture.status === 'ready' || capture.status === 'empty';
-  const datasetReady = eligible.status === 'ready' || eligible.status === 'empty';
+  const captureStatus = readCaptureStatus(payload);
+  const datasetStatus = String(((payload || {}).eligible_dataset || {}).status || '').trim();
+  const captureReady = captureStatus === 'ready' || captureStatus === 'empty';
+  const datasetReady = datasetStatus === 'ready' || datasetStatus === 'empty';
 
   wfGenerateDataset.disabled = !captureReady;
-  wfGenerateIssues.disabled = !datasetReady;
+  setContinueLink(wfDomain.value.trim(), activeRunId, datasetReady);
+}
 
-  if (!captureReady) {
-    wfOpenContexts.href = '#';
-    wfOpenPulls.href = '#';
-    wfOpenIssues.href = '#';
-    wfOpenIssueDetail.href = '#';
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
   }
+}
+
+function startPolling() {
+  stopPolling();
+  pollTimer = setInterval(async () => {
+    try {
+      await loadWorkflowStatus();
+      const captureStatus = readCaptureStatus(lastPayload || {});
+      if (isCaptureTerminal(captureStatus)) stopPolling();
+    } catch (error) {
+      setStatus(error.message || 'Failed to refresh status', 'error');
+      stopPolling();
+    }
+  }, 1000);
 }
 
 async function loadDomains() {
@@ -80,118 +129,102 @@ async function loadDomains() {
   }
 }
 
-function renderPayload(payload) {
-  const summary = {
-    seed_urls: renderState(payload.seed_urls?.status),
-    run: renderState(payload.run?.status),
-    capture: renderState(payload.capture?.status),
-    review: renderState(payload.review?.status),
-    annotation: renderState(payload.annotation?.status),
-    eligible_dataset: renderState(payload.eligible_dataset?.status),
-    issues: renderState(payload.issues?.status),
-    next_recommended_action: payload.next_recommended_action,
-    state_enum: payload.state_enum || [],
-  };
-  wfPayload.textContent = JSON.stringify(summary, null, 2);
+async function loadSavedUrls() {
+  const domain = wfDomain.value.trim();
+  if (!domain) {
+    wfSavedUrls.value = '';
+    return;
+  }
+
+  const response = await fetch(`/api/seed-urls?${new URLSearchParams({ domain }).toString()}`);
+  const payload = await safeReadPayload(response);
+  if (!response.ok) throw new Error(payload.error || `failed to load saved urls (${response.status})`);
+
+  const urls = Array.isArray(payload.urls) ? payload.urls : [];
+  const activeUrls = urls
+    .filter((row) => row && row.active !== false && row.url)
+    .map((row) => row.url);
+  wfSavedUrls.value = activeUrls.join('\n');
 }
 
 async function loadWorkflowStatus() {
-  const domain = (wfDomain.value || '').trim();
-  const runId = (wfRun.value || '').trim();
+  const domain = wfDomain.value.trim();
+  const runId = activeRunId.trim();
   if (!domain || !runId) {
-    setStatus('Select domain and run id first.', 'warning');
+    setStatus('Not started', 'warning');
+    wfStatusMeta.textContent = '';
+    renderTechnicalDetails({});
+    setActionAvailability({});
     return;
   }
-  setStatus('Loading workflow status…', '');
-  setLinks(domain, runId);
+
   const response = await fetch(`/api/workflow/status?${new URLSearchParams({ domain, run_id: runId }).toString()}`);
   const payload = await safeReadPayload(response);
-  if (!response.ok) {
-    setStatus(payload.error || `Failed to load workflow status (${response.status})`, 'error');
-    return;
-  }
-  lastPayload = payload;
-  renderPayload(payload);
-  const capture = payload.capture || {};
-  if (capture.status === 'failed') {
-    const remediation = Array.isArray(capture.remediation) ? capture.remediation.join('; ') : '';
-    setStatus(`Capture FAILED: ${capture.error || 'unknown error'}. ${remediation}`.trim(), 'error');
-  } else if (capture.status === 'in_progress') {
-    setStatus(`Capture in progress. Next action: ${payload.next_recommended_action || 'wait_for_capture'}`, 'warning');
-  } else if (capture.status === 'not_ready') {
-    setStatus(`Capture not ready. Next action: ${payload.next_recommended_action || 'start_capture'}`, 'warning');
-  } else {
-    setStatus(`Ready. Next action: ${payload.next_recommended_action || 'none'}`, 'ok');
-  }
-  setLinks(domain, runId);
-}
+  if (!response.ok) throw new Error(payload.error || `failed to load workflow status (${response.status})`);
 
+  lastPayload = payload;
+  renderStatus(payload);
+  renderTechnicalDetails(payload);
+  setActionAvailability(payload);
+}
 
 async function postAction(path, payload) {
   const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
   const data = await safeReadPayload(response);
+  wfTransition.textContent = JSON.stringify(data, null, 2);
   if (!response.ok) {
     const detail = data.error || data.message || `${path} failed (${response.status})`;
-    wfTransition.textContent = JSON.stringify(data, null, 2);
     throw new Error(detail);
   }
-  wfTransition.textContent = JSON.stringify(data, null, 2);
-  await loadWorkflowStatus();
+  return data;
 }
 
 async function initWorkflow() {
   await loadDomains();
   const query = q();
   if (query.domain) wfDomain.value = query.domain;
-  if (query.runId) wfRun.value = query.runId;
+  activeRunId = query.runId;
 
-  wfLoad.addEventListener('click', async () => {
-    setQuery(wfDomain.value.trim(), wfRun.value.trim());
+  await loadSavedUrls();
+  await loadWorkflowStatus();
+
+  wfDomain.addEventListener('change', async () => {
+    activeRunId = '';
+    setQuery(wfDomain.value.trim(), '');
+    await loadSavedUrls();
     await loadWorkflowStatus();
+    stopPolling();
   });
-  wfRefresh.addEventListener('click', loadWorkflowStatus);
+
+  wfRefreshUrls.addEventListener('click', loadSavedUrls);
 
   wfStartCapture.addEventListener('click', async () => {
     const domain = wfDomain.value.trim();
-    const runId = wfRun.value.trim();
-    await postAction('/api/workflow/start-capture', { domain, run_id: runId, language: 'en', viewport_kind: 'desktop', state: 'baseline' });
-    const pollUntil = Date.now() + 30000;
-    while (Date.now() < pollUntil) {
-      await loadWorkflowStatus();
-      const captureState = (((lastPayload || {}).capture || {}).status || '').trim();
-      if (['ready', 'empty', 'failed'].includes(captureState)) break;
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+    if (!domain) {
+      setStatus('Select a domain first.', 'warning');
+      return;
     }
+    setStatus('Starting capture…', 'warning');
+    const result = await postAction('/api/workflow/start-capture', { domain, language: 'en', viewport_kind: 'desktop', state: 'baseline' });
+    activeRunId = String(result.run_id || '').trim();
+    setQuery(domain, activeRunId);
+    await loadWorkflowStatus();
+    startPolling();
   });
 
   wfGenerateDataset.addEventListener('click', async () => {
-    await postAction('/api/workflow/generate-eligible-dataset', { domain: wfDomain.value.trim(), run_id: wfRun.value.trim() });
-  });
-
-  wfGenerateIssues.addEventListener('click', async () => {
     const domain = wfDomain.value.trim();
-    const runId = wfRun.value.trim();
-    await postAction('/api/workflow/generate-issues', { domain, run_id: runId, en_run_id: runId });
+    if (!domain || !activeRunId) {
+      setStatus('Start capture first.', 'warning');
+      return;
+    }
+    setStatus('Preparing captured data…', 'warning');
+    await postAction('/api/workflow/generate-eligible-dataset', { domain, run_id: activeRunId });
+    await loadWorkflowStatus();
   });
 
-  wfRerun.addEventListener('click', async () => {
-    const domain = wfDomain.value.trim();
-    const runId = wfRun.value.trim();
-    const url = wfRerunUrl.value.trim();
-    const contextId = wfRerunContext.value.trim();
-    await postAction('/api/workflow/rerun-context', {
-      domain,
-      run_id: runId,
-      url,
-      capture_context_id: contextId,
-      viewport_kind: 'desktop',
-      state: 'baseline',
-      language: 'en',
-      user_tier: null,
-    });
-  });
-
-  if (wfDomain.value && wfRun.value) await loadWorkflowStatus();
+  const currentCapture = readCaptureStatus(lastPayload || {});
+  if (activeRunId && !isCaptureTerminal(currentCapture)) startPolling();
 }
 
 initWorkflow().catch((err) => setStatus(err.message, 'error'));

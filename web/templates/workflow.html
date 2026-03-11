@@ -3,43 +3,54 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Polyglot Watchdog - Workflow Hub</title>
+  <title>Polyglot Watchdog - FIRST RUN</title>
   <link rel="stylesheet" href="/static/styles.css" />
   <link rel="stylesheet" href="/static/theme-graph.css" />
 </head>
 <body>
   {{header}}
   <main>
-    <h1>Workflow Hub</h1>
-    <p>Operator entry point for the v1 workflow.</p>
-    <div class="controls">
-      <label for="wfDomain">Domain</label>
-      <select id="wfDomain"></select>
-      <label for="wfRun">Run ID</label>
-      <input id="wfRun" placeholder="run id" />
-      <button id="wfLoad" type="button">Load Status</button>
-      <button id="wfRefresh" type="button">Refresh</button>
-    </div>
-    <div class="controls">
-      <button id="wfStartCapture" type="button">Start Capture</button>
-      <button id="wfGenerateDataset" type="button">Generate Eligible Dataset</button>
-      <button id="wfGenerateIssues" type="button">Generate Issues</button>
-    </div>
-    <div class="controls">
-      <input id="wfRerunContext" placeholder="capture_context_id for rerun" />
-      <input id="wfRerunUrl" placeholder="context url" />
-      <button id="wfRerun" type="button">Rerun Context</button>
-    </div>
-    <div id="wfStatus"></div>
-    <pre id="wfPayload"></pre>
-    <h3>Transition</h3>
-    <pre id="wfTransition"></pre>
-    <p>
-      <a id="wfOpenContexts" href="#">Open Contexts</a> |
-      <a id="wfOpenPulls" href="#">Open Pulls</a> |
-      <a id="wfOpenIssues" href="#">Open Issues</a> |
-      <a id="wfOpenIssueDetail" href="#">Open First Issue Detail</a>
-    </p>
+    <h1>FIRST RUN</h1>
+    <p>Launch your first capture, monitor progress, and prepare data for the pull selection step.</p>
+
+    <section>
+      <h2>Block A · Domain and saved URLs</h2>
+      <div class="controls">
+        <label for="wfDomain">Domain</label>
+        <select id="wfDomain"></select>
+        <button id="wfRefreshUrls" type="button">Refresh URL list</button>
+      </div>
+      <label for="wfSavedUrls">Saved URLs (read-only preview)</label>
+      <textarea id="wfSavedUrls" rows="8" readonly placeholder="Saved URLs will appear here"></textarea>
+    </section>
+
+    <section>
+      <h2>Block B · Start capture</h2>
+      <div class="controls">
+        <button id="wfStartCapture" type="button">Start first run</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Block C · Capture status</h2>
+      <div id="wfStatus"></div>
+      <pre id="wfStatusMeta"></pre>
+      <details>
+        <summary>Technical details</summary>
+        <h3>Status payload</h3>
+        <pre id="wfPayload"></pre>
+        <h3>Last action response</h3>
+        <pre id="wfTransition"></pre>
+      </details>
+    </section>
+
+    <section>
+      <h2>Block D · Next step</h2>
+      <div class="controls">
+        <button id="wfGenerateDataset" type="button" disabled>Prepare captured data</button>
+        <a id="wfContinuePulls" href="#" aria-disabled="true">Continue to Choose Needed</a>
+      </div>
+    </section>
   </main>
   <script src="/static/i18n.js"></script>
   <script src="/static/api-client.js"></script>
