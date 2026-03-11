@@ -104,7 +104,7 @@ def test_stage_c_workflow_routes_and_artifact_endpoints(api_env):
 
     status_urls, body_urls = _request("GET", api_env, "/urls")
     assert status_urls == HTTPStatus.OK
-    assert '<a href="/runs" data-i18n="nav.issues">Issues</a>' in body_urls
+    assert '<a href="/" data-i18n="nav.issues">Issues</a>' in body_urls
     status_runs, body_runs = _request("GET", api_env, "/runs")
     assert status_runs == HTTPStatus.OK
     assert 'selectedRunId' in body_runs
