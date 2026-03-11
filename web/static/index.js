@@ -14,10 +14,19 @@ const tbody = table.querySelector('tbody');
 const issueStatus = document.getElementById('issueStatus');
 const issueCount = document.getElementById('issueCount');
 const issuesBackToCheckLanguages = document.getElementById('issuesBackToCheckLanguages');
+const workflowContextSummary = document.getElementById('workflowContextSummary');
+
+const workflowContext = {
+  domain: '',
+  runId: '',
+};
 
 function queryParamsFromLocation() {
   const params = new URLSearchParams(window.location.search);
-  return { domain: (params.get('domain') || '').trim(), runId: (params.get('run_id') || '').trim() };
+  return {
+    domain: (params.get('domain') || '').trim(),
+    runId: (params.get('run_id') || '').trim(),
+  };
 }
 
 function setStatus(message, cls = '') {
@@ -25,10 +34,18 @@ function setStatus(message, cls = '') {
   issueStatus.textContent = message || '';
 }
 
+function activeDomain() {
+  return (domainInput.value || workflowContext.domain || '').trim();
+}
+
+function activeRunId() {
+  return (runIdInput.value || workflowContext.runId || '').trim();
+}
+
 function buildParams() {
   return new URLSearchParams({
-    domain: (domainInput.value || '').trim(),
-    run_id: (runIdInput.value || '').trim(),
+    domain: activeDomain(),
+    run_id: activeRunId(),
     q: (queryInput.value || '').trim(),
     language: (languageFilter.value || '').trim(),
     severity: (severityFilter.value || '').trim(),
@@ -39,13 +56,30 @@ function buildParams() {
   });
 }
 
+function updateWorkflowSummary() {
+  if (!workflowContextSummary) return;
+  const domain = activeDomain();
+  const runId = activeRunId();
+  if (!domain && !runId) {
+    workflowContextSummary.textContent = 'Workflow context: none (provide filters and click Apply).';
+    return;
+  }
+  const contextParts = [];
+  if (domain) contextParts.push(`domain: ${domain}`);
+  if (runId) contextParts.push(`run: ${runId}`);
+  workflowContextSummary.textContent = `Workflow context: ${contextParts.join(' · ')}.`;
+}
+
 function syncDefaultsFromQuery() {
   const { domain, runId } = queryParamsFromLocation();
+  workflowContext.domain = domain;
+  workflowContext.runId = runId;
   domainInput.value = domain;
-  runIdInput.value = runId;
+  runIdInput.value = '';
+
   const params = new URLSearchParams();
-  if (domain) params.set('domain', domain);
-  if (runId) params.set('run_id', runId);
+  if (workflowContext.domain) params.set('domain', workflowContext.domain);
+  if (workflowContext.runId) params.set('run_id', workflowContext.runId);
   const checkLanguagesHref = `/check-languages${params.toString() ? `?${params.toString()}` : ''}`;
   const pullsHref = `/pulls${params.toString() ? `?${params.toString()}` : ''}`;
   issuesBackToCheckLanguages.href = checkLanguagesHref;
@@ -57,6 +91,8 @@ function syncDefaultsFromQuery() {
     .catch(() => {
       issuesBackToCheckLanguages.href = pullsHref;
     });
+
+  updateWorkflowSummary();
 }
 
 function issueLabel(issue) {
@@ -64,6 +100,7 @@ function issueLabel(issue) {
 }
 
 async function loadIssues() {
+  updateWorkflowSummary();
   setStatus('Loading…');
   issueCount.classList.add('hidden');
   tbody.innerHTML = '';
@@ -90,7 +127,11 @@ async function loadIssues() {
   setStatus('Issues loaded.', 'ok');
   for (const issue of issues) {
     const tr = document.createElement('tr');
-    const detailHref = `/issues/detail?${new URLSearchParams({ domain: domainInput.value.trim(), run_id: runIdInput.value.trim(), id: String(issue.id || '') }).toString()}`;
+    const detailHref = `/issues/detail?${new URLSearchParams({
+      domain: activeDomain(),
+      run_id: activeRunId(),
+      id: String(issue.id || ''),
+    }).toString()}`;
     tr.innerHTML = `<td>${issueLabel(issue)}</td><td>${issue.evidence?.url || ''}</td><td>${issue.language || ''}</td><td>${issue.severity || ''}</td><td><a href="${detailHref}">Open details</a></td>`;
     tbody.appendChild(tr);
   }
@@ -100,8 +141,21 @@ async function loadIssues() {
 applyBtn.addEventListener('click', () => {
   const params = buildParams();
   window.history.replaceState({}, '', `/?${params.toString()}`);
+  updateWorkflowSummary();
   loadIssues().catch((err) => setStatus(err.message, 'error'));
 });
+
+if (runIdInput) {
+  runIdInput.addEventListener('input', () => {
+    updateWorkflowSummary();
+  });
+}
+
+if (domainInput) {
+  domainInput.addEventListener('input', () => {
+    updateWorkflowSummary();
+  });
+}
 
 if (exportCsvBtn) {
   exportCsvBtn.addEventListener('click', async () => {
@@ -125,6 +179,6 @@ if (exportCsvBtn) {
 }
 
 syncDefaultsFromQuery();
-if (domainInput.value && runIdInput.value) {
+if (activeDomain() && activeRunId()) {
   loadIssues().catch((err) => setStatus(err.message, 'error'));
 }
