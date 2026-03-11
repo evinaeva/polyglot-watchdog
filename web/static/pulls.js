@@ -137,10 +137,25 @@ function renderRows(domain, runId) {
 
 async function loadPulls() {
   const { domain, runId } = pullsQuery();
-  document.getElementById('pullsBackToRunHub').href = `/workflow?${new URLSearchParams({ domain, run_id: runId }).toString()}`;
-  document.getElementById('pullsOpenContexts').href = `/contexts?${new URLSearchParams({ domain, run_id: runId }).toString()}`;
-  document.getElementById('pullsOpenIssues').href = `/?${new URLSearchParams({ domain, run_id: runId }).toString()}`;
-  document.getElementById('continueCheckLanguages').href = `/check-languages?${new URLSearchParams({ domain, run_id: runId }).toString()}`;
+  const query = new URLSearchParams({ domain, run_id: runId }).toString();
+
+  const primaryLinks = {
+    pullsBackToRunHub: `/workflow?${query}`,
+    continueCheckLanguages: `/check-languages?${query}`,
+  };
+  Object.entries(primaryLinks).forEach(([id, href]) => {
+    const link = document.getElementById(id);
+    if (link) link.href = href;
+  });
+
+  const technicalLinks = {
+    pullsOpenContexts: `/contexts?${query}`,
+    pullsOpenIssues: `/?${query}`,
+  };
+  Object.entries(technicalLinks).forEach(([id, href]) => {
+    const link = document.getElementById(id);
+    if (link) link.href = href;
+  });
 
   if (!domain || !runId) {
     pullsTable.classList.add('hidden');
