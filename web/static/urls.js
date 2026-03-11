@@ -9,6 +9,92 @@ const savedUrlsBody = document.getElementById('savedUrlsBody');
 const errorBox = document.getElementById('errorBox');
 let recipes = [];
 
+function formatUpdatedAt(value) {
+  if (typeof value !== 'string') return '—';
+  const trimmed = value.trim();
+  if (!trimmed) return '—';
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return '—';
+  const day = String(parsed.getUTCDate()).padStart(2, '0');
+  const month = String(parsed.getUTCMonth() + 1).padStart(2, '0');
+  const year = String(parsed.getUTCFullYear());
+  return `${day}.${month}.${year}`;
+}
+
+function renderRecipeChips(container, select) {
+  container.innerHTML = '';
+  const selected = Array.from(select.selectedOptions).map((opt) => ({ id: opt.value, label: opt.textContent || opt.value }));
+  if (!selected.length) {
+    const empty = document.createElement('span');
+    empty.className = 'recipe-chip-empty';
+    empty.textContent = 'No recipes selected';
+    container.appendChild(empty);
+    return;
+  }
+
+  for (const item of selected) {
+    const chip = document.createElement('span');
+    chip.className = 'recipe-chip';
+    chip.textContent = item.label;
+
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'recipe-chip-remove';
+    remove.textContent = '×';
+    remove.title = `Remove ${item.id}`;
+    remove.addEventListener('click', () => {
+      const option = Array.from(select.options).find((opt) => opt.value === item.id);
+      if (option) option.selected = false;
+      renderRecipeChips(container, select);
+    });
+
+    chip.appendChild(remove);
+    container.appendChild(chip);
+  }
+}
+
+function buildRecipePicker(row) {
+  const wrap = document.createElement('div');
+  wrap.className = 'recipe-picker';
+
+  const select = document.createElement('select');
+  select.multiple = true;
+  select.dataset.field = 'recipe_ids';
+  select.className = 'recipe-picker-select';
+
+  const selectedSet = new Set(Array.isArray(row.recipe_ids) ? row.recipe_ids.map(String) : []);
+  const knownIds = new Set();
+  for (const recipe of recipes) {
+    const id = String(recipe.recipe_id || '').trim();
+    if (!id) continue;
+    knownIds.add(id);
+    const option = document.createElement('option');
+    option.value = id;
+    option.textContent = recipe.url_pattern ? `${id} (${recipe.url_pattern})` : id;
+    option.selected = selectedSet.has(id);
+    select.appendChild(option);
+  }
+
+  for (const id of selectedSet) {
+    if (!id || knownIds.has(id)) continue;
+    const option = document.createElement('option');
+    option.value = id;
+    option.textContent = `${id} (missing)`;
+    option.selected = true;
+    option.dataset.missing = 'true';
+    select.appendChild(option);
+  }
+
+  const chips = document.createElement('div');
+  chips.className = 'recipe-chips';
+  renderRecipeChips(chips, select);
+  select.addEventListener('change', () => renderRecipeChips(chips, select));
+
+  wrap.appendChild(select);
+  wrap.appendChild(chips);
+  return wrap;
+}
+
 function setError(message) {
   errorBox.textContent = message || '';
   errorBox.classList.toggle('hidden', !message);
@@ -27,7 +113,7 @@ async function callApi(path, method, payload) {
 
 function render(data) {
   const urls = Array.isArray(data.urls) ? data.urls : [];
-  updatedAt.textContent = data.updated_at || '-';
+  updatedAt.textContent = formatUpdatedAt(data.updated_at);
   urlsMultiline.value = urls.map((row) => row.url || '').filter(Boolean).join('\n');
   savedUrlsBody.innerHTML = '';
 
@@ -35,19 +121,50 @@ function render(data) {
     const tr = document.createElement('tr');
     const hasRecipe = Array.isArray(row.recipe_ids) && row.recipe_ids.length > 0;
     const invalid = !row.url || !/^https?:\/\//.test(row.url);
-    tr.innerHTML = `
-      <td><input data-field="url" value="${row.url || ''}" /></td>
-      <td><input data-field="recipe_ids" value="${(row.recipe_ids || []).join(',')}" placeholder="recipe ids,comma" /></td>
-      <td><input type="checkbox" data-field="active" ${row.active !== false ? 'checked' : ''} /></td>
-      <td>${hasRecipe ? 'has_recipe' : '-'}</td>
-      <td>${invalid ? 'invalid' : 'valid'}</td>
-      <td>
-        <button class="save-row">Save</button>
-        <button class="delete-row">Delete</button>
-      </td>`;
+    const urlCell = document.createElement('td');
+    urlCell.className = 'url-cell';
+    const urlField = document.createElement('input');
+    urlField.dataset.field = 'URL';
+    urlField.value = row.url || '';
+    urlField.title = row.url || '';
+    urlField.addEventListener('input', () => {
+      urlField.title = urlField.value;
+    });
+    urlCell.appendChild(urlField);
+
+    const recipesCell = document.createElement('td');
+    recipesCell.appendChild(buildRecipePicker(row));
+
+    const activeCell = document.createElement('td');
+    const activeField = document.createElement('input');
+    activeField.type = 'checkbox';
+    activeField.dataset.field = 'active';
+    activeField.checked = row.active !== false;
+    activeCell.appendChild(activeField);
+
+    const hasRecipeCell = document.createElement('td');
+    hasRecipeCell.textContent = hasRecipe ? 'has_recipe' : '-';
+
+    const statusCell = document.createElement('td');
+    statusCell.textContent = invalid ? 'invalid' : 'valid';
+
+    const actionsCell = document.createElement('td');
+    const saveButton = document.createElement('button');
+    saveButton.className = 'save-row';
+    saveButton.textContent = 'Save';
+    const deleteButton = document.createElement('button');
+    deleteButton.className = 'delete-row';
+    deleteButton.textContent = 'Delete';
+    actionsCell.appendChild(saveButton);
+    actionsCell.appendChild(deleteButton);
+
+    tr.append(urlCell, recipesCell, activeCell, hasRecipeCell, statusCell, actionsCell);
+
     tr.querySelector('.save-row').addEventListener('click', async () => {
-      const url = tr.querySelector('[data-field="url"]').value.trim();
-      const recipeIds = tr.querySelector('[data-field="recipe_ids"]').value.split(',').map((x) => x.trim()).filter(Boolean);
+      const url = tr.querySelector('[data-field="URL"]').value.trim();
+      const recipeIds = Array.from(tr.querySelector('[data-field="recipe_ids"]').selectedOptions)
+        .map((opt) => opt.value.trim())
+        .filter(Boolean);
       const active = tr.querySelector('[data-field="active"]').checked;
       const payload = await callApi('/api/seed-urls/row-upsert', 'POST', {
         domain: domainInput.value,
@@ -56,7 +173,7 @@ function render(data) {
       render(payload);
     });
     tr.querySelector('.delete-row').addEventListener('click', async () => {
-      const url = tr.querySelector('[data-field="url"]').value.trim();
+      const url = tr.querySelector('[data-field="URL"]').value.trim();
       const payload = await callApi('/api/seed-urls/delete', 'POST', { domain: domainInput.value, url });
       render(payload);
     });
