@@ -121,3 +121,54 @@ input[data-field="URL"] { width: 100%; box-sizing: border-box; }
 .module-button { width: 100%; text-align: left; border: 1px solid #cbd5e1; background: #fff; padding: 8px; cursor: pointer; }
 .module-button:hover { background: #f1f5f9; }
 pre { background: #0f172a; color: #e2e8f0; padding: 10px; border-radius: 4px; overflow-x: auto; }
+
+.ui-action-button {
+  transition: transform 120ms ease, box-shadow 160ms ease, background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.ui-action-button:active {
+  transform: scale(0.97);
+}
+
+.ui-action-button:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.ui-action-button[data-state="loading"],
+.ui-action-button[data-state="saving"] {
+  opacity: 0.85;
+  cursor: wait;
+}
+
+.ui-action-button[data-state="saved"],
+.ui-action-button[data-state="activated"] {
+  background: #166534;
+  border-color: #166534;
+  color: #fff;
+  box-shadow: 0 0 0 2px rgba(22, 101, 52, 0.2);
+}
+
+.ui-action-button[data-state="error"] {
+  background: #b00020;
+  border-color: #b00020;
+  color: #fff;
+}
+
+#statusBox.status-success {
+  color: #166534;
+}
+
+#statusBox.status-error {
+  color: #b00020;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-action-button {
+    transition: none;
+  }
+
+  .ui-action-button:active {
+    transform: none;
+  }
+}
