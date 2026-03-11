@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Polyglot Watchdog - Check Languages</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  {{header}}
+  <main>
+    <h1>CHECK LANGUAGES</h1>
+    <p>Use this checkpoint to confirm language-related run metadata before moving to pull selection.</p>
+    <p>This step is read-only for now; interactive review controls will be added in the next iteration.</p>
+
+    <section>
+      <h2>Block A · Current run</h2>
+      <div class="controls">
+        <div>
+          <label for="checkLanguagesDomain">Domain</label>
+          <input id="checkLanguagesDomain" type="text" value="" readonly placeholder="—" />
+        </div>
+        <div>
+          <label for="checkLanguagesRunId">Run ID</label>
+          <input id="checkLanguagesRunId" type="text" value="" readonly placeholder="—" />
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Block B · Next action</h2>
+      <div class="controls">
+        <button id="checkLanguagesComingNext" type="button" class="ui-action-button" disabled aria-disabled="true">Coming next</button>
+      </div>
+    </section>
+
+    <details class="page-help">
+      <summary>Technical/manual paths</summary>
+      <div class="page-help-content">
+        <ul>
+          <li><a href="/workflow">Back to Workflow Hub</a></li>
+          <li><a id="checkLanguagesContextsLink" href="#">Open Contexts for this run</a></li>
+          <li><a id="checkLanguagesPullsLink" href="#">Open Items/Pulls for this run</a></li>
+        </ul>
+      </div>
+    </details>
+  </main>
+  <script>
+    (function initCheckLanguagesPage() {
+      const params = new URLSearchParams(window.location.search);
+      const domain = (params.get('domain') || '').trim();
+      const runId = (params.get('run_id') || '').trim();
+
+      const domainInput = document.getElementById('checkLanguagesDomain');
+      const runIdInput = document.getElementById('checkLanguagesRunId');
+
+      domainInput.value = domain;
+      runIdInput.value = runId;
+
+      if (domain && runId) {
+        const query = `?domain=${encodeURIComponent(domain)}&run_id=${encodeURIComponent(runId)}`;
+        document.getElementById('checkLanguagesContextsLink').href = `/contexts${query}`;
+        document.getElementById('checkLanguagesPullsLink').href = `/pulls${query}`;
+      }
+    }());
+  </script>
+  <script src="/static/i18n.js"></script>
+  <script src="/static/nav-active.js"></script>
+  <script src="/static/auth.js"></script>
+</body>
+</html>
