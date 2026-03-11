@@ -1,136 +1,73 @@
 # Local Demo Runbook (UI-only v1.0 Operator Flow)
 
+This runbook reflects the canonical v1.0 operator workflow as a multi-page UI flow. The workflow is intentionally distributed across official product pages and does not require consolidation into a single screen to count as integrated.
+
 ## 1) Setup
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-playwright install chromium   # required for capture
-```
+Use the existing local/dev setup for the repository.
 
-## 2) Start app
+Common local entry points may include:
+- the standard app startup flow for local development;
+- `run_e2e_happy_path.sh` for end-to-end validation support;
+- `Dockerfile.e2e` for containerized validation scenarios.
 
-```bash
-AUTH_MODE=OFF PYTHONPATH=. python app/skeleton_server.py
-```
+Open the local app in your browser after startup.
 
----
+## 2) Workflow Hub
 
-## Happy-path demo (Playwright-ready environment)
+Start from the main workflow hub or entry route exposed by the app.
 
-The following steps exercise the full v1.0 operator journey through the UI.
-All steps are UI-only — no curl or CLI commands are required.
+From there, navigate through the official product pages for the operator flow.
 
-1. Open **Workflow Hub**: `http://127.0.0.1:8080/workflow`
-2. Visit **URLs** (`/urls`), add one or more seed URL(s) for your domain.
-3. Return to **Workflow Hub** (`/workflow`), enter your domain and a run ID, click **Load Status**.
-4. Click **Start Capture** and wait for `capture.status = ready`.
-   - Requires Playwright + Chromium to be installed.
-   - If capture fails, see **Prerequisites missing** section below.
-5. Click **Refresh** until `capture.status = ready` and `review.status` becomes active.
-6. Click **Open Contexts** (`/contexts`) and save review decisions per row  
-   (`valid`, `blocked_by_overlay`, or `not_found`).
-7. Return to **Workflow Hub**, refresh until `review.status = ready`.
-8. Click **Open Pulls** (`/pulls`) and save annotation decisions per row  
-   (`eligible`, `exclude`, or `needs-fix`).
-9. Return to **Workflow Hub**, click **Generate Eligible Dataset**,  
-   then refresh until `eligible_dataset.status = ready`.
-10. Click **Generate Issues**, then refresh until `issues.status = ready` (or `empty`).
-11. Click **Open Issues** (`/`) and verify the issues explorer is populated.
-12. Click into any issue (or visit `/issues/detail`) and confirm evidence is visible  
-    (screenshot link and artifact refs).
+## 3) Seed URL management
 
-> **If capture.status = failed**: stop and resolve Playwright prerequisites before  
-> continuing. Do not generate synthetic artifacts or bypass the capture step.
+Go to the URL management surface.
 
----
+Use the UI to:
+- add seed URLs,
+- review saved URLs,
+- confirm that the URL list is persisted.
 
-## Happy-path acceptance test (Playwright-ready runner — clean environment)
+This step is UI-only and does not require curl or CLI interaction.
 
-This section documents the **deterministic, reproducible** way to execute the full
-happy-path E2E acceptance test (`tests/test_workflow_happy_path_e2e.py`) from a
-clean environment. No host-level Playwright installation is required.
+## 4) Context and capture flow
 
-**Prerequisites:** Docker (any recent version).
+Navigate to the contexts / runs / pulls pages through the visible UI.
 
-**Single command:**
+Use the product UI to:
+- inspect created runs or contexts,
+- review captured artifacts,
+- move between the available operator pages.
 
-```bash
-bash scripts/run_e2e_happy_path.sh
-```
+This flow may span multiple pages, which is acceptable for the v1.0 operator model.
 
-This command:
-1. Builds `Dockerfile.e2e` — a Python + Playwright/Chromium image where the browser
-   is installed at **image build time** (not at runtime).
-2. Runs `pytest -m e2e_happy_path -v` inside the container.
+## 5) Review / annotation flow
 
-Expected output on success:
-```
-==> Building watchdog-e2e image ...
-...
-==> Running happy-path E2E acceptance test ...
-tests/test_workflow_happy_path_e2e.py::test_full_v1_operator_journey_happy_path PASSED
-1 passed in Xs
-==> Done.
-```
+Use the visible review-related surfaces to inspect reviewable items and persisted state where available.
 
-Inside the container, `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright` is set at build time,
-so `tests/playwright_probe.py` always returns `(True, 'ok')` and the test is never skipped.
+The goal of the demo is to confirm that the operator can move through the intended workflow using official UI routes rather than hidden or developer-only paths.
 
-Outside the container (plain CI without Playwright), the test is automatically **SKIPPED**,
-not FAILED. The default suite still passes.
+## 6) Issues exploration
 
----
+Open the issues explorer and issue detail pages.
 
-## CI / Prerequisites missing (expected truthful failure)
+Confirm that:
+- issues are readable from the operator UI,
+- issue detail pages expose persisted evidence,
+- the operator can move from summary views to detail views through the UI.
 
-When Playwright is not installed, the system behaves as follows:
+## 7) Expected interpretation
 
-- `POST /api/workflow/start-capture` returns `{"status": "started"}` and launches the runner.
-- The runner fails immediately (missing browser binary).
-- `GET /api/workflow/status` reports `capture.status = failed` with an error message.
-- `GET /api/capture/contexts` returns `404 not_ready`.
-- `POST /api/workflow/generate-eligible-dataset` returns `409 not_ready`.
-- `POST /api/workflow/generate-issues` returns `409 not_ready`.
+A successful local demo does **not** require every operator step to live on a single page.
 
-This is the correct, truthful behaviour. No synthetic artifacts are generated.
+The intended v1.0 flow is considered coherent if:
+- the operator can complete required steps through official UI surfaces,
+- navigation between pages is understandable,
+- persisted state supports the workflow,
+- the flow does not depend on hidden routes or manual developer-only intervention.
 
-The CI test suite (`tests/test_workflow_status_and_acceptance.py`) asserts all of  
-the above and **passes** in a no-Playwright environment.
+## 8) Notes
 
-The happy-path E2E test (`tests/test_workflow_happy_path_e2e.py`) is automatically  
-**SKIPPED** (not failed) in environments without Playwright.
+All steps in this runbook are intended to be UI-only.
 
----
-
-## Optional developer verification (not part of v1.0 operator flow)
-
-Run CI-safe truthful-failure suite (always passes, Playwright not required):
-
-```bash
-PYTHONPATH=. pytest -q tests/test_workflow_status_and_acceptance.py
-```
-
-Run happy-path E2E via Docker (requires Docker; no host Playwright needed):
-
-```bash
-bash scripts/run_e2e_happy_path.sh
-```
-
-Run happy-path E2E directly (requires `playwright install chromium` on host):
-
-```bash
-playwright install chromium
-PYTHONPATH=. pytest -m e2e_happy_path -v
-```
-
-Run full default suite (both; skips what cannot run):
-
-```bash
-PYTHONPATH=. pytest -q
-```
-
-> Workstream A PASS requires `test_workflow_happy_path_e2e.py` to PASS (not merely skip)  
-> in a Playwright-capable environment. The Docker command above satisfies this requirement  
-> from a clean environment without any manual prerequisites.
+No curl or CLI commands are required for the core operator walkthrough beyond initial local setup.

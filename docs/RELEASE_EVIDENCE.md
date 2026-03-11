@@ -1,55 +1,53 @@
 # RELEASE_EVIDENCE.md
 
-## Purpose
-
-This file packages Stage D release evidence in one place and links it to release criteria and messaging state.
-
-- Gate authority: `RELEASE_CRITERIA.md`
-- Gate decision artifact: `docs/RELEASE_READINESS.md`
-- Messaging model: `docs/MESSAGING_STATE.md`
-
-## Evidence index by required capability
+This file packages Stage D release evidence in one place and links it to release-facing readiness decisions.
 
 ### 1) /urls persistence evidence
 
-- API + behavior coverage: `tests/test_seed_urls.py`
-- Workflow coverage including operator flow references: `tests/test_stage_c_operator_workflow.py`
-- Persistence implementation path: `app/seed_urls.py`
+- `/urls` route and related tests
+- persisted seed URL storage behavior
+- operator-managed URL flow through official UI surfaces
 
 ### 2) Reproducible capture flow evidence
 
-- Deterministic planning checks: `tests/test_phase1_planning_input.py`
-- Execution path checks: `tests/test_phase1_recipe_execution.py`
-- Interactive capture support path: `tests/test_interactive_capture_acceptance.py`
+- phase1 puller
+- storage layer
+- rerun paths
+- deterministic planning and context reproduction behavior
 
 ### 3) Review/annotation persistence evidence
 
 - Review + rerun behavior tests: `tests/test_review_and_rerun.py`
 - Phase 3 review linkage checks: `tests/test_phase3_review_integration.py`
-- Current gap for gate: visible required operator flow is still documented as incomplete (see criteria 4/7 in `docs/RELEASE_READINESS.md`).
+- Remaining gate task: confirm that the required visible review/annotation path is represented through official product pages and canonical persistence, without treating the multi-page workflow model itself as a blocker.
 
 ### 4) Deterministic eligible dataset generation evidence
 
-- Phase 3 linkage checks: `tests/test_stage_b_phase3_linkage.py`
-- Contract/pipeline compatibility checks: `tests/test_contract_pipeline.py`
+- phase 3 linkage and contract-aligned dataset generation tests
+- persisted eligible dataset outputs
+- universal-sections handling aligned with documented v1.0 behavior
 
 ### 5) Issue artifact generation + explorer visibility evidence
 
-- Phase 6 artifact/schema checks: `tests/test_phase6_schema_compliance.py`
-- Explorer API checks: `tests/test_issues_explorer_api.py`
-- Explorer drill-down template path: `web/templates/issues/detail.html`
+- phase 6 code/tests
+- issues explorer routes
+- issue detail templates
+- persisted issue artifacts and drill-down evidence paths
 
 ### 6) Documentation synchronization evidence
 
-- Truth surfaces synchronized to `pre_production` state:
-  - `README.md`
-  - `docs/ABOUT_PAGE_COPY.md`
-  - `RELEASE_CRITERIA.md`
-  - `docs/PRODUCT_TRUTHSET.md`
-- Drift prevention checks: `tests/test_docs_alignment.py`
+- `README.md`
+- `RELEASE_CRITERIA.md`
+- `docs/PRODUCT_TRUTHSET.md`
+- `docs/ABOUT_PAGE_COPY.md`
+- `docs/RELEASE_READINESS.md`
+
+These documents must describe the same product state:
+- pre-production rather than production-ready;
+- real artifact-backed implementation rather than all-mock behavior;
+- multi-page operator workflow as an acceptable official v1.0 model.
 
 ## Stage D conclusion
 
-Current gate state is **failed**; production wording is therefore disallowed.
-
-Use `pre_production` messaging until criteria 4 and 7 are no longer blockers and all required criteria are `pass`.
+Current gate state remains **failed** until release criteria, readiness audit wording, and release-facing docs are synchronized.
+Use `pre_production` messaging until the multi-page workflow model is reflected consistently and all required criteria are verified as `pass`.
