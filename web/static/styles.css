@@ -16,8 +16,35 @@ nav button {
 nav button:hover { background: #475569; }
 main { padding: 18px; }
 .controls, .filters { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.urls-actions { margin-top: 8px; }
 table { width: 100%; border-collapse: collapse; background: #fff; }
 th, td { border: 1px solid #d1d5db; padding: 8px; font-size: 14px; text-align: left; vertical-align: top; }
+.url-cell { min-width: 360px; }
+input[data-field="URL"] { width: 100%; box-sizing: border-box; }
+.recipe-picker-select { width: 100%; min-height: 74px; box-sizing: border-box; }
+.recipe-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.recipe-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+.recipe-chip-remove {
+  border: 0;
+  background: transparent;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+.recipe-chip-empty { color: #64748b; font-size: 12px; }
+@media (max-width: 900px) {
+  .url-cell { min-width: 240px; }
+}
 .hidden { display: none; }
 .page-help {
   margin: 0 0 14px;

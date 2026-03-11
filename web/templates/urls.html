@@ -12,17 +12,17 @@
   <main>
     <h1>Seed URLs (source of truth)</h1>
     <div class="controls">
-      <label>Domain <input id="domainInput" value="en.wikipedia.org" /></label>
+      <label>Domain <input id="domainInput" value="bongacams.com" /></label>
       <button id="loadButton">Load</button>
-    </div>
-    <div class="controls">
-      <button id="replaceButton">Replace list</button>
-      <button id="addButton">Add to list</button>
-      <button id="clearButton">Clear</button>
     </div>
     <p>Updated at: <span id="updatedAt">-</span></p>
     <div id="errorBox" class="hidden" style="color:#b00020; margin-bottom: 8px;"></div>
     <textarea id="urlsMultiline" rows="7" style="width: 100%;" placeholder="One URL per line"></textarea>
+    <div class="controls urls-actions">
+      <button id="replaceButton">Replace list</button>
+      <button id="addButton">Add to list</button>
+      <button id="clearButton">Clear</button>
+    </div>
 
     <h2>Domain URL config</h2>
     <table>
