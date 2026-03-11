@@ -226,12 +226,48 @@ def _upsert_job_status(domain: str, run_id: str, job_record: dict) -> None:
     if run is None:
         run = {"run_id": run_id, "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "jobs": []}
         runs.append(run)
-    jobs = [j for j in run.get("jobs", []) if j.get("job_id") != job_record.get("job_id")]
-    jobs.append(job_record)
+    prior_job = next((j for j in run.get("jobs", []) if j.get("job_id") == job_record.get("job_id")), None)
+    normalized_job = dict(job_record)
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    normalized_job["updated_at"] = now
+    normalized_job["created_at"] = str((prior_job or {}).get("created_at") or now)
+    jobs = [j for j in run.get("jobs", []) if j.get("job_id") != normalized_job.get("job_id")]
+    jobs.append(normalized_job)
     jobs.sort(key=lambda r: r.get("job_id", ""))
     run["jobs"] = jobs
     runs.sort(key=lambda r: r.get("run_id", ""), reverse=True)
     _save_runs(domain, {"runs": runs})
+
+
+def _parse_utc_timestamp(value: str) -> float | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return time.mktime(time.strptime(text, "%Y-%m-%dT%H:%M:%SZ"))
+    except ValueError:
+        return None
+
+
+def _is_stale_running_job(job: dict) -> bool:
+    status = str(job.get("status", "")).strip().lower()
+    if status not in {"running", "queued"}:
+        return False
+    stale_after = max(int(os.environ.get("WORKFLOW_STALE_JOB_SECONDS", "180")), 30)
+    updated_at = _parse_utc_timestamp(str(job.get("updated_at", "")))
+    created_at = _parse_utc_timestamp(str(job.get("created_at", "")))
+    last_seen = updated_at or created_at
+    if last_seen is None:
+        return False
+    return (time.time() - last_seen) > stale_after
+
+
+def _as_stale_failed_job(job: dict) -> dict:
+    out = dict(job)
+    out["status"] = "failed"
+    out["error"] = str(out.get("error") or "capture worker stale: no completion heartbeat")
+    out["stale"] = True
+    return out
 
 
 
@@ -688,10 +724,11 @@ def _workflow_status_payload(domain: str, run_id: str) -> dict:
 
     run_meta = next((row for row in _load_runs(domain).get("runs", []) if str(row.get("run_id", "")) == run_id), None)
     jobs = run_meta.get("jobs", []) if isinstance(run_meta, dict) else []
-    running = [j for j in jobs if str(j.get("status", "")).lower() in {"running", "queued"}]
-    failed = [j for j in jobs if str(j.get("status", "")).lower() in {"failed", "error"}]
+    effective_jobs = [_as_stale_failed_job(j) if _is_stale_running_job(j) else j for j in jobs]
+    running = [j for j in effective_jobs if str(j.get("status", "")).lower() in {"running", "queued"}]
+    failed = [j for j in effective_jobs if str(j.get("status", "")).lower() in {"failed", "error"}]
     capture_jobs = [
-        j for j in jobs
+        j for j in effective_jobs
         if str(j.get("type", "")).lower() == "capture" or str(j.get("phase", "")).lower() == "1" or str(j.get("job_id", "")).startswith("phase1-")
     ]
     capture_attempted = bool(capture_jobs)
