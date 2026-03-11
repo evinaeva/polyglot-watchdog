@@ -10,6 +10,7 @@
     "required": [
       "page_id",
       "url",
+      "language",
       "viewport_kind",
       "state",
       "user_tier",
@@ -25,6 +26,11 @@
       "url": {
         "type": "string",
         "format": "uri"
+      },
+      "language": {
+        "type": "string",
+        "minLength": 1,
+        "description": "Language code for this capture (e.g. en, ru, de)."
       },
       "viewport_kind": {
         "type": "string",

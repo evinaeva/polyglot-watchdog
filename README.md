@@ -27,7 +27,8 @@ What is already real in the repository:
 - deterministic pipeline/storage conventions for run-level artifacts;
 - implemented phase runners for key contract-aligned flows, including Phase 1, Phase 3, and Phase 6;
 - a `/urls` operator surface for managing seed URLs;
-- operator-facing issue exploration backed by persisted issue artifacts.
+- operator-facing issue exploration backed by persisted issue artifacts;
+- operator workflow pages are now visibly linked via global navigation.
 
 What is not yet complete:
 
@@ -79,7 +80,7 @@ It **does** require that all mandatory steps be available through the official p
 
 When changing the product:
 
-- do not describe the repository as “all mock” or “no phases implemented”;
+- do not describe the repository as entirely mock-backed or claim that no phases are implemented;
 - do not describe the product as production-ready unless the release criteria are met;
 - do not treat a multi-page operator workflow as a defect by itself;
 - treat the contract as normative for artifact semantics and phase boundaries;
@@ -90,20 +91,19 @@ When changing the product:
 
 Use these statements consistently:
 
-- “Polyglot Watchdog is a contract-first localization QA pipeline and operator console.”
-- “The repository contains real artifact-backed pipeline components and partial operator UI integration.”
-- “The project is pre-production and not yet production-ready.”
-- “The operator workflow is multi-page by design.”
-- “OCR is deferred from v1.0.”
-- “Manual seed URL workflow is valid for v1.0.”
+- "Polyglot Watchdog is a contract-first localization QA pipeline and operator console."
+- "The repository contains real artifact-backed pipeline components and partial operator UI integration."
+- "The project is pre-production and not yet production-ready."
+- "The operator workflow is multi-page by design."
+- "OCR is deferred from v1.0."
+- "Manual seed URL workflow is valid for v1.0."
 
 Avoid these outdated statements:
 
-- “No pipeline phases are implemented.”
-- “All API responses are mock/static.”
-- “The repository is only a UI scaffold.”
-- “The full operator workflow must exist on a single page to count as integrated.”
-- “The current product is production-ready.”
+- "No pipeline phases are implemented."
+- "The repository is only a UI scaffold."
+- "The full operator workflow must exist on a single page to count as integrated."
+- "The current product is production-ready."
 
 ## Repo areas
 
