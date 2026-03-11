@@ -16,7 +16,8 @@
       <button id="loadButton">Load</button>
     </div>
     <p>Updated at: <span id="updatedAt">-</span></p>
-    <div id="errorBox" class="hidden" style="color:#b00020; margin-bottom: 8px;"></div>
+    <div id="errorBox" class="hidden" role="alert" aria-live="assertive" style="color:#b00020; margin-bottom: 8px;"></div>
+    <div id="statusBox" class="hidden" role="status" aria-live="polite" style="margin-bottom: 8px;"></div>
     <textarea id="urlsMultiline" rows="7" style="width: 100%;" placeholder="One URL per line"></textarea>
     <div class="controls urls-actions">
       <button id="replaceButton">Replace list</button>
