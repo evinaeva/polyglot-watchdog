@@ -30,8 +30,9 @@
     <section>
       <h2>Block B · Next action</h2>
       <div class="controls">
-        <button id="checkLanguagesComingNext" type="button" class="ui-action-button" disabled aria-disabled="true">Coming next</button>
+        <a id="checkLanguagesNextStepLink" class="ui-action-button" href="#" aria-disabled="true" tabindex="-1">Go to next step</a>
       </div>
+      <p id="checkLanguagesNextStepHint">Complete previous steps first.</p>
     </section>
 
     <details class="page-help">
@@ -53,14 +54,32 @@
 
       const domainInput = document.getElementById('checkLanguagesDomain');
       const runIdInput = document.getElementById('checkLanguagesRunId');
+      const nextStepLink = document.getElementById('checkLanguagesNextStepLink');
+      const nextStepHint = document.getElementById('checkLanguagesNextStepHint');
 
       domainInput.value = domain;
       runIdInput.value = runId;
 
+
+      nextStepLink.addEventListener('click', (event) => {
+        if (nextStepLink.getAttribute('aria-disabled') === 'true') {
+          event.preventDefault();
+        }
+      });
+
       if (domain && runId) {
         const query = `?domain=${encodeURIComponent(domain)}&run_id=${encodeURIComponent(runId)}`;
+        nextStepLink.href = `/${query}`;
+        nextStepLink.removeAttribute('aria-disabled');
+        nextStepLink.removeAttribute('tabindex');
+        nextStepHint.hidden = true;
         document.getElementById('checkLanguagesContextsLink').href = `/contexts${query}`;
         document.getElementById('checkLanguagesPullsLink').href = `/pulls${query}`;
+      } else {
+        nextStepLink.href = '#';
+        nextStepLink.setAttribute('aria-disabled', 'true');
+        nextStepLink.setAttribute('tabindex', '-1');
+        nextStepHint.hidden = false;
       }
     }());
   </script>
