@@ -80,17 +80,9 @@ function syncDefaultsFromQuery() {
   const params = new URLSearchParams();
   if (workflowContext.domain) params.set('domain', workflowContext.domain);
   if (workflowContext.runId) params.set('run_id', workflowContext.runId);
-  const checkLanguagesHref = `/check-languages${params.toString() ? `?${params.toString()}` : ''}`;
-  const pullsHref = `/pulls${params.toString() ? `?${params.toString()}` : ''}`;
-  issuesBackToCheckLanguages.href = checkLanguagesHref;
-
-  fetch(checkLanguagesHref, { method: 'HEAD' })
-    .then((response) => {
-      if (!response.ok) issuesBackToCheckLanguages.href = pullsHref;
-    })
-    .catch(() => {
-      issuesBackToCheckLanguages.href = pullsHref;
-    });
+  const hasWorkflowContext = Boolean(workflowContext.domain || workflowContext.runId);
+  const basePath = hasWorkflowContext ? '/check-languages' : '/pulls';
+  issuesBackToCheckLanguages.href = `${basePath}${params.toString() ? `?${params.toString()}` : ''}`;
 
   updateWorkflowSummary();
 }
