@@ -3,32 +3,41 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Polyglot Watchdog - Issues</title>
+  <title>Polyglot Watchdog - SEE ERRORS</title>
   <link rel="stylesheet" href="/static/styles.css" />
   <link rel="stylesheet" href="/static/theme-graph.css" />
 </head>
 <body data-i18n-title="index.page_title">
   {{header}}
   <main>
-    <h1><span data-i18n="index.h1">Issues Explorer</span></h1>
+    <h1>SEE ERRORS</h1>
+    <p>Review and filter captured issues for a selected domain and run.</p>
     <p><a id="issuesBackToRunHub" href="/runs">Back to Run Hub</a></p>
+
     <div class="controls">
       <input id="domainInput" placeholder="domain" />
       <input id="runIdInput" placeholder="run id" />
-      <input id="issueQuery" placeholder="keyword" />
-      <input id="typeFilter" placeholder="issue type" />
       <input id="languageFilter" placeholder="language" />
-      <input id="severityFilter" placeholder="severity" />
-      <input id="stateFilter" placeholder="state" />
-      <input id="urlFilter" placeholder="url contains" />
-      <input id="domainFilter" placeholder="domain substring in URL" />
-      <button id="applyIssueQuery" type="button">Apply Filters</button>
-      <button id="exportIssuesCsv" type="button">Export CSV</button>
+      <input id="issueQuery" placeholder="search" />
+      <button id="applyIssueQuery" type="button">Apply</button>
     </div>
+
+    <details>
+      <summary>Advanced filters</summary>
+      <div class="controls">
+        <input id="severityFilter" placeholder="severity" />
+        <input id="stateFilter" placeholder="state" />
+        <input id="typeFilter" placeholder="issue type" />
+        <input id="urlFilter" placeholder="url contains" />
+        <input id="domainFilter" placeholder="domain substring in URL" />
+        <button id="exportIssuesCsv" type="button">Export CSV</button>
+      </div>
+    </details>
+
     <div id="issueStatus"></div>
     <p id="issueCount" class="hidden"></p>
     <table id="issuesTable" class="hidden">
-      <thead><tr><th>ID</th><th>Category</th><th>URL</th><th>Message</th><th>Severity</th><th>Language</th><th>State</th><th>Detail</th></tr></thead>
+      <thead><tr><th>Error/Issue</th><th>URL</th><th>Language</th><th>Severity</th><th>Open details</th></tr></thead>
       <tbody></tbody>
     </table>
   </main>

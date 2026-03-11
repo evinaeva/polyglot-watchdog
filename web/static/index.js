@@ -15,7 +15,6 @@ const issueStatus = document.getElementById('issueStatus');
 const issueCount = document.getElementById('issueCount');
 const issuesBackToRunHub = document.getElementById('issuesBackToRunHub');
 
-
 function queryParamsFromLocation() {
   const params = new URLSearchParams(window.location.search);
   return { domain: (params.get('domain') || '').trim(), runId: (params.get('run_id') || '').trim() };
@@ -47,12 +46,16 @@ function syncDefaultsFromQuery() {
   issuesBackToRunHub.href = `/runs?${new URLSearchParams({ domain }).toString()}`;
 }
 
+function issueLabel(issue) {
+  return issue.message || issue.category || issue.id || '';
+}
+
 async function loadIssues() {
   setStatus('Loading…');
   issueCount.classList.add('hidden');
   tbody.innerHTML = '';
   const response = await fetch(`/api/issues?${buildParams().toString()}`);
-  const payload = await safeReadPayload(response)
+  const payload = await safeReadPayload(response);
   if (response.status === 404 && payload.status === 'not_ready') {
     table.classList.add('hidden');
     setStatus('Not ready: issues.json artifact is missing. Run phase 6 or wait for pipeline.', 'warning');
@@ -75,7 +78,7 @@ async function loadIssues() {
   for (const issue of issues) {
     const tr = document.createElement('tr');
     const detailHref = `/issues/detail?${new URLSearchParams({ domain: domainInput.value.trim(), run_id: runIdInput.value.trim(), id: String(issue.id || '') }).toString()}`;
-    tr.innerHTML = `<td>${issue.id || ''}</td><td>${issue.category || ''}</td><td>${issue.evidence?.url || ''}</td><td>${issue.message || ''}</td><td>${issue.severity || ''}</td><td>${issue.language || ''}</td><td>${issue.state || ''}</td><td><a href="${detailHref}">Open detail</a></td>`;
+    tr.innerHTML = `<td>${issueLabel(issue)}</td><td>${issue.evidence?.url || ''}</td><td>${issue.language || ''}</td><td>${issue.severity || ''}</td><td><a href="${detailHref}">Open details</a></td>`;
     tbody.appendChild(tr);
   }
   table.classList.remove('hidden');
@@ -87,24 +90,26 @@ applyBtn.addEventListener('click', () => {
   loadIssues().catch((err) => setStatus(err.message, 'error'));
 });
 
-exportCsvBtn.addEventListener('click', async () => {
-  const params = buildParams();
-  params.set('format', 'csv');
-  const response = await fetch(`/api/issues/export?${params.toString()}`);
-  if (!response.ok) {
-    const payload = await safeReadPayload(response)
-    setStatus(payload.error || `Export failed (${response.status})`, 'error');
-    return;
-  }
-  const text = await response.text();
-  const blob = new Blob([text], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'issues-export.csv';
-  a.click();
-  URL.revokeObjectURL(url);
-});
+if (exportCsvBtn) {
+  exportCsvBtn.addEventListener('click', async () => {
+    const params = buildParams();
+    params.set('format', 'csv');
+    const response = await fetch(`/api/issues/export?${params.toString()}`);
+    if (!response.ok) {
+      const payload = await safeReadPayload(response);
+      setStatus(payload.error || `Export failed (${response.status})`, 'error');
+      return;
+    }
+    const text = await response.text();
+    const blob = new Blob([text], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'issues-export.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+}
 
 syncDefaultsFromQuery();
 if (domainInput.value && runIdInput.value) {
