@@ -927,6 +927,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             "/workflow": "workflow.html",
             "/contexts": "contexts.html",
             "/pulls": "pulls.html",
+            "/check-languages": "check-languages.html",
             "/issues/detail": "issues/detail.html",
         }
         if parsed.path in page_templates:
