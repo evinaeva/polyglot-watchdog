@@ -10,14 +10,21 @@
   {{header}}
   <main>
     <h1>Issue Detail</h1>
-    <p>
-      <a id="detailBackToIssues" href="#">Back to Issues</a> |
-      <a id="detailOpenContexts" href="#">Open related Contexts</a> |
-      <a id="detailOpenPulls" href="#">Open Items/Pulls</a>
-    </p>
+    <p><a id="detailBackToIssues" href="#">← Back to issue list</a></p>
+
     <div id="issueDetailStatus"></div>
+
     <section id="issueCore"></section>
-    <section id="issueEvidence"></section>
+
+    <details id="issueTechnicalDetails">
+      <summary>Technical details</summary>
+      <section id="issueEvidence"></section>
+      <p>
+        Internal navigation:
+        <a id="detailOpenContexts" href="#">Related Contexts</a> |
+        <a id="detailOpenPulls" href="#">Items/Pulls</a>
+      </p>
+    </details>
   </main>
   <script src="/static/i18n.js"></script>
   <script src="/static/api-client.js"></script>
