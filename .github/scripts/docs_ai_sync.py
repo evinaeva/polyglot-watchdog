@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 ALLOWED_PREFIXES = ("docs/", "spec/", "contract/schemas/")
+MACHINE_MANAGED_PREFIXES = ("docs/auto/",)
 ALLOWED_ROOT_FILES = {"RELEASE_CRITERIA.md", "README.md", "APPLYING_STREAM1.md"}
 BLACKLIST = {
     "contract/watchdog_contract_v1.0.md",
@@ -84,6 +85,8 @@ def parse_feed(feed_text: str) -> list[dict[str, Any]]:
 
 
 def is_allowed(path: str) -> bool:
+    if path.startswith(MACHINE_MANAGED_PREFIXES):
+        return False
     if path in BLACKLIST:
         return False
     if path in ALLOWED_ROOT_FILES:
@@ -103,7 +106,13 @@ def _all_allowlisted_files() -> list[str]:
         if p.exists():
             files.append(p)
 
-    return sorted({f.as_posix() for f in files})
+    return sorted(
+        {
+            f.as_posix()
+            for f in files
+            if not f.as_posix().startswith(MACHINE_MANAGED_PREFIXES)
+        }
+    )
 
 
 def gather_allowlisted_files(candidate_paths: list[str]) -> tuple[dict[str, str], dict[str, Any]]:
@@ -167,7 +176,7 @@ def extract_json(text: str) -> dict[str, Any]:
 def call_claude(prompt: str, model: str, api_key: str) -> str:
     payload = {
         "model": model,
-        "max_tokens": 4000,
+        "max_tokens": 12000,
         "temperature": 0,
         "messages": [{"role": "user", "content": prompt}],
     }
