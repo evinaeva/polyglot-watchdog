@@ -159,3 +159,18 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   - .github/scripts/validate_docs_diff.py
   - tests/test_docs_autoupdate_scripts.py
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #76 — 2026-03-12T14:57:18Z
+
+- Title: Use element-signature whitelist (specific signatures) instead of simple element-type strings
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/76
+- Author: evinaeva
+- Base branch: main
+- Head branch: 6b993u-codex/fix-broad-whitelist-implementation
+- Merge commit: 79db262ae91c112ebae63567a6fadf58f81d62a3
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_stage_a_read_routes_api.py
+  - web/static/pulls.js
+  - web/templates/pulls.html
+- Notes: Auto-generated from merged PR metadata.
