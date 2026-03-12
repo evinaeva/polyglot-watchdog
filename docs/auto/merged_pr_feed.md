@@ -83,3 +83,20 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   - .github/scripts/docs_ai_sync.py
   - .github/workflows/docs-ai-sync.yml
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #71 — 2026-03-12T12:13:59Z
+
+- Title: Add page-screenshot proxy and UI preview (include screenshots in /api/pulls)
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/71
+- Author: evinaeva
+- Base branch: main
+- Head branch: 447ysg-codex/implement-screenshot-visualization-for-choose-needed
+- Merge commit: f55ef4a039ca2001f83237fa993e2ca95075ae3d
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_stage_a_read_routes_api.py
+  - tests/test_stage_b_operator_flow_api.py
+  - web/static/pulls.js
+  - web/static/styles.css
+  - web/templates/pulls.html
+- Notes: Auto-generated from merged PR metadata.
