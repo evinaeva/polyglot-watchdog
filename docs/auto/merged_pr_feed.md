@@ -125,3 +125,22 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   - tests/test_stage_c_operator_workflow.py
   - web/static/pulls.js
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #74 — 2026-03-12T14:13:00Z
+
+- Title: Add element-type whitelist for pulls UI and skip header-online dynamic counters in phase6
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/74
+- Author: evinaeva
+- Base branch: main
+- Head branch: xtq56l-codex/implement-feature-set-for-choose-needed-page
+- Merge commit: 88d5b63cd074cefe0e301631859b624a38bbe0e3
+- Changed files:
+  - app/skeleton_server.py
+  - pipeline/run_phase6.py
+  - tests/test_auth_flow.py
+  - tests/test_phase6_schema_compliance.py
+  - tests/test_stage_a_read_routes_api.py
+  - tests/test_stage_c_operator_workflow.py
+  - web/static/pulls.js
+  - web/templates/pulls.html
+- Notes: Auto-generated from merged PR metadata.
