@@ -132,6 +132,7 @@ def test_pulls_not_ready_and_filters(api_env):
     _write(domain, run_id, "collected_items.json", [
         {"item_id": "i1", "url": "https://a/path", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "element_type": "button", "text": "x"},
         {"item_id": "i2", "url": "https://b/path", "state": "logged_in", "language": "de", "viewport_kind": "mobile", "user_tier": "pro", "element_type": "link", "text": "y"},
+        {"item_id": "i3", "url": "https://c/path", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "element_type": "script", "text": "var x=1"},
     ])
     _write(domain, run_id, "template_rules.json", [])
 
@@ -140,6 +141,11 @@ def test_pulls_not_ready_and_filters(api_env):
     assert status2 == HTTPStatus.OK
     assert payload2["missing_universal_sections"] is True
     assert [r["item_id"] for r in payload2["rows"]] == ["i1"]
+
+    status3, _, body3 = _request(api_env, f"/api/pulls?domain={domain}&run_id={run_id}")
+    payload3 = json.loads(body3)
+    assert status3 == HTTPStatus.OK
+    assert [r["item_id"] for r in payload3["rows"]] == ["i1", "i2"]
 
 
 def test_rules_missing_required_and_fail_closed_on_corruption(api_env):

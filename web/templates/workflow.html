@@ -11,7 +11,7 @@
   {{header}}
   <main>
     <h1>FIRST RUN</h1>
-    <p>Launch your first capture, monitor progress, and prepare data for the pull selection step.</p>
+    <p>Launch your first capture, monitor progress, or continue from an existing run.</p>
 
     <section>
       <h2>Block A · Domain and saved URLs</h2>
@@ -25,10 +25,19 @@
     </section>
 
     <section>
-      <h2>Block B · Start capture</h2>
+      <h2>Block B · Start capture or choose an existing run</h2>
       <div class="controls">
         <button id="wfStartCapture" type="button">Start first run</button>
       </div>
+      <div class="controls">
+        <label for="wfExistingRuns">Existing runs</label>
+        <select id="wfExistingRuns">
+          <option value="">No runs found</option>
+        </select>
+        <button id="wfUseExistingRun" type="button" disabled>Use selected run</button>
+        <button id="wfRefreshRuns" type="button">Refresh runs</button>
+      </div>
+      <p id="wfRunsStatus" class="muted"></p>
     </section>
 
     <section>
