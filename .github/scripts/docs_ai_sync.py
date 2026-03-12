@@ -32,6 +32,8 @@ DEFAULT_MODEL = "claude-3-5-sonnet-20241022"
 MAX_DOC_FILES = 80
 MAX_DOC_CHARS = 300_000
 MAX_FILE_CHARS = 20_000
+CLAUDE_RAW_RESPONSE_DEBUG_PATH = Path(".github/tmp/claude_raw_response.txt")
+CLAUDE_PARSE_PREVIEW_CHARS = 1000
 
 
 def git_show(ref_path: str) -> str:
@@ -314,7 +316,16 @@ def main() -> int:
     try:
         response_json = extract_json(response_text)
     except Exception as exc:
-        print(f"Failed to parse Claude JSON response: {exc}", file=sys.stderr)
+        CLAUDE_RAW_RESPONSE_DEBUG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        CLAUDE_RAW_RESPONSE_DEBUG_PATH.write_text(response_text, encoding="utf-8")
+        response_preview = response_text[:CLAUDE_PARSE_PREVIEW_CHARS]
+        preview_suffix = "..." if len(response_text) > CLAUDE_PARSE_PREVIEW_CHARS else ""
+        print(
+            "Failed to parse Claude JSON response: "
+            f"{exc}. Saved raw response to {CLAUDE_RAW_RESPONSE_DEBUG_PATH}. "
+            f"Preview (first {CLAUDE_PARSE_PREVIEW_CHARS} chars): {response_preview!r}{preview_suffix}",
+            file=sys.stderr,
+        )
         return 1
 
     updates = response_json.get("updates")

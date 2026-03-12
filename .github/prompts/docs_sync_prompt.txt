@@ -22,7 +22,11 @@ File constraints:
 - Never modify any file outside allowlist.
 
 Response contract:
-- Return JSON only (no markdown fences, no prose).
+- Return syntactically valid JSON only.
+- Return exactly one JSON object.
+- Include no prose or markdown before or after the JSON object.
+- Escape all quotes and newlines correctly in JSON string values.
+- Never include trailing commas.
 - JSON schema:
 {
   "updates": [
@@ -33,5 +37,5 @@ Response contract:
     }
   ]
 }
-- If no documentation updates are needed, return: {"updates": []}
+- If no documentation updates are needed, return exactly: {"updates":[]}
 - Each replace_file entry must include non-empty content.
