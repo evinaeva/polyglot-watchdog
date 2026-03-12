@@ -69,3 +69,17 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   - .github/prompts/docs_sync_prompt.txt
   - .github/scripts/docs_ai_sync.py
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #70 — 2026-03-12T12:03:20Z
+
+- Title: fix(docs-sync): increase Claude token limit, exclude docs/auto from AI edits, upload raw response on parse failure
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/70
+- Author: evinaeva
+- Base branch: main
+- Head branch: vruefo-codex/fix-reliability-issues-in-docs-ai-sync
+- Merge commit: 04f27840c4c05e80e7c6573dfb1135a339c56ea7
+- Changed files:
+  - .github/prompts/docs_sync_prompt.txt
+  - .github/scripts/docs_ai_sync.py
+  - .github/workflows/docs-ai-sync.yml
+- Notes: Auto-generated from merged PR metadata.
