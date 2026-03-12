@@ -12,6 +12,8 @@ Hard constraints:
 
 File constraints:
 - Allowed paths: contract/schemas/**, docs/**, spec/**
+- docs/auto/** files are machine-managed inputs/state and are not canonical docs targets.
+- Never include any docs/auto/** path in `updates`.
 - Allowed root files: RELEASE_CRITERIA.md, README.md, APPLYING_STREAM1.md
 - Forbidden files (never touch):
   - contract/watchdog_contract_v1.0.md
