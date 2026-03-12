@@ -165,8 +165,10 @@ EXTRACTION_JS = """
 async def wait_for_capture_readiness(page, state: str) -> None:
     """Fail-fast readiness policy before extraction/bbox capture."""
     await page.wait_for_load_state("domcontentloaded", timeout=15000)
-    await page.wait_for_load_state("networkidle", timeout=10000)
     await page.wait_for_selector("body", state="attached", timeout=5000)
+    # Fixed 5s wait instead of networkidle — sites with live content (streaming,
+    # websockets, polling) never reach networkidle and would hang indefinitely.
+    await page.wait_for_timeout(5000)
     if state != "baseline":
         # Deterministic state-specific stabilization wait before bbox capture.
         await page.wait_for_timeout(200)
