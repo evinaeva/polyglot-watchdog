@@ -491,13 +491,14 @@ def test_capture_contexts_artifact_backed_and_corruption(api_env):
     assert json.loads(body3) == {"error": "page_screenshots.json artifact_invalid", "status": "artifact_invalid"}
 
 
-def test_element_type_whitelist_domain_scoped_and_pulls_hidden(api_env):
+def test_element_signature_whitelist_specific_domain_scoped_and_removable(api_env):
     domain = "example.com"
     run_a = "run-whitelist-a"
     run_b = "run-whitelist-b"
     _write(domain, run_a, "collected_items.json", [
-        {"item_id": "i1", "page_id": "p1", "url": "https://example.com/a", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "element_type": "button", "css_selector": "button", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}, "text": "Acheter", "visible": True},
+        {"item_id": "i1", "page_id": "p1", "url": "https://example.com/a", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "element_type": "a", "css_selector": "header .cta", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}, "text": "Acheter", "attributes": {"class": "cta primary", "href": "/buy"}, "visible": True},
         {"item_id": "i2", "page_id": "p2", "url": "https://example.com/a", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "element_type": "link", "css_selector": "a", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}, "text": "Voir", "visible": True},
+        {"item_id": "i4", "page_id": "p2", "url": "https://example.com/a", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "element_type": "a", "css_selector": "footer a", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}, "text": "Contact", "attributes": {"class": "footer-link", "href": "/contact"}, "visible": True},
     ])
     _write(domain, run_a, "page_screenshots.json", [
         {"page_id": "p1", "url": "https://example.com/a", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "screenshot_id": "s1", "storage_uri": "gs://test-bucket/example.com/run-whitelist-a/screenshots/p1.png", "captured_at": "2026-01-01T00:00:00Z", "viewport": {"width": 100, "height": 100}},
@@ -506,41 +507,83 @@ def test_element_type_whitelist_domain_scoped_and_pulls_hidden(api_env):
     _write(domain, run_a, "template_rules.json", [])
 
     _write(domain, run_b, "collected_items.json", [
-        {"item_id": "i3", "page_id": "p3", "url": "https://example.com/b", "state": "baseline", "language": "de", "viewport_kind": "mobile", "user_tier": "pro", "element_type": "button", "css_selector": "button", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}, "text": "Kaufen", "visible": True}
+        {"item_id": "i3", "page_id": "p3", "url": "https://example.com/b", "state": "baseline", "language": "de", "viewport_kind": "mobile", "user_tier": "pro", "element_type": "a", "css_selector": "header .cta", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}, "text": "Kaufen", "attributes": {"class": "primary cta", "href": "/kaufen", "aria-label": "Jetzt kaufen"}, "visible": True}
     ])
     _write(domain, run_b, "page_screenshots.json", [
         {"page_id": "p3", "url": "https://example.com/b", "state": "baseline", "language": "de", "viewport_kind": "mobile", "user_tier": "pro", "screenshot_id": "s3", "storage_uri": "gs://test-bucket/example.com/run-whitelist-b/screenshots/p3.png", "captured_at": "2026-01-01T00:00:00Z", "viewport": {"width": 100, "height": 100}},
     ])
     _write(domain, run_b, "template_rules.json", [])
 
-    status_add, _, body_add = _request_with_payload(api_env, "POST", "/api/element-type-whitelist", {"domain": domain, "element_type": "button"})
+    status_add, _, body_add = _request_with_payload(api_env, "POST", "/api/element-type-whitelist", {
+        "domain": domain,
+        "element_type": "a",
+        "css_selector": "header .cta",
+        "attributes": {"class": "cta primary", "href": "/buy"},
+    })
     assert status_add == HTTPStatus.OK
-    assert json.loads(body_add)["element_types"] == ["button"]
+    entries = json.loads(body_add)["entries"]
+    assert len(entries) == 1
+    signature_key = entries[0]["signature_key"]
+    assert entries[0]["description"].startswith("a")
+    assert json.loads(body_add)["added_entry"]["signature_key"] == signature_key
 
     status_wl, _, body_wl = _request(api_env, f"/api/element-type-whitelist?domain={domain}")
     assert status_wl == HTTPStatus.OK
-    assert json.loads(body_wl)["element_types"] == ["button"]
+    assert len(json.loads(body_wl)["entries"]) == 1
 
     status_a, _, body_a = _request(api_env, f"/api/pulls?domain={domain}&run_id={run_a}")
     payload_a = json.loads(body_a)
     assert status_a == HTTPStatus.OK
-    assert [row["item_id"] for row in payload_a["rows"]] == ["i2"]
+    assert [row["item_id"] for row in payload_a["rows"]] == ["i2", "i4"]
 
     status_b, _, body_b = _request(api_env, f"/api/pulls?domain={domain}&run_id={run_b}")
     payload_b = json.loads(body_b)
     assert status_b == HTTPStatus.OK
     assert payload_b["rows"] == []
 
-    status_remove, _, body_remove = _request_with_payload(api_env, "POST", "/api/element-type-whitelist/remove", {"domain": domain, "element_type": "button"})
+    status_remove, _, body_remove = _request_with_payload(api_env, "POST", "/api/element-type-whitelist/remove", {"domain": domain, "signature_key": signature_key})
     assert status_remove == HTTPStatus.OK
-    assert json.loads(body_remove)["element_types"] == []
+    assert json.loads(body_remove)["entries"] == []
 
     status_a2, _, body_a2 = _request(api_env, f"/api/pulls?domain={domain}&run_id={run_a}")
     payload_a2 = json.loads(body_a2)
     assert status_a2 == HTTPStatus.OK
-    assert [row["item_id"] for row in payload_a2["rows"]] == ["i1", "i2"]
+    assert [row["item_id"] for row in payload_a2["rows"]] == ["i1", "i2", "i4"]
 
     status_b2, _, body_b2 = _request(api_env, f"/api/pulls?domain={domain}&run_id={run_b}")
     payload_b2 = json.loads(body_b2)
     assert status_b2 == HTTPStatus.OK
     assert [row["item_id"] for row in payload_b2["rows"]] == ["i3"]
+
+
+def test_legacy_tag_only_whitelist_artifact_does_not_hide_rows(api_env):
+    domain = "example.com"
+    run_id = "run-legacy-whitelist"
+    _write(domain, run_id, "collected_items.json", [
+        {"item_id": "i1", "page_id": "p1", "url": "https://example.com/a", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "element_type": "a", "css_selector": "header a", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}, "text": "Header", "attributes": {"class": "header-link"}, "visible": True},
+        {"item_id": "i2", "page_id": "p2", "url": "https://example.com/a", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "element_type": "a", "css_selector": "footer a", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}, "text": "Footer", "attributes": {"class": "footer-link"}, "visible": True},
+    ])
+    _write(domain, run_id, "page_screenshots.json", [
+        {"page_id": "p1", "url": "https://example.com/a", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "screenshot_id": "s1", "storage_uri": "gs://test-bucket/example.com/run-legacy-whitelist/screenshots/p1.png", "captured_at": "2026-01-01T00:00:00Z", "viewport": {"width": 100, "height": 100}},
+        {"page_id": "p2", "url": "https://example.com/a", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "screenshot_id": "s2", "storage_uri": "gs://test-bucket/example.com/run-legacy-whitelist/screenshots/p2.png", "captured_at": "2026-01-01T00:00:00Z", "viewport": {"width": 100, "height": 100}},
+    ])
+    _write(domain, run_id, "template_rules.json", [])
+    _write(domain, "_shared", "element_type_whitelist.json", ["a"])
+
+    status, _, body = _request(api_env, f"/api/pulls?domain={domain}&run_id={run_id}")
+    payload = json.loads(body)
+    assert status == HTTPStatus.OK
+    assert [row["item_id"] for row in payload["rows"]] == ["i1", "i2"]
+
+
+def test_element_signature_requires_more_than_single_generic_class(api_env):
+    domain = "example.com"
+    status_add, _, body_add = _request_with_payload(api_env, "POST", "/api/element-type-whitelist", {
+        "domain": domain,
+        "element_type": "a",
+        "attributes": {"class": "link", "href": "/localized"},
+    })
+    payload = json.loads(body_add)
+    assert status_add == HTTPStatus.BAD_REQUEST
+    assert payload["error"] == "element_signature_requires_specific_attributes"
+    assert payload["status"] == "invalid_request"
