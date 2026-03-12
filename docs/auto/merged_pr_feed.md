@@ -56,3 +56,16 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   - docs/auto/docs_sync_state.json
   - tests/test_docs_autoupdate_scripts.py
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #69 — 2026-03-12T10:49:50Z
+
+- Title: Harden docs AI sync malformed JSON diagnostics
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/69
+- Author: evinaeva
+- Base branch: main
+- Head branch: ksmiwi-codex/fix-json-parse-failure-handling
+- Merge commit: b68e02c369a88826a0bee6f82ce1ecee09e9fc7f
+- Changed files:
+  - .github/prompts/docs_sync_prompt.txt
+  - .github/scripts/docs_ai_sync.py
+- Notes: Auto-generated from merged PR metadata.
