@@ -24,7 +24,7 @@ import uuid
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 # Ensure project root is on sys.path for pipeline imports
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -156,6 +156,26 @@ def _require_artifact_exists(domain: str, run_id: str, filename: str) -> None:
 
 def _capture_artifacts_ready(domain: str, run_id: str) -> bool:
     return _artifact_exists(domain, run_id, "page_screenshots.json") and _artifact_exists(domain, run_id, "collected_items.json")
+
+
+def _parse_gs_uri(uri: str) -> tuple[str, str] | None:
+    text = str(uri or "").strip()
+    match = re.match(r"^gs://([^/]+)/(.+)$", text)
+    if not match:
+        return None
+    return match.group(1), match.group(2)
+
+
+def _parse_http_uri(uri: str) -> str | None:
+    text = str(uri or "").strip()
+    if re.match(r"^https?://", text, flags=re.IGNORECASE):
+        return text
+    return None
+
+
+def _page_screenshot_view_url(domain: str, run_id: str, page_id: str) -> str:
+    query = urlencode({"domain": domain, "run_id": run_id, "page_id": page_id})
+    return f"/api/page-screenshot?{query}"
 
 
 def _structured_not_ready(action: str, error: str, *, previous_state: str = "not_ready", next_expected_state: str = "ready") -> dict:
@@ -999,6 +1019,68 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             urls = [row.get("url", "") for row in payload.get("urls", []) if isinstance(row, dict)]
             self._json_response({"domain": domain, "urls": sorted(urls)})
             return
+        if parsed.path == "/api/page-screenshot":
+            if not self._require_auth(api=True):
+                return
+            query = parse_qs(parsed.query)
+            required, missing = _require_query_params(query, "domain", "run_id", "page_id")
+            if missing:
+                self._json_response(_missing_required_query_params(*missing), status=HTTPStatus.BAD_REQUEST)
+                return
+            domain = required["domain"]
+            run_id = required["run_id"]
+            page_id = required["page_id"]
+            try:
+                pages = _read_list_artifact_required(domain, run_id, "page_screenshots.json")
+            except ValueError as exc:
+                self._json_response({"error": str(exc), "status": "artifact_invalid"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+            page = next((row for row in pages if isinstance(row, dict) and str(row.get("page_id", "")) == page_id), None)
+            if page is None:
+                self._json_response({"error": "page_screenshot_not_found", "status": "not_found"}, status=HTTPStatus.NOT_FOUND)
+                return
+
+            storage_uri = str((page or {}).get("storage_uri", "")).strip()
+            etag = hashlib.sha1(f"{page_id}|{storage_uri}".encode("utf-8")).hexdigest()
+            if_none_match = str(self.headers.get("If-None-Match", "")).strip().strip('"')
+            if if_none_match and if_none_match == etag:
+                self.send_response(HTTPStatus.NOT_MODIFIED)
+                self.send_header("ETag", f'"{etag}"')
+                self.send_header("Cache-Control", "private, max-age=300")
+                self.end_headers()
+                return
+
+            http_uri = _parse_http_uri(storage_uri)
+            if http_uri is not None:
+                self.send_response(HTTPStatus.FOUND)
+                self.send_header("Location", http_uri)
+                self.send_header("ETag", f'"{etag}"')
+                self.send_header("Cache-Control", "private, max-age=300")
+                self.end_headers()
+                return
+
+            parsed_uri = _parse_gs_uri(storage_uri)
+            if parsed_uri is None:
+                self._json_response({"error": "page_screenshot_storage_uri_invalid", "status": "artifact_invalid"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+            bucket_name, object_path = parsed_uri
+            try:
+                from pipeline.storage import _gcs_client
+
+                bucket = _gcs_client().bucket(bucket_name)
+                blob = bucket.blob(object_path)
+                image_bytes = blob.download_as_bytes()
+            except Exception:
+                self._json_response({"error": "page_screenshot_unavailable", "status": "not_ready"}, status=HTTPStatus.SERVICE_UNAVAILABLE)
+                return
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Cache-Control", "private, max-age=300")
+            self.send_header("ETag", f'"{etag}"')
+            self.send_header("Content-Length", str(len(image_bytes)))
+            self.end_headers()
+            self.wfile.write(image_bytes)
+            return
         if parsed.path == "/api/pulls":
             if not self._require_auth(api=True):
                 return
@@ -1011,16 +1093,26 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             run_id = required["run_id"]
             try:
                 _require_artifact_exists(domain, run_id, "collected_items.json")
+                _require_artifact_exists(domain, run_id, "page_screenshots.json")
                 items = _read_list_artifact_required(domain, run_id, "collected_items.json")
+                page_screenshots = _read_list_artifact_required(domain, run_id, "page_screenshots.json")
                 universal_sections_optional = _read_list_artifact_optional_strict(domain, run_id, "universal_sections.json")
                 universal_sections = universal_sections_optional or []
                 decisions = _load_phase2_decisions(domain, run_id)
             except FileNotFoundError:
-                self._json_response(_not_ready_payload("collected_items"), status=HTTPStatus.NOT_FOUND)
+                if not _artifact_exists(domain, run_id, "collected_items.json"):
+                    self._json_response(_not_ready_payload("collected_items"), status=HTTPStatus.NOT_FOUND)
+                else:
+                    self._json_response(_not_ready_payload("page_screenshots"), status=HTTPStatus.NOT_FOUND)
                 return
             except ValueError as exc:
                 self._json_response({"error": str(exc), "status": "artifact_invalid"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
                 return
+            pages_by_id = {
+                str(row.get("page_id", "")): row
+                for row in page_screenshots
+                if isinstance(row, dict) and str(row.get("page_id", "")).strip()
+            }
             decisions_by_item_url = {(str(row.get("item_id", "")), str(row.get("url", ""))): row for row in decisions}
             url_filter = query.get("url", [""])[0].strip().lower()
             state_filter = query.get("state", [""])[0].strip().lower()
@@ -1045,8 +1137,12 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 if element_type.lower() == "script":
                     continue
                 decision = decisions_by_item_url.get((str(row.get("item_id", "")), str(row.get("url", ""))), {})
+                page_id = str(row.get("page_id", ""))
+                page_row = pages_by_id.get(page_id, {})
+                page_viewport = page_row.get("viewport") if isinstance(page_row.get("viewport"), dict) else None
                 rows.append({
                     "item_id": str(row.get("item_id", "")),
+                    "page_id": page_id,
                     "capture_context_id": _capture_context_id_from_page(domain, row),
                     "url": str(row.get("url", "")),
                     "state": str(row.get("state", "")),
@@ -1055,8 +1151,15 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                     "user_tier": _normalize_optional_string(row.get("user_tier")),
                     "element_type": element_type,
                     "text": str(row.get("text", "")),
+                    "css_selector": str(row.get("css_selector", "")),
+                    "bbox": row.get("bbox") if isinstance(row.get("bbox"), dict) else None,
+                    "tag": _normalize_optional_string(row.get("tag")),
+                    "attributes": row.get("attributes") if isinstance(row.get("attributes"), dict) else None,
                     "not_found": bool(row.get("not_found", False)),
                     "decision": str(decision.get("rule_type", "")),
+                    "screenshot_storage_uri": str(page_row.get("storage_uri", "")),
+                    "screenshot_view_url": _page_screenshot_view_url(domain, run_id, page_id) if page_id and page_row else "",
+                    "page_viewport": page_viewport,
                 })
             for section in universal_sections if isinstance(universal_sections, list) else []:
                 if not isinstance(section, dict):
