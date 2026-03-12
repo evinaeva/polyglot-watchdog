@@ -289,25 +289,31 @@ function updateOverlay() {
     return;
   }
 
-  const viewport = row.page_viewport || {};
   const renderedWidth = pullsPreviewImage.clientWidth;
   const renderedHeight = pullsPreviewImage.clientHeight;
-  const sourceWidth = Number(viewport.width || 0);
-  const sourceHeight = Number(viewport.height || 0);
+  const sourceWidth = Number(pullsPreviewImage.naturalWidth || 0);
+  const sourceHeight = Number(pullsPreviewImage.naturalHeight || 0);
 
   if (!sourceWidth || !sourceHeight) {
-    hideBbox();
-    setPreviewStatus('Missing page viewport metadata; cannot scale bbox overlay.');
-    return;
+    const viewport = row.page_viewport || {};
+    const fallbackWidth = Number(viewport.width || 0);
+    const fallbackHeight = Number(viewport.height || 0);
+    if (!fallbackWidth || !fallbackHeight) {
+      hideBbox();
+      setPreviewStatus('Missing screenshot dimensions; cannot scale bbox overlay.');
+      return;
+    }
+    previewState.scaleX = renderedWidth / fallbackWidth;
+    previewState.scaleY = renderedHeight / fallbackHeight;
+  } else {
+    previewState.scaleX = renderedWidth / sourceWidth;
+    previewState.scaleY = renderedHeight / sourceHeight;
   }
   if (!renderedWidth || !renderedHeight) {
     hideBbox();
     setPreviewStatus('Screenshot is still rendering; bbox overlay will appear shortly.');
     return;
   }
-
-  previewState.scaleX = renderedWidth / sourceWidth;
-  previewState.scaleY = renderedHeight / sourceHeight;
 
   const left = Number(row.bbox.x) * previewState.scaleX;
   const top = Number(row.bbox.y) * previewState.scaleY;
