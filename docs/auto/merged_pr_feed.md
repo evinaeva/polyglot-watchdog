@@ -144,3 +144,18 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   - web/static/pulls.js
   - web/templates/pulls.html
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #75 — 2026-03-12T14:42:06Z
+
+- Title: Include PR description in merged feed and AI payload; ignore .github/tmp in validation
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/75
+- Author: evinaeva
+- Base branch: main
+- Head branch: 2q0y4i-codex/fix-docs-auto-update-system-issues
+- Merge commit: 0fb642d6eb8f40b92c1497cd8cfaa794a9aa7923
+- Changed files:
+  - .github/scripts/docs_ai_sync.py
+  - .github/scripts/update_merged_pr_feed.py
+  - .github/scripts/validate_docs_diff.py
+  - tests/test_docs_autoupdate_scripts.py
+- Notes: Auto-generated from merged PR metadata.
