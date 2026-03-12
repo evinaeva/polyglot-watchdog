@@ -1,0 +1,83 @@
+name: Docs AI Sync
+
+on:
+  schedule:
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  docs-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch branches
+        run: |
+          git fetch origin main
+          git fetch origin DOCS_AUTOUPDATE || true
+          git checkout main
+
+      - name: AI docs sync (apply docs updates to main working tree)
+        id: sync
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "${{ vars.ANTHROPIC_MODEL }}" ]; then
+            export ANTHROPIC_MODEL="${{ vars.ANTHROPIC_MODEL }}"
+          fi
+          python .github/scripts/docs_ai_sync.py --github-output "$GITHUB_OUTPUT"
+
+      - name: Validate documentation diff scope
+        if: steps.sync.outputs.docs_changed == 'true'
+        run: python .github/scripts/validate_docs_diff.py --ref HEAD
+
+      - name: Commit docs updates to main
+        if: steps.sync.outputs.docs_changed == 'true'
+        run: |
+          if [ "$(git branch --show-current)" != "main" ]; then
+            echo "Refusing to commit docs: not on main" >&2
+            exit 1
+          fi
+          git add -A -- docs spec contract/schemas README.md RELEASE_CRITERIA.md APPLYING_STREAM1.md
+          if git diff --cached --quiet; then
+            echo "No docs changes to commit."
+            exit 0
+          fi
+          git commit -m "chore(docs): automated AI docs sync"
+          git push origin main
+
+      - name: Update sync state in DOCS_AUTOUPDATE
+        if: steps.sync.outputs.state_changed == 'true'
+        run: |
+          state_file="${{ steps.sync.outputs.state_output_path }}"
+          if [ -z "$state_file" ] || [ ! -f "$state_file" ]; then
+            echo "State output file missing" >&2
+            exit 1
+          fi
+          git fetch origin DOCS_AUTOUPDATE || true
+          if git show-ref --verify --quiet refs/remotes/origin/DOCS_AUTOUPDATE; then
+            git checkout -B DOCS_AUTOUPDATE origin/DOCS_AUTOUPDATE
+          else
+            git checkout -B DOCS_AUTOUPDATE
+          fi
+          mkdir -p docs/auto
+          cp "$state_file" docs/auto/docs_sync_state.json
+          git add docs/auto/docs_sync_state.json
+          if git diff --cached --quiet; then
+            echo "No state changes to commit."
+            exit 0
+          fi
+          git commit -m "chore(docs-auto): advance docs sync state"
+          git push origin DOCS_AUTOUPDATE
