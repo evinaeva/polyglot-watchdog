@@ -195,27 +195,47 @@ Pairing must remain deterministic.
 
 1.10 Issue Generation
 
-Phase 6 must support issue categories including:
+Phase 6 is the translation-QA layer for CHECK LANGUAGES and the persisted source of SEE ERRORS.
 
-translation mismatch
+Phase 6 must:
 
-missing translation
+compare curated EN reference content against curated target-language content
 
-formatting mismatch
+consume OCR text only for approved `<img>` elements
 
-layout overflow
+treat OCR as a text source, not as the primary comparison target
 
-missing interactive state
+run AI-assisted and deterministic checks over suspicious localization pairs
 
-overlay-blocked capture
+preserve evidence for later operator review
+
+Working review classes for Phase 6 are:
+
+SPELLING
+
+GRAMMAR
+
+MEANING
+
+PLACEHOLDER
+
+OCR_NOISE
+
+OTHER
+
+The current persisted `issues` schema remains authoritative for the top-level artifact shape; finer review classes may be preserved in evidence until the schema is revised.
+
+Detailed design notes live in:
+
+`docs/PHASE6_TRANSLATION_QA.md`
 
 1.11 Deferred (Allowed)
 
 The following are explicitly deferred without blocking v1.0:
 
-Phase 4 OCR
+broader OCR expansion beyond approved `<img>` flow
 
-Image text extraction is optional.
+OCR on full-page screenshots or arbitrary visual regions
 
 Phase 0 crawler improvements
 
@@ -567,15 +587,30 @@ URLs
 Pairing uses:
 
 item_id
+
+The comparison model is:
+
+EN reference ↔ target-language item
+
+For approved image-based items, OCR text is attached to the item and participates in the same EN ↔ target comparison flow.
+
 4.9 Phase 6 Issue Generation
 
-Issues categories:
+Phase 6 is expected to generate persisted review candidates rather than an exhaustive dump of all pairs.
 
-translation mismatch
-missing translation
-layout overflow
-missing interactive state
-overlay-blocked capture
+Required Phase 6 behavior:
+
+AI-assisted checking for spelling, grammar, and likely meaning mismatch
+
+deterministic placeholder and formatting checks
+
+OCR text handling only for approved `<img>` items
+
+baseline OCR path via OCR.Space `engine 3`
+
+evidence-rich persisted issues for later review in SEE ERRORS
+
+If a detailed review class does not fit the current coarse top-level issue enum, the finer class should still be preserved in evidence.
 5. RISK REGISTER
 1 Playwright Flakiness
 

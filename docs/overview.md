@@ -4,3 +4,4 @@
 
 This document describes the intended product at a high level.  
 **Normative behavior is defined only in** `contract/watchdog_contract_v1.0.md`.
+For detailed intended Phase 6 translation-QA behavior, see `docs/PHASE6_TRANSLATION_QA.md`.

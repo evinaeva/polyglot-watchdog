@@ -13,6 +13,7 @@ For v1.0 scope and release readiness, also read:
 - `contract/watchdog_contract_v1.0.md`
 - `docs/Interactive Capture Architecture.md`
 - `docs/Implementation Playbook.md`
+- `docs/PHASE6_TRANSLATION_QA.md`
 - `docs/operator-read-routes.md`
 - `RELEASE_CRITERIA.md`
 - `docs/PRODUCT_TRUTHSET.md`

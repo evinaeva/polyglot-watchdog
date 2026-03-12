@@ -147,7 +147,11 @@ building datasets
 
 pairing source and target items
 
-generating issue artifacts
+attaching OCR text for approved `<img>` items
+
+running deterministic and AI-assisted translation QA checks
+
+generating issue artifacts with reproducible evidence
 
 3. Recipe Design Model
 
@@ -578,6 +582,92 @@ overlay blocked content
 SPA failed to transition
 
 localization broke the UI
+
+
+13.1 Phase 6 Comparison Model
+
+Phase 6 should compare:
+
+EN reference ↔ target-language text
+
+This is the primary review path for both DOM-backed text and approved image-backed text.
+
+OCR is not a parallel issue system.  
+It is an input source for approved `<img>` items so that image text can participate in the same EN ↔ target QA flow.
+
+13.2 OCR Scope Used by Phase 6
+
+OCR must remain narrow and explicit.
+
+For this design:
+
+only `<img>` elements are eligible for OCR-backed review
+
+OCR is expected only for items that were intentionally kept for localization checking
+
+the baseline OCR provider is OCR.Space using `engine 3`
+
+OCR results should carry engine metadata and any quality notes that help downstream review
+
+The implementation should not expand this into whole-page OCR or arbitrary screenshot OCR.
+
+13.3 Checks Expected in Phase 6
+
+Phase 6 should combine deterministic checks and AI-assisted checks to identify suspicious localization pairs.
+
+Expected review classes:
+
+SPELLING
+
+GRAMMAR
+
+MEANING
+
+PLACEHOLDER
+
+OCR_NOISE
+
+OTHER
+
+Practical expectations:
+
+grammar and spelling checks must run against the target-language text
+
+meaning checks must compare the localized text against the EN reference
+
+placeholder integrity must be checked deterministically
+
+weak OCR must reduce trust and remain visible in evidence
+
+The goal is to rank or surface suspicious pairs, not to auto-fix them.
+
+13.4 Confidence and Evidence
+
+Each persisted issue should keep one operator-facing top-level `confidence` value.
+
+Supporting signals should remain available in evidence, such as:
+
+text_en
+
+text_target
+
+ocr_text
+
+ocr_engine
+
+rule triggers
+
+AI notes
+
+supporting scores
+
+At minimum, evidence should preserve URL, screenshot reference, and bounding box so that the issue can be reproduced in review.
+
+13.5 Current Schema Compatibility
+
+The existing `issues` artifact schema still controls the persisted top-level object shape and category enum.
+
+Because the intended Phase 6 review classes are more specific than the current coarse buckets, the finer class should be carried in evidence-level metadata or message text until the schema is revised.
 
 14. Dry Run Implementation
 
