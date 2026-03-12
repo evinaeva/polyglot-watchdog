@@ -271,8 +271,11 @@ def test_reviews_route_is_scoped_to_requested_run_contexts(api_env):
 def test_annotation_decisions_persist_to_template_rules_and_pulls(api_env):
     domain = "example.com"
     run_id = "run-rules"
+    _write(domain, run_id, "page_screenshots.json", [
+        {"page_id": "p1", "url": "https://a", "state": "baseline", "language": "en", "viewport_kind": "desktop", "user_tier": None, "screenshot_id": "s1", "storage_uri": "gs://test-bucket/example.com/run-rules/screenshots/p1.png", "captured_at": "2026-01-01T00:00:00Z", "viewport": {"width": 1200, "height": 1800}}
+    ])
     _write(domain, run_id, "collected_items.json", [
-        {"item_id": "i1", "url": "https://a", "state": "baseline", "language": "en", "viewport_kind": "desktop", "user_tier": None, "element_type": "button", "text": "Buy"}
+        {"item_id": "i1", "page_id": "p1", "url": "https://a", "state": "baseline", "language": "en", "viewport_kind": "desktop", "user_tier": None, "element_type": "button", "css_selector": "button.buy", "bbox": {"x": 1, "y": 2, "width": 3, "height": 4}, "visible": True, "text": "Buy"}
     ])
 
     status_post, payload_post = _request("POST", api_env, "/api/rules", {

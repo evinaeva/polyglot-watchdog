@@ -7,9 +7,34 @@ const pullsLanguageSummary = document.getElementById('pullsLanguageSummary');
 const pullsWorkflowContextSummary = document.getElementById('pullsWorkflowContextSummary');
 const pullsIdHelp = document.getElementById('pullsIdHelp');
 
-let allPullRows = [];
+const pullsPreviewModal = document.getElementById('pullsPreviewModal');
+const pullsPreviewOverlay = document.getElementById('pullsPreviewOverlay');
+const pullsPreviewClose = document.getElementById('pullsPreviewClose');
+const pullsPreviewStatus = document.getElementById('pullsPreviewStatus');
+const pullsPreviewImage = document.getElementById('pullsPreviewImage');
+const pullsPreviewBbox = document.getElementById('pullsPreviewBbox');
+const pullsPreviewDetails = document.getElementById('pullsPreviewDetails');
+const pullsScreenshotViewport = document.getElementById('pullsScreenshotViewport');
+const pullsScreenshotCanvas = document.getElementById('pullsScreenshotCanvas');
+const pullsZoomIn = document.getElementById('pullsZoomIn');
+const pullsZoomOut = document.getElementById('pullsZoomOut');
+const pullsCenterElement = document.getElementById('pullsCenterElement');
+const pullsImageAssetSection = document.getElementById('pullsImageAssetSection');
+const pullsImageAsset = document.getElementById('pullsImageAsset');
+const pullsImageAssetFallback = document.getElementById('pullsImageAssetFallback');
+const pullsImageAssetMeta = document.getElementById('pullsImageAssetMeta');
 
-// Defensive fallback: backend /api/pulls already excludes script rows; keep this to avoid leaking script rows in UI if backend regresses.
+let allPullRows = [];
+let previewResizeObserver = null;
+let previewState = {
+  isOpen: false,
+  row: null,
+  triggerEl: null,
+  scaleX: 1,
+  scaleY: 1,
+  zoom: 1,
+  bboxPx: null,
+};
 
 const DECISION_TO_UI = {
   eligible: 'Keep',
@@ -28,6 +53,10 @@ function pullsQuery() {
 function setPullsStatus(message, cls = '') {
   pullsStatus.className = cls;
   pullsStatus.textContent = message;
+}
+
+function setPreviewStatus(message) {
+  pullsPreviewStatus.textContent = message;
 }
 
 function escapeHtml(value) {
@@ -99,7 +128,11 @@ async function saveRule(domain, runId, row, decision) {
     viewport_kind: row.viewport_kind || '',
     user_tier: row.user_tier || null,
   };
-  const response = await fetch('/api/rules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  const response = await fetch('/api/rules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
   const data = await safeReadPayload(response);
   if (!response.ok) throw new Error(data.message || data.error || 'Failed to save rule');
 }
@@ -112,6 +145,297 @@ function filteredRows() {
     if (typeFilter && String(row.element_type || '') !== typeFilter) return false;
     return true;
   });
+}
+
+function parseSrcsetBestCandidate(srcsetText) {
+  const candidates = String(srcsetText || '')
+    .split(',')
+    .map((chunk, index) => {
+      const parts = chunk.trim().split(/\s+/).filter(Boolean);
+      if (!parts.length) return null;
+      const url = parts[0];
+      const descriptor = (parts[1] || '').toLowerCase();
+      let width = -1;
+      let density = -1;
+      if (descriptor.endsWith('w')) {
+        width = Number.parseFloat(descriptor.slice(0, -1));
+      } else if (descriptor.endsWith('x')) {
+        density = Number.parseFloat(descriptor.slice(0, -1));
+      }
+      return {
+        url,
+        width: Number.isFinite(width) ? width : -1,
+        density: Number.isFinite(density) ? density : -1,
+        index,
+      };
+    })
+    .filter(Boolean);
+
+  if (!candidates.length) return '';
+
+  candidates.sort((a, b) => {
+    if (b.width !== a.width) return b.width - a.width;
+    if (b.density !== a.density) return b.density - a.density;
+    return b.index - a.index;
+  });
+  return candidates[0].url || '';
+}
+
+function extractImageAssetUrl(attributes) {
+  if (!attributes || typeof attributes !== 'object') return '';
+  const srcsetCandidate = parseSrcsetBestCandidate(attributes.srcset || attributes.srcSet || '');
+  if (srcsetCandidate) return srcsetCandidate;
+  const fallbackKeys = ['src', 'data-src', 'dataSrc'];
+  for (const key of fallbackKeys) {
+    const value = String(attributes[key] || '').trim();
+    if (value) return value;
+  }
+  return '';
+}
+
+function resetImageAssetPreview() {
+  pullsImageAssetSection.classList.add('hidden');
+  pullsImageAssetMeta.innerHTML = '';
+  pullsImageAssetFallback.textContent = '';
+  pullsImageAsset.classList.add('hidden');
+  pullsImageAsset.removeAttribute('src');
+  pullsImageAsset.onload = null;
+  pullsImageAsset.onerror = null;
+}
+
+function renderImageAsset(row) {
+  resetImageAssetPreview();
+
+  const elementType = String(row.element_type || '').toLowerCase();
+  const tag = String(row.tag || '').toLowerCase();
+  if (!(elementType === 'img' || tag === 'img')) return;
+
+  pullsImageAssetSection.classList.remove('hidden');
+  const attrs = (row.attributes && typeof row.attributes === 'object') ? row.attributes : {};
+  const assetUrl = extractImageAssetUrl(attrs);
+  const metadataKeys = ['src', 'alt', 'width', 'height', 'srcset', 'data-src'];
+
+  for (const key of metadataKeys) {
+    if (attrs[key] == null || String(attrs[key]).trim() === '') continue;
+    const li = document.createElement('li');
+    li.textContent = `${key}: ${String(attrs[key])}`;
+    pullsImageAssetMeta.appendChild(li);
+  }
+
+  if (!assetUrl) {
+    pullsImageAssetFallback.textContent = 'Image asset URL not available; use page screenshot highlight only.';
+    return;
+  }
+
+  pullsImageAsset.onload = () => {
+    pullsImageAsset.classList.remove('hidden');
+    pullsImageAssetFallback.textContent = '';
+  };
+  pullsImageAsset.onerror = () => {
+    pullsImageAsset.classList.add('hidden');
+    pullsImageAsset.removeAttribute('src');
+    pullsImageAssetFallback.textContent = 'Unable to load image asset; use on-page highlight.';
+  };
+  pullsImageAsset.src = assetUrl;
+}
+
+function applyZoom() {
+  pullsScreenshotCanvas.style.transform = `scale(${previewState.zoom})`;
+  pullsScreenshotCanvas.style.transformOrigin = 'top left';
+}
+
+function isModalOpen() {
+  return previewState.isOpen && !pullsPreviewModal.classList.contains('hidden');
+}
+
+function validBbox(bbox) {
+  if (!bbox || typeof bbox !== 'object') return false;
+  const x = Number(bbox.x);
+  const y = Number(bbox.y);
+  const width = Number(bbox.width);
+  const height = Number(bbox.height);
+  return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0;
+}
+
+function centerToBbox() {
+  if (!previewState.bboxPx || !isModalOpen()) return;
+  const { left, top, width, height } = previewState.bboxPx;
+  const targetX = (left + (width / 2)) * previewState.zoom;
+  const targetY = (top + (height / 2)) * previewState.zoom;
+  pullsScreenshotViewport.scrollTo({
+    left: Math.max(targetX - (pullsScreenshotViewport.clientWidth / 2), 0),
+    top: Math.max(targetY - (pullsScreenshotViewport.clientHeight / 2), 0),
+    behavior: 'smooth',
+  });
+}
+
+function hideBbox() {
+  previewState.bboxPx = null;
+  pullsPreviewBbox.classList.add('hidden');
+  pullsPreviewBbox.style.left = '0px';
+  pullsPreviewBbox.style.top = '0px';
+  pullsPreviewBbox.style.width = '0px';
+  pullsPreviewBbox.style.height = '0px';
+}
+
+function updateOverlay() {
+  if (!isModalOpen()) return;
+  const row = previewState.row;
+  if (!row) return;
+
+  if (!validBbox(row.bbox)) {
+    hideBbox();
+    setPreviewStatus('Invalid or missing bbox for this item; screenshot shown without highlight.');
+    return;
+  }
+
+  const viewport = row.page_viewport || {};
+  const renderedWidth = pullsPreviewImage.clientWidth;
+  const renderedHeight = pullsPreviewImage.clientHeight;
+  const sourceWidth = Number(viewport.width || 0);
+  const sourceHeight = Number(viewport.height || 0);
+
+  if (!sourceWidth || !sourceHeight) {
+    hideBbox();
+    setPreviewStatus('Missing page viewport metadata; cannot scale bbox overlay.');
+    return;
+  }
+  if (!renderedWidth || !renderedHeight) {
+    hideBbox();
+    setPreviewStatus('Screenshot is still rendering; bbox overlay will appear shortly.');
+    return;
+  }
+
+  previewState.scaleX = renderedWidth / sourceWidth;
+  previewState.scaleY = renderedHeight / sourceHeight;
+
+  const left = Number(row.bbox.x) * previewState.scaleX;
+  const top = Number(row.bbox.y) * previewState.scaleY;
+  const width = Number(row.bbox.width) * previewState.scaleX;
+  const height = Number(row.bbox.height) * previewState.scaleY;
+  previewState.bboxPx = { left, top, width, height };
+
+  pullsPreviewBbox.classList.remove('hidden');
+  pullsPreviewBbox.style.left = `${left}px`;
+  pullsPreviewBbox.style.top = `${top}px`;
+  pullsPreviewBbox.style.width = `${width}px`;
+  pullsPreviewBbox.style.height = `${height}px`;
+}
+
+function detailsText(row) {
+  return JSON.stringify({
+    item_id: row.item_id,
+    page_id: row.page_id,
+    url: row.url,
+    language: row.language,
+    state: row.state,
+    viewport_kind: row.viewport_kind,
+    element_type: row.element_type,
+    css_selector: row.css_selector,
+    text: row.text,
+    bbox: row.bbox,
+    screenshot_storage_uri: row.screenshot_storage_uri,
+    attributes: row.attributes || null,
+  }, null, 2);
+}
+
+function startPreviewObservers() {
+  if (previewResizeObserver || typeof ResizeObserver === 'undefined') return;
+  previewResizeObserver = new ResizeObserver(() => {
+    if (!isModalOpen()) return;
+    updateOverlay();
+  });
+  previewResizeObserver.observe(pullsPreviewImage);
+  previewResizeObserver.observe(pullsScreenshotViewport);
+}
+
+function stopPreviewObservers() {
+  if (!previewResizeObserver) return;
+  previewResizeObserver.disconnect();
+  previewResizeObserver = null;
+}
+
+function resetPreviewState() {
+  previewState.row = null;
+  previewState.isOpen = false;
+  previewState.scaleX = 1;
+  previewState.scaleY = 1;
+  previewState.zoom = 1;
+  previewState.bboxPx = null;
+  applyZoom();
+  setPreviewStatus('');
+  pullsPreviewImage.onload = null;
+  pullsPreviewImage.onerror = null;
+  pullsPreviewImage.removeAttribute('src');
+  pullsPreviewDetails.textContent = '';
+  hideBbox();
+  resetImageAssetPreview();
+  pullsScreenshotViewport.scrollTo({ top: 0, left: 0 });
+}
+
+function closePreview() {
+  if (!isModalOpen()) return;
+  pullsPreviewModal.classList.add('hidden');
+  stopPreviewObservers();
+  const triggerToFocus = previewState.triggerEl;
+  previewState.triggerEl = null;
+  resetPreviewState();
+  if (triggerToFocus && typeof triggerToFocus.focus === 'function') {
+    triggerToFocus.focus();
+  }
+}
+
+function afterImagePainted() {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve());
+    });
+  });
+}
+
+async function openPreview(row, triggerEl) {
+  previewState.row = row;
+  previewState.triggerEl = triggerEl || null;
+  previewState.isOpen = true;
+  previewState.zoom = 1;
+  previewState.bboxPx = null;
+  applyZoom();
+
+  pullsPreviewModal.classList.remove('hidden');
+  pullsPreviewClose.focus();
+  pullsPreviewDetails.textContent = detailsText(row);
+  hideBbox();
+  startPreviewObservers();
+
+  renderImageAsset(row);
+
+  if (!row.screenshot_view_url) {
+    setPreviewStatus('No page screenshot is available for this item.');
+    return;
+  }
+
+  setPreviewStatus('Loading page screenshot…');
+  pullsPreviewImage.src = row.screenshot_view_url;
+
+  await new Promise((resolve) => {
+    pullsPreviewImage.onload = () => resolve();
+    pullsPreviewImage.onerror = () => resolve();
+  });
+
+  if (!isModalOpen()) return;
+
+  if (!pullsPreviewImage.naturalWidth || !pullsPreviewImage.naturalHeight) {
+    setPreviewStatus('Unable to load page screenshot preview.');
+    hideBbox();
+    return;
+  }
+
+  await afterImagePainted();
+  if (!isModalOpen()) return;
+
+  setPreviewStatus('Showing canonical page screenshot with bbox overlay.');
+  updateOverlay();
+  centerToBbox();
 }
 
 function renderRows(domain, runId) {
@@ -148,15 +472,18 @@ function renderRows(domain, runId) {
         </select>
       </label>
       <button type="button">Save selection</button>
+      <button type="button" class="pulls-preview-trigger">Preview on page</button>
       <details>
         <summary>Advanced</summary>
         <div>capture_context_id: ${escapeHtml(row.capture_context_id)}</div>
+        <div>page_id: ${escapeHtml(row.page_id)}</div>
         <div>viewport_kind: ${escapeHtml(row.viewport_kind)}</div>
         <div>user_tier: ${escapeHtml(row.user_tier)}</div>
       </details>`;
 
     const select = controls.querySelector('select');
     const button = controls.querySelector('button');
+    const previewButton = controls.querySelector('.pulls-preview-trigger');
     button.addEventListener('click', async () => {
       if (!select.value) {
         setPullsStatus('Please choose a decision before saving.', 'warning');
@@ -171,6 +498,7 @@ function renderRows(domain, runId) {
         setPullsStatus(err.message, 'error');
       }
     });
+    previewButton.addEventListener('click', () => openPreview(row, previewButton));
     tr.lastElementChild.appendChild(controls);
     pullsBody.appendChild(tr);
   }
@@ -246,6 +574,31 @@ pullsUrlSearch.addEventListener('input', () => {
 pullsElementTypeFilter.addEventListener('change', () => {
   const { domain, runId } = pullsQuery();
   renderRows(domain, runId);
+});
+
+pullsPreviewClose.addEventListener('click', closePreview);
+pullsPreviewOverlay.addEventListener('click', closePreview);
+pullsZoomIn.addEventListener('click', () => {
+  if (!isModalOpen()) return;
+  previewState.zoom = Math.min(previewState.zoom + 0.2, 3);
+  applyZoom();
+  centerToBbox();
+});
+pullsZoomOut.addEventListener('click', () => {
+  if (!isModalOpen()) return;
+  previewState.zoom = Math.max(previewState.zoom - 0.2, 0.5);
+  applyZoom();
+  centerToBbox();
+});
+pullsCenterElement.addEventListener('click', centerToBbox);
+window.addEventListener('resize', () => {
+  if (isModalOpen()) updateOverlay();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && isModalOpen()) {
+    event.preventDefault();
+    closePreview();
+  }
 });
 
 loadPulls();
