@@ -41,3 +41,18 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   - web/templates/pulls.html
   - web/templates/workflow.html
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #68 — 2026-03-12T10:17:49Z
+
+- Title: Validate ANTHROPIC_MODEL env var and avoid API call for malformed values; exclude auto state files from docs commits
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/68
+- Author: evinaeva
+- Base branch: main
+- Head branch: 43x4ew-codex/fix-documentation-auto-update-implementation
+- Merge commit: 8603673271181921c1645257e8019ae472050b7a
+- Changed files:
+  - .github/scripts/docs_ai_sync.py
+  - .github/workflows/docs-ai-sync.yml
+  - docs/auto/docs_sync_state.json
+  - tests/test_docs_autoupdate_scripts.py
+- Notes: Auto-generated from merged PR metadata.
