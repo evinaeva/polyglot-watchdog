@@ -51,6 +51,8 @@ jobs:
             exit 1
           fi
           git add -A -- docs spec contract/schemas README.md RELEASE_CRITERIA.md APPLYING_STREAM1.md
+          git reset -- docs/auto/merged_pr_feed.md 2>/dev/null || true
+          git reset -- docs/auto/docs_sync_state.json 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "No docs changes to commit."
             exit 0

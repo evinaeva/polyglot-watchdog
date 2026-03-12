@@ -186,6 +186,26 @@ def call_claude(prompt: str, model: str, api_key: str) -> str:
     return "\n".join(text_parts).strip()
 
 
+def resolve_model(raw_model: str | None) -> str:
+    if raw_model is None:
+        return DEFAULT_MODEL
+
+    model = raw_model.strip()
+    if not model:
+        return DEFAULT_MODEL
+
+    if "=" in model:
+        raise ValueError(
+            "Invalid ANTHROPIC_MODEL: expected a model id (for example 'claude-3-5-sonnet-20241022'), "
+            "but got an assignment-like value containing '='."
+        )
+
+    if any(ch.isspace() for ch in model):
+        raise ValueError("Invalid ANTHROPIC_MODEL: model id must not contain whitespace.")
+
+    return model
+
+
 def write_output(path: str | None, key: str, value: str) -> None:
     if not path:
         return
@@ -266,7 +286,11 @@ def main() -> int:
         print("ANTHROPIC_API_KEY is required.", file=sys.stderr)
         return 1
 
-    model = os.environ.get("ANTHROPIC_MODEL") or DEFAULT_MODEL
+    try:
+        model = resolve_model(os.environ.get("ANTHROPIC_MODEL"))
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     changed_candidates = [p for entry in new_entries for p in entry.get("changed_files", []) if is_allowed(p)]
     docs_snapshot, snapshot_meta = gather_allowlisted_files(changed_candidates)
     prompt_template = Path(args.prompt_template).read_text(encoding="utf-8")

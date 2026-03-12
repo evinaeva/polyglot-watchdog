@@ -188,3 +188,42 @@ def test_docs_ai_rejects_invalid_claude_output(monkeypatch, tmp_path):
         sys.argv = old_argv
 
     assert rc == 1
+
+
+def test_docs_ai_rejects_malformed_anthropic_model_before_api_call(monkeypatch, tmp_path):
+    mod = load_docs_ai_module()
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "a.md").write_text("A\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        mod,
+        "git_show",
+        lambda ref_path: "# Merged PR Feed\n\n## PR #1 — 2026-01-01T00:00:00Z\n- Merge commit: sha1\n"
+        if ref_path.endswith("merged_pr_feed.md")
+        else '{"last_processed_merge_commit":"","last_processed_pr_number":0,"last_sync_at_utc":""}',
+    )
+
+    called = {"value": False}
+
+    def fail_if_called(*_args, **_kwargs):
+        called["value"] = True
+        raise AssertionError("call_claude should not be called for malformed ANTHROPIC_MODEL")
+
+    monkeypatch.setattr(mod, "call_claude", fail_if_called)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    monkeypatch.setenv("ANTHROPIC_MODEL", "ANTHROPIC_MODEL = claude-3-haiku-20240307")
+
+    prompt = tmp_path / "prompt.txt"
+    prompt.write_text("template", encoding="utf-8")
+    out_state = tmp_path / "state.json"
+
+    old_argv = sys.argv
+    sys.argv = ["docs_ai_sync.py", "--prompt-template", str(prompt), "--state-output", str(out_state)]
+    try:
+        rc = mod.main()
+    finally:
+        sys.argv = old_argv
+
+    assert rc == 1
+    assert called["value"] is False
+    assert not out_state.exists()
