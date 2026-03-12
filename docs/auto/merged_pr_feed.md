@@ -23,3 +23,21 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   - docs/auto/merged_pr_feed.md
   - tests/test_docs_autoupdate_scripts.py
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #66 — 2026-03-12T09:40:34Z
+
+- Title: Exclude script elements from pulls and add UI filters and existing-run support
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/66
+- Author: evinaeva
+- Base branch: main
+- Head branch: dloxqu-codex/implement-operator-ui-fixes-for-pulls-and-workflow
+- Merge commit: 77cdd7840d73135196e9a458dbdb369807b69bbe
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_stage_a_read_routes_api.py
+  - tests/test_stage_c_operator_workflow.py
+  - web/static/pulls.js
+  - web/static/workflow.js
+  - web/templates/pulls.html
+  - web/templates/workflow.html
+- Notes: Auto-generated from merged PR metadata.
