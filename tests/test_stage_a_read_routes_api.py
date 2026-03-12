@@ -35,6 +35,9 @@ class _FakeBlob:
         payload = self._objects[(self._bucket, self._path)]
         return payload.decode(encoding)
 
+    def download_as_bytes(self):
+        return self._objects[(self._bucket, self._path)]
+
 
 class _FakeBucket:
     def __init__(self, objects: dict[tuple[str, str], bytes], name: str):
@@ -93,7 +96,8 @@ def _write(domain: str, run_id: str, filename: str, payload):
 def test_pulls_happy_path_with_universal_and_decisions(api_env):
     domain = "example.com"
     run_id = "run-1"
-    _write(domain, run_id, "collected_items.json", [{"item_id": "i1", "url": "https://a", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "element_type": "button", "text": "Acheter", "not_found": False}])
+    _write(domain, run_id, "collected_items.json", [{"item_id": "i1", "page_id": "p1", "url": "https://a", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "element_type": "button", "css_selector": "button.buy", "bbox": {"x": 10, "y": 20, "width": 30, "height": 40}, "text": "Acheter", "tag": "button", "attributes": {"class": "buy"}, "visible": True, "not_found": False}])
+    _write(domain, run_id, "page_screenshots.json", [{"page_id": "p1", "url": "https://a", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "screenshot_id": "s1", "storage_uri": "gs://test-bucket/example.com/run-1/screenshots/p1.png", "captured_at": "2026-01-01T00:00:00Z", "viewport": {"width": 1280, "height": 2200}}])
     _write(domain, run_id, "universal_sections.json", [{"section_id": "header", "label": "Header", "representative_url": "https://a"}])
     _write(domain, run_id, "template_rules.json", [{"item_id": "i1", "url": "https://a", "rule_type": "MASK_VARIABLE", "created_at": "t1"}])
 
@@ -106,6 +110,11 @@ def test_pulls_happy_path_with_universal_and_decisions(api_env):
     row = payload["rows"][0]
     assert row["decision"] == "MASK_VARIABLE"
     assert row["user_tier"] == "guest"
+    assert row["page_id"] == "p1"
+    assert row["bbox"] == {"x": 10, "y": 20, "width": 30, "height": 40}
+    assert row["page_viewport"] == {"width": 1280, "height": 2200}
+    assert row["screenshot_storage_uri"] == "gs://test-bucket/example.com/run-1/screenshots/p1.png"
+    assert row["screenshot_view_url"] == "/api/page-screenshot?domain=example.com&run_id=run-1&page_id=p1"
     universal = payload["rows"][1]
     assert universal == {
         "item_id": "universal-header",
@@ -130,9 +139,14 @@ def test_pulls_not_ready_and_filters(api_env):
     assert json.loads(body) == {"error": "collected_items artifact missing", "status": "not_ready"}
 
     _write(domain, run_id, "collected_items.json", [
-        {"item_id": "i1", "url": "https://a/path", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "element_type": "button", "text": "x"},
-        {"item_id": "i2", "url": "https://b/path", "state": "logged_in", "language": "de", "viewport_kind": "mobile", "user_tier": "pro", "element_type": "link", "text": "y"},
-        {"item_id": "i3", "url": "https://c/path", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "element_type": "script", "text": "var x=1"},
+        {"item_id": "i1", "page_id": "p1", "url": "https://a/path", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "element_type": "button", "css_selector": "button", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}, "text": "x", "visible": True},
+        {"item_id": "i2", "page_id": "p2", "url": "https://b/path", "state": "logged_in", "language": "de", "viewport_kind": "mobile", "user_tier": "pro", "element_type": "link", "css_selector": "a", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}, "text": "y", "visible": True},
+        {"item_id": "i3", "page_id": "p3", "url": "https://c/path", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "element_type": "script", "css_selector": "script", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}, "text": "var x=1", "visible": True},
+    ])
+    _write(domain, run_id, "page_screenshots.json", [
+        {"page_id": "p1", "url": "https://a/path", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "screenshot_id": "s1", "storage_uri": "gs://test-bucket/example.com/run-2/screenshots/p1.png", "captured_at": "2026-01-01T00:00:00Z", "viewport": {"width": 100, "height": 100}},
+        {"page_id": "p2", "url": "https://b/path", "state": "logged_in", "language": "de", "viewport_kind": "mobile", "user_tier": "pro", "screenshot_id": "s2", "storage_uri": "gs://test-bucket/example.com/run-2/screenshots/p2.png", "captured_at": "2026-01-01T00:00:00Z", "viewport": {"width": 100, "height": 100}},
+        {"page_id": "p3", "url": "https://c/path", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "screenshot_id": "s3", "storage_uri": "gs://test-bucket/example.com/run-2/screenshots/p3.png", "captured_at": "2026-01-01T00:00:00Z", "viewport": {"width": 100, "height": 100}},
     ])
     _write(domain, run_id, "template_rules.json", [])
 
@@ -146,6 +160,48 @@ def test_pulls_not_ready_and_filters(api_env):
     payload3 = json.loads(body3)
     assert status3 == HTTPStatus.OK
     assert [r["item_id"] for r in payload3["rows"]] == ["i1", "i2"]
+
+
+def test_page_screenshot_proxy_reads_png(api_env):
+    domain = "example.com"
+    run_id = "run-shot"
+    _write(domain, run_id, "page_screenshots.json", [
+        {"page_id": "p1", "url": "https://a/path", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "screenshot_id": "s1", "storage_uri": "gs://test-bucket/example.com/run-shot/screenshots/p1.png", "captured_at": "2026-01-01T00:00:00Z", "viewport": {"width": 100, "height": 100}},
+    ])
+    client = storage._gcs_client()
+    blob = client.bucket("test-bucket").blob("example.com/run-shot/screenshots/p1.png")
+    blob.upload_from_string(b"\x89PNG\r\n\x1a\n", content_type="image/png")
+
+    status, headers, body = _request(api_env, f"/api/page-screenshot?domain={domain}&run_id={run_id}&page_id=p1")
+    assert status == HTTPStatus.OK
+    assert headers["Content-Type"] == "image/png"
+    assert body == b"\x89PNG\r\n\x1a\n"
+
+
+def test_page_screenshot_redirects_http_storage_uri(api_env):
+    domain = "example.com"
+    run_id = "run-shot-http"
+    uri = "https://cdn.example.com/screenshots/p1.png"
+    _write(domain, run_id, "page_screenshots.json", [
+        {"page_id": "p1", "url": "https://a/path", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "screenshot_id": "s1", "storage_uri": uri, "captured_at": "2026-01-01T00:00:00Z", "viewport": {"width": 100, "height": 100}},
+    ])
+
+    status, headers, body = _request(api_env, f"/api/page-screenshot?domain={domain}&run_id={run_id}&page_id=p1")
+    assert status == HTTPStatus.FOUND
+    assert headers["Location"] == uri
+    assert body == b""
+
+
+def test_page_screenshot_missing_blob_returns_not_ready(api_env):
+    domain = "example.com"
+    run_id = "run-shot-missing"
+    _write(domain, run_id, "page_screenshots.json", [
+        {"page_id": "p1", "url": "https://a/path", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "screenshot_id": "s1", "storage_uri": "gs://test-bucket/example.com/run-shot-missing/screenshots/p1.png", "captured_at": "2026-01-01T00:00:00Z", "viewport": {"width": 100, "height": 100}},
+    ])
+
+    status, _, body = _request(api_env, f"/api/page-screenshot?domain={domain}&run_id={run_id}&page_id=p1")
+    assert status == HTTPStatus.SERVICE_UNAVAILABLE
+    assert json.loads(body) == {"error": "page_screenshot_unavailable", "status": "not_ready"}
 
 
 def test_rules_missing_required_and_fail_closed_on_corruption(api_env):

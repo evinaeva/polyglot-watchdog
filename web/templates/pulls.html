@@ -42,6 +42,42 @@
       <tbody></tbody>
     </table>
   </main>
+  <div id="pullsPreviewModal" class="pulls-preview-modal hidden" role="dialog" aria-modal="true" aria-labelledby="pullsPreviewTitle">
+    <div id="pullsPreviewOverlay" class="pulls-preview-overlay"></div>
+    <div class="pulls-preview-panel">
+      <header class="pulls-preview-header">
+        <h2 id="pullsPreviewTitle">Element preview</h2>
+        <button id="pullsPreviewClose" type="button">Close</button>
+      </header>
+      <div class="pulls-preview-toolbar">
+        <button id="pullsZoomOut" type="button">-</button>
+        <button id="pullsZoomIn" type="button">+</button>
+        <button id="pullsCenterElement" type="button">Center to element</button>
+      </div>
+      <div id="pullsPreviewStatus" class="muted"></div>
+      <div class="pulls-preview-grid">
+        <section>
+          <h3>On-page view (canonical)</h3>
+          <div id="pullsScreenshotViewport" class="pulls-screenshot-viewport">
+            <div id="pullsScreenshotCanvas" class="pulls-screenshot-canvas">
+              <img id="pullsPreviewImage" alt="Page screenshot" loading="lazy" />
+              <div id="pullsPreviewBbox" class="pulls-preview-bbox hidden"></div>
+            </div>
+          </div>
+        </section>
+        <section id="pullsImageAssetSection" class="hidden">
+          <h3>Image asset view</h3>
+          <img id="pullsImageAsset" alt="Image asset" class="pulls-image-asset" loading="lazy" />
+          <p id="pullsImageAssetFallback" class="muted"></p>
+          <ul id="pullsImageAssetMeta"></ul>
+        </section>
+      </div>
+      <details>
+        <summary>Details</summary>
+        <pre id="pullsPreviewDetails" class="pulls-preview-details"></pre>
+      </details>
+    </div>
+  </div>
   <script src="/static/i18n.js"></script>
   <script src="/static/api-client.js"></script>
   <script src="/static/pulls.js"></script>
