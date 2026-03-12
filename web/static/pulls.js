@@ -5,7 +5,10 @@ const pullsUrlSearch = document.getElementById('pullsUrlSearch');
 const pullsElementTypeFilter = document.getElementById('pullsElementTypeFilter');
 const pullsLanguageSummary = document.getElementById('pullsLanguageSummary');
 const pullsWorkflowContextSummary = document.getElementById('pullsWorkflowContextSummary');
-const pullsIdHelp = document.getElementById('pullsIdHelp');
+const pullsWhitelistInput = document.getElementById('pullsWhitelistInput');
+const pullsWhitelistAdd = document.getElementById('pullsWhitelistAdd');
+const pullsWhitelistStatus = document.getElementById('pullsWhitelistStatus');
+const pullsWhitelistChips = document.getElementById('pullsWhitelistChips');
 
 const pullsPreviewModal = document.getElementById('pullsPreviewModal');
 const pullsPreviewOverlay = document.getElementById('pullsPreviewOverlay');
@@ -25,6 +28,7 @@ const pullsImageAssetFallback = document.getElementById('pullsImageAssetFallback
 const pullsImageAssetMeta = document.getElementById('pullsImageAssetMeta');
 
 let allPullRows = [];
+let elementTypeWhitelist = new Set();
 let previewResizeObserver = null;
 let previewState = {
   isOpen: false,
@@ -115,6 +119,118 @@ function updateElementTypeFilter(rows) {
   if (selected && options.includes(selected)) pullsElementTypeFilter.value = selected;
 }
 
+
+function normalizeElementType(value) {
+  return String(value || '').trim();
+}
+
+function setWhitelistStatus(message, cls = '') {
+  pullsWhitelistStatus.className = `muted ${cls}`.trim();
+  pullsWhitelistStatus.textContent = message;
+}
+
+function renderWhitelist() {
+  const values = [...elementTypeWhitelist].sort();
+  pullsWhitelistChips.innerHTML = '';
+  if (!values.length) {
+    pullsWhitelistChips.textContent = 'No whitelisted element types.';
+    return;
+  }
+  for (const type of values) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'pulls-whitelist-chip';
+    chip.textContent = `Remove ${type}`;
+    chip.dataset.elementType = type;
+    chip.addEventListener('click', async () => {
+      const { domain } = pullsQuery();
+      try {
+        await removeFromWhitelist(domain, type);
+        elementTypeWhitelist.delete(type);
+        setWhitelistStatus(`Removed ${type} from whitelist.`, 'ok');
+        await reloadPullRows(domain, pullsQuery().runId);
+        const { runId } = pullsQuery();
+        if (!allPullRows.length) {
+          pullsTable.classList.add('hidden');
+          setPullsStatus('No items found for this run.', 'empty');
+          return;
+        }
+        renderRows(domain, runId);
+      } catch (err) {
+        setWhitelistStatus(err.message, 'error');
+      }
+    });
+    pullsWhitelistChips.appendChild(chip);
+  }
+}
+
+async function fetchWhitelist(domain) {
+  const response = await fetch(`/api/element-type-whitelist?${new URLSearchParams({ domain }).toString()}`);
+  const payload = await safeReadPayload(response);
+  if (!response.ok) throw new Error(payload.error || 'Failed to load whitelist');
+  return payload.element_types || [];
+}
+
+async function addToWhitelist(domain, elementType) {
+  const response = await fetch('/api/element-type-whitelist', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ domain, element_type: elementType }),
+  });
+  const payload = await safeReadPayload(response);
+  if (!response.ok) throw new Error(payload.error || payload.message || 'Failed to update whitelist');
+  return payload.element_types || [];
+}
+
+async function removeFromWhitelist(domain, elementType) {
+  const response = await fetch('/api/element-type-whitelist/remove', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ domain, element_type: elementType }),
+  });
+  const payload = await safeReadPayload(response);
+  if (!response.ok) throw new Error(payload.error || payload.message || 'Failed to update whitelist');
+  return payload.element_types || [];
+}
+
+async function fetchPullsPayload(domain, runId) {
+  const response = await fetch(`/api/pulls?${new URLSearchParams({ domain, run_id: runId }).toString()}`);
+  const payload = await safeReadPayload(response);
+  return { response, payload };
+}
+
+async function reloadPullRows(domain, runId) {
+  const { response, payload } = await fetchPullsPayload(domain, runId);
+  if (response.status === 404 && payload.status === 'not_ready') {
+    pullsTable.classList.add('hidden');
+    pullsLanguageSummary.classList.add('hidden');
+    setPullsStatus(`Not ready: ${payload.error}.`, 'warning');
+    allPullRows = [];
+    return false;
+  }
+  if (!response.ok) {
+    pullsTable.classList.add('hidden');
+    pullsLanguageSummary.classList.add('hidden');
+    setPullsStatus(payload.error || `Failed to load pulls (${response.status})`, 'error');
+    allPullRows = [];
+    return false;
+  }
+
+  allPullRows = (payload.rows || []).filter((row) => String((row || {}).element_type || '').toLowerCase() !== 'script');
+  try {
+    elementTypeWhitelist = new Set((await fetchWhitelist(domain)).map((v) => normalizeElementType(v)).filter(Boolean));
+    renderWhitelist();
+    setWhitelistStatus('');
+  } catch (err) {
+    elementTypeWhitelist = new Set();
+    renderWhitelist();
+    setWhitelistStatus(err.message, 'error');
+  }
+  updateElementTypeFilter(allPullRows);
+  updateLanguageSummary(allPullRows);
+  return true;
+}
+
 async function saveRule(domain, runId, row, decision) {
   const payload = {
     domain,
@@ -141,8 +257,12 @@ function filteredRows() {
   const query = String(pullsUrlSearch.value || '').trim().toLowerCase();
   const typeFilter = String(pullsElementTypeFilter.value || '').trim();
   return allPullRows.filter((row) => {
+    const elementType = normalizeElementType(row.element_type);
+    const decisionValue = decisionToValue(row.decision);
+    if (elementTypeWhitelist.has(elementType)) return false;
+    if (decisionValue === 'eligible') return false;
     if (query && !String(row.url || '').toLowerCase().includes(query)) return false;
-    if (typeFilter && String(row.element_type || '') !== typeFilter) return false;
+    if (typeFilter && elementType !== typeFilter) return false;
     return true;
   });
 }
@@ -460,7 +580,6 @@ function renderRows(domain, runId) {
     const selected = decisionToValue(row.decision);
     tr.innerHTML = `
       <td>${escapeHtml(row.url)}</td>
-      <td>${escapeHtml(row.item_id)}</td>
       <td>${escapeHtml(row.element_type)}</td>
       <td>${escapeHtml(row.text || '')}</td>
       <td>${escapeHtml(decisionToLabel(row.decision))}</td>
@@ -478,6 +597,7 @@ function renderRows(domain, runId) {
         </select>
       </label>
       <button type="button">Save selection</button>
+      <button type="button" class="pulls-whitelist-trigger">Add to whitelist</button>
       <button type="button" class="pulls-preview-trigger">Preview on page</button>
       <details>
         <summary>Advanced</summary>
@@ -489,6 +609,7 @@ function renderRows(domain, runId) {
 
     const select = controls.querySelector('select');
     const button = controls.querySelector('button');
+    const whitelistButton = controls.querySelector('.pulls-whitelist-trigger');
     const previewButton = controls.querySelector('.pulls-preview-trigger');
     button.addEventListener('click', async () => {
       if (!select.value) {
@@ -502,6 +623,28 @@ function renderRows(domain, runId) {
         renderRows(domain, runId);
       } catch (err) {
         setPullsStatus(err.message, 'error');
+      }
+    });
+    whitelistButton.addEventListener('click', async () => {
+      const type = normalizeElementType(row.element_type);
+      if (!type) {
+        setWhitelistStatus('Element type is required to whitelist.', 'warning');
+        return;
+      }
+      try {
+        await saveRule(domain, runId, row, 'eligible');
+        await addToWhitelist(domain, type);
+        elementTypeWhitelist.add(type);
+        setWhitelistStatus(`Added ${type} to whitelist.`, 'ok');
+        await reloadPullRows(domain, runId);
+        if (!allPullRows.length) {
+          pullsTable.classList.add('hidden');
+          setPullsStatus('No items found for this run.', 'empty');
+          return;
+        }
+        renderRows(domain, runId);
+      } catch (err) {
+        setWhitelistStatus(err.message, 'error');
       }
     });
     previewButton.addEventListener('click', () => openPreview(row, previewButton));
@@ -544,25 +687,8 @@ async function loadPulls() {
   }
 
   setPullsStatus('Loading items…');
-  const response = await fetch(`/api/pulls?${new URLSearchParams({ domain, run_id: runId }).toString()}`);
-  const payload = await safeReadPayload(response);
-  if (response.status === 404 && payload.status === 'not_ready') {
-    pullsTable.classList.add('hidden');
-    pullsLanguageSummary.classList.add('hidden');
-    setPullsStatus(`Not ready: ${payload.error}.`, 'warning');
-    return;
-  }
-  if (!response.ok) {
-    pullsTable.classList.add('hidden');
-    pullsLanguageSummary.classList.add('hidden');
-    setPullsStatus(payload.error || `Failed to load pulls (${response.status})`, 'error');
-    return;
-  }
-
-  allPullRows = (payload.rows || []).filter((row) => String((row || {}).element_type || '').toLowerCase() !== 'script');
-  updateElementTypeFilter(allPullRows);
-  updateLanguageSummary(allPullRows);
-  pullsIdHelp.textContent = 'Item/Element ID is generated by compute_item_id in pipeline/interactive_capture.py: a deterministic SHA-1 hash of domain, URL, CSS selector, canonical bbox JSON, and element type (text content is excluded).';
+  const loaded = await reloadPullRows(domain, runId);
+  if (!loaded) return;
 
   if (!allPullRows.length) {
     pullsTable.classList.add('hidden');
@@ -580,6 +706,35 @@ pullsUrlSearch.addEventListener('input', () => {
 pullsElementTypeFilter.addEventListener('change', () => {
   const { domain, runId } = pullsQuery();
   renderRows(domain, runId);
+});
+
+
+pullsWhitelistAdd.addEventListener('click', async () => {
+  const { domain, runId } = pullsQuery();
+  const type = normalizeElementType(pullsWhitelistInput.value);
+  if (!domain) {
+    setWhitelistStatus('Domain is required.', 'error');
+    return;
+  }
+  if (!type) {
+    setWhitelistStatus('Enter an element type to whitelist.', 'warning');
+    return;
+  }
+  try {
+    await addToWhitelist(domain, type);
+    elementTypeWhitelist.add(type);
+    pullsWhitelistInput.value = '';
+    setWhitelistStatus(`Added ${type} to whitelist.`, 'ok');
+    await reloadPullRows(domain, runId);
+    if (!allPullRows.length) {
+      pullsTable.classList.add('hidden');
+      setPullsStatus('No items found for this run.', 'empty');
+      return;
+    }
+    renderRows(domain, runId);
+  } catch (err) {
+    setWhitelistStatus(err.message, 'error');
+  }
 });
 
 pullsPreviewClose.addEventListener('click', closePreview);

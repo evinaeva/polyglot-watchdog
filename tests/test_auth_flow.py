@@ -1,4 +1,5 @@
 import http.client
+import json
 import os
 import re
 import threading
@@ -100,6 +101,25 @@ class AuthFlowOnTests(unittest.TestCase):
     def test_login_sets_session_cookie(self):
         session_cookie, _ = self._login()
         self.assertTrue(session_cookie.startswith("pw_session="))
+
+    def test_whitelist_post_routes_require_api_auth(self):
+        status_add, _, payload_add = self.request(
+            "POST",
+            "/api/element-type-whitelist",
+            body=b'{"domain":"example.com","element_type":"button"}',
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(status_add, HTTPStatus.UNAUTHORIZED)
+        self.assertEqual(json.loads(payload_add), {"error": "unauthorized"})
+
+        status_remove, _, payload_remove = self.request(
+            "POST",
+            "/api/element-type-whitelist/remove",
+            body=b'{"domain":"example.com","element_type":"button"}',
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(status_remove, HTTPStatus.UNAUTHORIZED)
+        self.assertEqual(json.loads(payload_remove), {"error": "unauthorized"})
 
 
 class AuthFlowOffTests(unittest.TestCase):

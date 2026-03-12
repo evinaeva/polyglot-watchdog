@@ -197,8 +197,11 @@ def test_stage_c_ui_not_ready_and_error_states_have_explicit_render_targets():
     assert "await safeReadPayload(response)" in detail_js
     assert "await safeReadPayload(response)" in runs_js
     assert "await safeReadPayload(response)" in pulls_js
-    assert "compute_item_id in pipeline/interactive_capture.py" in pulls_js
     assert "Showing ${rows.length} of ${totalCount} items." in pulls_js
+    assert "Add to whitelist" in pulls_js
+    assert "decisionValue === 'eligible'" in pulls_js
+    assert "async function reloadPullRows(domain, runId)" in pulls_js
+    assert "await reloadPullRows(domain, pullsQuery().runId);" in pulls_js
     assert "pullsPreviewImage.naturalWidth" in pulls_js
     assert "Missing screenshot dimensions; cannot scale bbox overlay." in pulls_js
     assert "async function safeReadPayload" not in contexts_js
