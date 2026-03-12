@@ -369,45 +369,205 @@ _WHITELIST_RUN_ID = "_shared"
 _WHITELIST_FILENAME = "element_type_whitelist.json"
 
 
-def _load_domain_element_type_whitelist(domain: str) -> list[str]:
+def _normalize_class_list(value: object) -> list[str]:
+    if isinstance(value, list):
+        parts = [str(item or "") for item in value]
+    else:
+        parts = str(value or "").split()
+    return sorted({chunk.strip() for chunk in parts if chunk and chunk.strip()})
+
+
+def _normalize_signature_attributes(value: object) -> dict[str, str]:
+    attrs = value if isinstance(value, dict) else {}
+    normalized: dict[str, str] = {}
+    test_id = str(
+        attrs.get("data-testid")
+        or attrs.get("data_testid")
+        or attrs.get("dataTestid")
+        or ""
+    ).strip()
+    if test_id:
+        normalized["data-testid"] = test_id
+    return normalized
+
+
+def _build_element_signature(row: dict) -> dict[str, object]:
+    attrs = row.get("attributes") if isinstance(row.get("attributes"), dict) else {}
+    tag = str(row.get("tag") or row.get("element_type") or "").strip().lower()
+    element_id = str(attrs.get("id") or row.get("id") or "").strip()
+    classes = _normalize_class_list(attrs.get("class") or attrs.get("className") or row.get("classes") or "")
+    css_selector = str(row.get("css_selector") or "").strip()
+    stable_attrs = _normalize_signature_attributes(attrs)
+    return {
+        "match_type": "element_signature",
+        "tag": tag,
+        "id": element_id,
+        "classes": classes,
+        "css_selector": css_selector,
+        "attributes": stable_attrs,
+    }
+
+
+def _signature_is_specific(signature: dict[str, object]) -> bool:
+    classes = [str(token).strip() for token in list(signature.get("classes") or []) if str(token).strip()]
+    attrs = signature.get("attributes") if isinstance(signature.get("attributes"), dict) else {}
+    return bool(
+        str(signature.get("id") or "").strip()
+        or str(attrs.get("data-testid") or "").strip()
+        or str(signature.get("css_selector") or "").strip()
+        or len(classes) >= 2
+    )
+
+
+def _signature_key(signature: dict[str, object]) -> str:
+    canonical = {
+        "tag": str(signature.get("tag") or ""),
+        "id": str(signature.get("id") or ""),
+        "classes": list(signature.get("classes") or []),
+        "css_selector": str(signature.get("css_selector") or ""),
+        "attributes": dict(signature.get("attributes") or {}),
+    }
+    return json.dumps(canonical, sort_keys=True, separators=(",", ":"))
+
+
+def _signature_description(signature: dict[str, object]) -> str:
+    tag = str(signature.get("tag") or "element")
+    element_id = str(signature.get("id") or "")
+    classes = [str(c) for c in signature.get("classes") or [] if str(c).strip()]
+    selector = str(signature.get("css_selector") or "")
+    attrs = signature.get("attributes") if isinstance(signature.get("attributes"), dict) else {}
+    id_part = f"#{element_id}" if element_id else ""
+    class_part = "".join(f".{c}" for c in classes)
+    parts = [f"{tag}{id_part}{class_part}".strip()]
+    if selector:
+        parts.append(f"selector={selector}")
+    if attrs:
+        attrs_view = ", ".join(f"{k}={v}" for k, v in sorted(attrs.items()))
+        parts.append(f"attrs({attrs_view})")
+    return " · ".join(parts)
+
+
+def _normalize_whitelist_entry(value: object) -> dict[str, object] | None:
+    if isinstance(value, str):
+        # Keep legacy broad artifacts editable, but never apply them during matching.
+        tag = value.strip().lower()
+        if not tag:
+            return None
+        legacy = {
+            "match_type": "legacy_element_type",
+            "tag": tag,
+            "id": "",
+            "classes": [],
+            "css_selector": "",
+            "attributes": {},
+            "created_at": "",
+        }
+        legacy["signature_key"] = _signature_key(legacy)
+        legacy["description"] = f"Legacy broad rule ({tag})"
+        return legacy
+    if not isinstance(value, dict):
+        return None
+    if str(value.get("match_type") or "element_signature") != "element_signature":
+        return None
+    signature = {
+        "match_type": "element_signature",
+        "tag": str(value.get("tag") or "").strip().lower(),
+        "id": str(value.get("id") or "").strip(),
+        "classes": _normalize_class_list(value.get("classes") or []),
+        "css_selector": str(value.get("css_selector") or "").strip(),
+        "attributes": _normalize_signature_attributes(value.get("attributes") or {}),
+        "created_at": str(value.get("created_at") or "").strip(),
+    }
+    if not signature["tag"] or not _signature_is_specific(signature):
+        return None
+    signature["signature_key"] = _signature_key(signature)
+    signature["description"] = _signature_description(signature)
+    return signature
+
+
+def _load_domain_element_type_whitelist(domain: str) -> list[dict[str, object]]:
     if not _artifact_exists(domain, _WHITELIST_RUN_ID, _WHITELIST_FILENAME):
         return []
     payload = _read_json_required(domain, _WHITELIST_RUN_ID, _WHITELIST_FILENAME)
     if not isinstance(payload, list):
         raise ValueError(f"{_WHITELIST_FILENAME} artifact_invalid")
-    values: list[str] = []
+    values: list[dict[str, object]] = []
     seen: set[str] = set()
     for row in payload:
-        value = str(row or '').strip()
-        if not value:
+        value = _normalize_whitelist_entry(row)
+        if value is None:
             continue
-        if value in seen:
+        key = str(value.get("signature_key") or "")
+        if not key or key in seen:
             continue
-        seen.add(value)
+        seen.add(key)
         values.append(value)
-    return sorted(values)
+    values.sort(key=lambda item: str(item.get("description") or item.get("tag") or ""))
+    return values
 
 
-def _save_domain_element_type_whitelist(domain: str, values: list[str]) -> list[str]:
+def _save_domain_element_type_whitelist(domain: str, values: list[dict[str, object]]) -> list[dict[str, object]]:
     from pipeline.storage import write_json_artifact
 
-    normalized = sorted({str(v or '').strip() for v in values if str(v or '').strip()})
-    write_json_artifact(domain, _WHITELIST_RUN_ID, _WHITELIST_FILENAME, normalized)
-    return normalized
+    deduped: dict[str, dict[str, object]] = {}
+    for raw in values:
+        normalized = _normalize_whitelist_entry(raw)
+        if normalized is None or str(normalized.get("match_type")) != "element_signature":
+            continue
+        deduped[str(normalized["signature_key"])] = {
+            "match_type": "element_signature",
+            "tag": normalized["tag"],
+            "id": normalized["id"],
+            "classes": normalized["classes"],
+            "css_selector": normalized["css_selector"],
+            "attributes": normalized["attributes"],
+            "created_at": str(normalized.get("created_at") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())),
+        }
+    saved = sorted(deduped.values(), key=lambda item: _signature_description(item))
+    write_json_artifact(domain, _WHITELIST_RUN_ID, _WHITELIST_FILENAME, saved)
+    return _load_domain_element_type_whitelist(domain)
 
 
-def _add_domain_element_type_whitelist(domain: str, element_type: str) -> list[str]:
+def _add_domain_element_type_whitelist(domain: str, source_row: dict) -> tuple[list[dict[str, object]], dict[str, object]]:
     values = _load_domain_element_type_whitelist(domain)
-    normalized = str(element_type or '').strip()
-    if normalized and normalized not in values:
-        values.append(normalized)
+    signature = _build_element_signature(source_row)
+    if not signature.get("tag") or not _signature_is_specific(signature):
+        raise ValueError("element_signature_requires_specific_attributes")
+    signature["created_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    values.append(signature)
+    updated = _save_domain_element_type_whitelist(domain, values)
+    added_key = _signature_key(signature)
+    added = next((entry for entry in updated if str(entry.get("signature_key") or "") == added_key), {})
+    return updated, added
+
+
+def _remove_domain_element_type_whitelist(domain: str, signature_key: str) -> list[dict[str, object]]:
+    normalized = str(signature_key or "").strip()
+    values = [v for v in _load_domain_element_type_whitelist(domain) if str(v.get("signature_key") or "") != normalized]
     return _save_domain_element_type_whitelist(domain, values)
 
 
-def _remove_domain_element_type_whitelist(domain: str, element_type: str) -> list[str]:
-    normalized = str(element_type or '').strip()
-    values = [v for v in _load_domain_element_type_whitelist(domain) if v != normalized]
-    return _save_domain_element_type_whitelist(domain, values)
+def _row_matches_whitelist(row: dict, whitelist: list[dict[str, object]]) -> bool:
+    candidate = _build_element_signature(row)
+    if not candidate.get("tag"):
+        return False
+    for entry in whitelist:
+        if str(entry.get("match_type")) != "element_signature":
+            continue
+        if str(entry.get("tag") or "") != str(candidate.get("tag") or ""):
+            continue
+        if entry.get("id") and entry.get("id") != candidate.get("id"):
+            continue
+        if entry.get("css_selector") and entry.get("css_selector") != candidate.get("css_selector"):
+            continue
+        if entry.get("classes") and list(entry.get("classes") or []) != list(candidate.get("classes") or []):
+            continue
+        entry_attrs = entry.get("attributes") if isinstance(entry.get("attributes"), dict) else {}
+        candidate_attrs = candidate.get("attributes") if isinstance(candidate.get("attributes"), dict) else {}
+        if any(candidate_attrs.get(k) != v for k, v in entry_attrs.items()):
+            continue
+        return True
+    return False
 
 
 def _review_writer() -> GCSArtifactWriter:
@@ -1141,7 +1301,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             except ValueError as exc:
                 self._json_response({"error": str(exc), "status": "artifact_invalid"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
                 return
-            self._json_response({"domain": domain, "element_types": values})
+            self._json_response({"domain": domain, "entries": values})
             return
         if parsed.path == "/api/pulls":
             if not self._require_auth(api=True):
@@ -1161,7 +1321,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 universal_sections_optional = _read_list_artifact_optional_strict(domain, run_id, "universal_sections.json")
                 universal_sections = universal_sections_optional or []
                 decisions = _load_phase2_decisions(domain, run_id)
-                whitelist = set(_load_domain_element_type_whitelist(domain))
+                whitelist = _load_domain_element_type_whitelist(domain)
             except FileNotFoundError:
                 if not _artifact_exists(domain, run_id, "collected_items.json"):
                     self._json_response(_not_ready_payload("collected_items"), status=HTTPStatus.NOT_FOUND)
@@ -1200,9 +1360,9 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 if element_type.lower() == "script":
                     continue
                 decision = decisions_by_item_url.get((str(row.get("item_id", "")), str(row.get("url", ""))), {})
-                if element_type in whitelist and not decision:
-                    decision = {"rule_type": "ALWAYS_COLLECT"}
-                if element_type in whitelist:
+                if _row_matches_whitelist(row, whitelist):
+                    if not decision:
+                        decision = {"rule_type": "ALWAYS_COLLECT"}
                     continue
                 page_id = str(row.get("page_id", ""))
                 page_row = pages_by_id.get(page_id, {})
@@ -1248,7 +1408,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                     "decision": "",
                 })
             rows.sort(key=lambda item: item.get("item_id", ""))
-            self._json_response({"rows": rows, "missing_universal_sections": universal_sections_optional is None, "element_type_whitelist": sorted(whitelist)})
+            self._json_response({"rows": rows, "missing_universal_sections": universal_sections_optional is None, "element_whitelist": whitelist})
             return
         if parsed.path == "/api/rules":
             if not self._require_auth(api=True):
@@ -1914,19 +2074,25 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 return
             payload = self._read_json_payload()
             domain = str(payload.get("domain", "")).strip()
-            element_type = str(payload.get("element_type", "")).strip()
-            if not domain or not element_type:
-                self._json_response({"status": "error", "message": "domain and element_type are required"}, status=HTTPStatus.BAD_REQUEST)
+            if not domain:
+                self._json_response({"status": "error", "message": "domain is required"}, status=HTTPStatus.BAD_REQUEST)
                 return
             try:
                 domain = validate_domain(domain)
                 if self.path.endswith("/remove"):
-                    values = _remove_domain_element_type_whitelist(domain, element_type)
+                    signature_key = str(payload.get("signature_key", "")).strip()
+                    if not signature_key:
+                        self._json_response({"status": "error", "message": "domain and signature_key are required"}, status=HTTPStatus.BAD_REQUEST)
+                        return
+                    values = _remove_domain_element_type_whitelist(domain, signature_key)
+                    added_entry = {}
                 else:
-                    values = _add_domain_element_type_whitelist(domain, element_type)
-                self._json_response({"status": "ok", "domain": domain, "element_types": values})
+                    values, added_entry = _add_domain_element_type_whitelist(domain, payload)
+                self._json_response({"status": "ok", "domain": domain, "entries": values, "added_entry": added_entry})
             except ValueError as exc:
-                self._json_response({"error": str(exc), "status": "artifact_invalid"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                status = HTTPStatus.BAD_REQUEST if str(exc) == "element_signature_requires_specific_attributes" else HTTPStatus.INTERNAL_SERVER_ERROR
+                state = "invalid_request" if status == HTTPStatus.BAD_REQUEST else "artifact_invalid"
+                self._json_response({"error": str(exc), "status": state}, status=status)
             return
 
         if self.path == "/api/rules":

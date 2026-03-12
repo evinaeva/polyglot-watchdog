@@ -28,7 +28,7 @@ const pullsImageAssetFallback = document.getElementById('pullsImageAssetFallback
 const pullsImageAssetMeta = document.getElementById('pullsImageAssetMeta');
 
 let allPullRows = [];
-let elementTypeWhitelist = new Set();
+let whitelistEntries = [];
 let previewResizeObserver = null;
 let previewState = {
   isOpen: false,
@@ -130,24 +130,22 @@ function setWhitelistStatus(message, cls = '') {
 }
 
 function renderWhitelist() {
-  const values = [...elementTypeWhitelist].sort();
+  const values = [...whitelistEntries];
   pullsWhitelistChips.innerHTML = '';
   if (!values.length) {
-    pullsWhitelistChips.textContent = 'No whitelisted element types.';
+    pullsWhitelistChips.textContent = 'No whitelisted element signatures.';
     return;
   }
-  for (const type of values) {
+  for (const entry of values) {
     const chip = document.createElement('button');
     chip.type = 'button';
     chip.className = 'pulls-whitelist-chip';
-    chip.textContent = `Remove ${type}`;
-    chip.dataset.elementType = type;
+    chip.textContent = `Remove ${entry.description || entry.tag || 'signature'}`;
     chip.addEventListener('click', async () => {
       const { domain } = pullsQuery();
       try {
-        await removeFromWhitelist(domain, type);
-        elementTypeWhitelist.delete(type);
-        setWhitelistStatus(`Removed ${type} from whitelist.`, 'ok');
+        await removeFromWhitelist(domain, entry.signature_key);
+        setWhitelistStatus(`Removed ${entry.description || entry.tag || 'signature'} from whitelist.`, 'ok');
         await reloadPullRows(domain, pullsQuery().runId);
         const { runId } = pullsQuery();
         if (!allPullRows.length) {
@@ -168,29 +166,35 @@ async function fetchWhitelist(domain) {
   const response = await fetch(`/api/element-type-whitelist?${new URLSearchParams({ domain }).toString()}`);
   const payload = await safeReadPayload(response);
   if (!response.ok) throw new Error(payload.error || 'Failed to load whitelist');
-  return payload.element_types || [];
+  return payload.entries || [];
 }
 
-async function addToWhitelist(domain, elementType) {
+async function addToWhitelist(domain, row) {
   const response = await fetch('/api/element-type-whitelist', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ domain, element_type: elementType }),
+    body: JSON.stringify({
+      domain,
+      element_type: row.element_type || '',
+      tag: row.tag || '',
+      css_selector: row.css_selector || '',
+      attributes: row.attributes || null,
+    }),
   });
   const payload = await safeReadPayload(response);
   if (!response.ok) throw new Error(payload.error || payload.message || 'Failed to update whitelist');
-  return payload.element_types || [];
+  return { entries: payload.entries || [], addedEntry: payload.added_entry || null };
 }
 
-async function removeFromWhitelist(domain, elementType) {
+async function removeFromWhitelist(domain, signatureKey) {
   const response = await fetch('/api/element-type-whitelist/remove', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ domain, element_type: elementType }),
+    body: JSON.stringify({ domain, signature_key: signatureKey }),
   });
   const payload = await safeReadPayload(response);
   if (!response.ok) throw new Error(payload.error || payload.message || 'Failed to update whitelist');
-  return payload.element_types || [];
+  return payload.entries || [];
 }
 
 async function fetchPullsPayload(domain, runId) {
@@ -218,11 +222,11 @@ async function reloadPullRows(domain, runId) {
 
   allPullRows = (payload.rows || []).filter((row) => String((row || {}).element_type || '').toLowerCase() !== 'script');
   try {
-    elementTypeWhitelist = new Set((await fetchWhitelist(domain)).map((v) => normalizeElementType(v)).filter(Boolean));
+    whitelistEntries = (await fetchWhitelist(domain)).filter((entry) => entry && typeof entry === 'object');
     renderWhitelist();
     setWhitelistStatus('');
   } catch (err) {
-    elementTypeWhitelist = new Set();
+    whitelistEntries = [];
     renderWhitelist();
     setWhitelistStatus(err.message, 'error');
   }
@@ -259,7 +263,6 @@ function filteredRows() {
   return allPullRows.filter((row) => {
     const elementType = normalizeElementType(row.element_type);
     const decisionValue = decisionToValue(row.decision);
-    if (elementTypeWhitelist.has(elementType)) return false;
     if (decisionValue === 'eligible') return false;
     if (query && !String(row.url || '').toLowerCase().includes(query)) return false;
     if (typeFilter && elementType !== typeFilter) return false;
@@ -626,16 +629,11 @@ function renderRows(domain, runId) {
       }
     });
     whitelistButton.addEventListener('click', async () => {
-      const type = normalizeElementType(row.element_type);
-      if (!type) {
-        setWhitelistStatus('Element type is required to whitelist.', 'warning');
-        return;
-      }
       try {
         await saveRule(domain, runId, row, 'eligible');
-        await addToWhitelist(domain, type);
-        elementTypeWhitelist.add(type);
-        setWhitelistStatus(`Added ${type} to whitelist.`, 'ok');
+        const { addedEntry } = await addToWhitelist(domain, row);
+        const created = addedEntry || {};
+        setWhitelistStatus(`Added ${created.description || row.css_selector || row.element_type} to whitelist.`, 'ok');
         await reloadPullRows(domain, runId);
         if (!allPullRows.length) {
           pullsTable.classList.add('hidden');
@@ -710,31 +708,7 @@ pullsElementTypeFilter.addEventListener('change', () => {
 
 
 pullsWhitelistAdd.addEventListener('click', async () => {
-  const { domain, runId } = pullsQuery();
-  const type = normalizeElementType(pullsWhitelistInput.value);
-  if (!domain) {
-    setWhitelistStatus('Domain is required.', 'error');
-    return;
-  }
-  if (!type) {
-    setWhitelistStatus('Enter an element type to whitelist.', 'warning');
-    return;
-  }
-  try {
-    await addToWhitelist(domain, type);
-    elementTypeWhitelist.add(type);
-    pullsWhitelistInput.value = '';
-    setWhitelistStatus(`Added ${type} to whitelist.`, 'ok');
-    await reloadPullRows(domain, runId);
-    if (!allPullRows.length) {
-      pullsTable.classList.add('hidden');
-      setPullsStatus('No items found for this run.', 'empty');
-      return;
-    }
-    renderRows(domain, runId);
-  } catch (err) {
-    setWhitelistStatus(err.message, 'error');
-  }
+  setWhitelistStatus('Manual add by type is disabled. Use "Add to whitelist" on a concrete row.', 'warning');
 });
 
 pullsPreviewClose.addEventListener('click', closePreview);
