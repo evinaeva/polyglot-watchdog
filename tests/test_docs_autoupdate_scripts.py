@@ -37,6 +37,16 @@ def test_validate_docs_diff_allows_allowlist(tmp_path):
     assert res.returncode == 0, res.stderr
 
 
+def test_validate_docs_diff_ignores_github_tmp_state_file(tmp_path):
+    init_git_repo(tmp_path)
+    tmp_dir = tmp_path / ".github" / "tmp"
+    tmp_dir.mkdir(parents=True)
+    (tmp_dir / "docs_sync_state.json").write_text("{}\n", encoding="utf-8")
+    script = Path(__file__).resolve().parents[1] / ".github" / "scripts" / "validate_docs_diff.py"
+    res = run([sys.executable, str(script), "--ref", "HEAD"], tmp_path)
+    assert res.returncode == 0, res.stderr
+
+
 def test_validate_docs_diff_rejects_blacklist(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "Dockerfile").write_text("FROM alpine\n", encoding="utf-8")
@@ -63,6 +73,7 @@ def test_merged_feed_duplicate_guard(tmp_path):
             "user": {"login": "octocat"},
             "head": {"ref": "feature"},
             "merge_commit_sha": "abc123",
+            "body": "Motivation\nUse PR body as semantic feed input.\n\nDescription\nStore body text verbatim.",
         }
     }
     event_path = tmp_path / "event.json"
@@ -79,6 +90,8 @@ def test_merged_feed_duplicate_guard(tmp_path):
 
     content = (feed_dir / "merged_pr_feed.md").read_text(encoding="utf-8")
     assert content.count("## PR #42") == 1
+    assert "- Description:\n  Motivation" in content
+    assert "Store body text verbatim." in content
 
 
 def test_docs_ai_noop_and_state_advancement_and_blank_model_fallback(monkeypatch, tmp_path):
@@ -86,7 +99,19 @@ def test_docs_ai_noop_and_state_advancement_and_blank_model_fallback(monkeypatch
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / "a.md").write_text("A\n", encoding="utf-8")
 
-    feed_text = "# Merged PR Feed\n\n## PR #1 — 2026-01-01T00:00:00Z\n- Merge commit: sha1\n- Changed files:\n  - docs/a.md\n"
+    feed_text = (
+        "# Merged PR Feed\n\n"
+        "## PR #1 — 2026-01-01T00:00:00Z\n"
+        "- Merge commit: sha1\n"
+        "- Changed files:\n"
+        "  - docs/a.md\n"
+        "- Description:\n"
+        "  Motivation\n"
+        "  - item 1\n"
+        "  - item 2\n"
+        "  Use PR body directly.\n"
+        "- Notes: Auto-generated from merged PR metadata.\n"
+    )
 
     def fake_show(ref_path: str) -> str:
         if ref_path.endswith("merged_pr_feed.md"):
@@ -97,8 +122,9 @@ def test_docs_ai_noop_and_state_advancement_and_blank_model_fallback(monkeypatch
 
     captured = {}
 
-    def fake_call(_prompt, model, _api_key):
+    def fake_call(prompt_text, model, _api_key):
         captured["model"] = model
+        captured["prompt"] = prompt_text
         return '{"updates": []}'
 
     monkeypatch.setattr(mod, "git_show", fake_show)
@@ -128,11 +154,38 @@ def test_docs_ai_noop_and_state_advancement_and_blank_model_fallback(monkeypatch
 
     assert rc == 0
     assert captured["model"] == mod.DEFAULT_MODEL
+    assert '"description": "Motivation\\n- item 1\\n- item 2\\nUse PR body directly."' in captured["prompt"]
     out = out_env.read_text(encoding="utf-8")
     assert "docs_changed=false" in out
     assert "state_changed=true" in out
     state = json.loads(out_state.read_text(encoding="utf-8"))
     assert state["last_processed_merge_commit"] == "sha1"
+
+
+def test_docs_ai_parse_feed_extracts_description_and_empty_body():
+    mod = load_docs_ai_module()
+    feed_text = (
+        "# Merged PR Feed\n\n"
+        "## PR #8 — 2026-01-01T00:00:00Z\n"
+        "- Merge commit: sha8\n"
+        "- Changed files:\n"
+        "  - docs/a.md\n"
+        "- Description:\n"
+        "  Motivation\n"
+        "  - item one\n"
+        "  Keep docs aligned.\n"
+        "- Notes: Auto-generated from merged PR metadata.\n\n"
+        "## PR #9 — 2026-01-02T00:00:00Z\n"
+        "- Merge commit: sha9\n"
+        "- Changed files:\n"
+        "  - docs/b.md\n"
+        "- Description:\n"
+        "\n"
+        "- Notes: Auto-generated from merged PR metadata.\n"
+    )
+    parsed = mod.parse_feed(feed_text)
+    assert parsed[0]["description"] == "Motivation\n- item one\nKeep docs aligned."
+    assert parsed[1]["description"] == ""
 
 
 def test_docs_ai_state_marker_missing_recovers_by_pr_number(monkeypatch, tmp_path):

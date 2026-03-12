@@ -58,6 +58,7 @@ def get_changed_files(event: dict) -> List[str]:
 
 def build_entry(event: dict, files: List[str]) -> str:
     pr = event["pull_request"]
+    pr_body = (pr.get("body") or "").rstrip()
     lines = [
         f"## PR #{pr['number']} — {pr.get('merged_at', '')}",
         "",
@@ -73,6 +74,11 @@ def build_entry(event: dict, files: List[str]) -> str:
         lines.extend([f"  - {path}" for path in files])
     else:
         lines.append("  - (none reported)")
+    lines.append("- Description:")
+    if pr_body:
+        lines.extend([f"  {line}" for line in pr_body.splitlines()])
+    else:
+        lines.append("  ")
     lines.append("- Notes: Auto-generated from merged PR metadata.")
     lines.append("")
     return "\n".join(lines)

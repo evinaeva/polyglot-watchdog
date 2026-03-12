@@ -6,8 +6,6 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
-from pathlib import Path
-
 ALLOWED_PREFIXES = ("docs/", "spec/", "contract/schemas/")
 ALLOWED_ROOT_FILES = {"RELEASE_CRITERIA.md", "README.md", "APPLYING_STREAM1.md"}
 BLACKLIST = {
@@ -17,6 +15,13 @@ BLACKLIST = {
     "cloudbuild.yaml",
     "requirements.txt",
 }
+
+IGNORED_RUNTIME_PREFIXES = (".github/tmp/",)
+
+
+def is_ignored_runtime_path(path: str) -> bool:
+    return path.startswith(IGNORED_RUNTIME_PREFIXES)
+
 
 
 def is_allowed(path: str) -> bool:
@@ -62,6 +67,8 @@ def main() -> int:
     deleted = []
 
     for status, path in entries:
+        if is_ignored_runtime_path(path):
+            continue
         if path in BLACKLIST:
             blacklisted.append(path)
         if not is_allowed(path):
