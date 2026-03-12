@@ -2,8 +2,14 @@ const pullsStatus = document.getElementById('pullsStatus');
 const pullsTable = document.getElementById('pullsTable');
 const pullsBody = pullsTable.querySelector('tbody');
 const pullsUrlSearch = document.getElementById('pullsUrlSearch');
+const pullsElementTypeFilter = document.getElementById('pullsElementTypeFilter');
+const pullsLanguageSummary = document.getElementById('pullsLanguageSummary');
+const pullsWorkflowContextSummary = document.getElementById('pullsWorkflowContextSummary');
+const pullsIdHelp = document.getElementById('pullsIdHelp');
 
 let allPullRows = [];
+
+// Defensive fallback: backend /api/pulls already excludes script rows; keep this to avoid leaking script rows in UI if backend regresses.
 
 const DECISION_TO_UI = {
   eligible: 'Keep',
@@ -46,6 +52,40 @@ function decisionToLabel(decision) {
   return DECISION_TO_UI[String(decision || '').trim()] || '';
 }
 
+function updateWorkflowSummary(domain, runId) {
+  const parts = [];
+  if (domain) parts.push(`domain: ${domain}`);
+  if (runId) parts.push(`run: ${runId}`);
+  pullsWorkflowContextSummary.textContent = parts.length
+    ? `Workflow context: ${parts.join(' · ')}.`
+    : 'Workflow context: none.';
+}
+
+function updateLanguageSummary(rows) {
+  const languages = [...new Set(rows.map((row) => String(row.language || '').trim()).filter(Boolean))].sort();
+  if (!languages.length) {
+    pullsLanguageSummary.textContent = 'Language: —';
+  } else if (languages.length === 1) {
+    pullsLanguageSummary.textContent = `Language: ${languages[0]}`;
+  } else {
+    pullsLanguageSummary.textContent = `Language: Mixed (${languages.join(', ')})`;
+  }
+  pullsLanguageSummary.classList.remove('hidden');
+}
+
+function updateElementTypeFilter(rows) {
+  const selected = String(pullsElementTypeFilter.value || '');
+  const options = [...new Set(rows.map((row) => String(row.element_type || '').trim()).filter(Boolean))].sort();
+  pullsElementTypeFilter.innerHTML = '<option value="">All types</option>';
+  for (const type of options) {
+    const option = document.createElement('option');
+    option.value = type;
+    option.textContent = type;
+    pullsElementTypeFilter.appendChild(option);
+  }
+  if (selected && options.includes(selected)) pullsElementTypeFilter.value = selected;
+}
+
 async function saveRule(domain, runId, row, decision) {
   const payload = {
     domain,
@@ -66,17 +106,22 @@ async function saveRule(domain, runId, row, decision) {
 
 function filteredRows() {
   const query = String(pullsUrlSearch.value || '').trim().toLowerCase();
-  if (!query) return allPullRows;
-  return allPullRows.filter((row) => String(row.url || '').toLowerCase().includes(query));
+  const typeFilter = String(pullsElementTypeFilter.value || '').trim();
+  return allPullRows.filter((row) => {
+    if (query && !String(row.url || '').toLowerCase().includes(query)) return false;
+    if (typeFilter && String(row.element_type || '') !== typeFilter) return false;
+    return true;
+  });
 }
 
 function renderRows(domain, runId) {
   const rows = filteredRows();
+  const totalCount = allPullRows.length;
   pullsBody.innerHTML = '';
 
   if (!rows.length) {
     pullsTable.classList.add('hidden');
-    setPullsStatus('No items match your URL search.', 'empty');
+    setPullsStatus('No items match current filters.', 'empty');
     return;
   }
 
@@ -87,7 +132,6 @@ function renderRows(domain, runId) {
       <td>${escapeHtml(row.url)}</td>
       <td>${escapeHtml(row.item_id)}</td>
       <td>${escapeHtml(row.element_type)}</td>
-      <td>${escapeHtml(row.language)}</td>
       <td>${escapeHtml(row.text || '')}</td>
       <td>${escapeHtml(decisionToLabel(row.decision))}</td>
       <td></td>`;
@@ -121,7 +165,7 @@ function renderRows(domain, runId) {
       try {
         await saveRule(domain, runId, row, select.value);
         row.decision = select.value;
-        setPullsStatus('Selection saved', 'ok');
+        setPullsStatus('Selection saved.', 'ok');
         renderRows(domain, runId);
       } catch (err) {
         setPullsStatus(err.message, 'error');
@@ -132,11 +176,12 @@ function renderRows(domain, runId) {
   }
 
   pullsTable.classList.remove('hidden');
-  setPullsStatus(`Loaded ${rows.length} items.`, 'ok');
+  setPullsStatus(`Showing ${rows.length} of ${totalCount} items.`, 'ok');
 }
 
 async function loadPulls() {
   const { domain, runId } = pullsQuery();
+  updateWorkflowSummary(domain, runId);
   const query = new URLSearchParams({ domain, run_id: runId }).toString();
 
   const primaryLinks = {
@@ -159,6 +204,7 @@ async function loadPulls() {
 
   if (!domain || !runId) {
     pullsTable.classList.add('hidden');
+    pullsLanguageSummary.classList.add('hidden');
     setPullsStatus('Missing required query params: domain and run_id.', 'error');
     return;
   }
@@ -168,16 +214,22 @@ async function loadPulls() {
   const payload = await safeReadPayload(response);
   if (response.status === 404 && payload.status === 'not_ready') {
     pullsTable.classList.add('hidden');
+    pullsLanguageSummary.classList.add('hidden');
     setPullsStatus(`Not ready: ${payload.error}.`, 'warning');
     return;
   }
   if (!response.ok) {
     pullsTable.classList.add('hidden');
+    pullsLanguageSummary.classList.add('hidden');
     setPullsStatus(payload.error || `Failed to load pulls (${response.status})`, 'error');
     return;
   }
 
-  allPullRows = payload.rows || [];
+  allPullRows = (payload.rows || []).filter((row) => String((row || {}).element_type || '').toLowerCase() !== 'script');
+  updateElementTypeFilter(allPullRows);
+  updateLanguageSummary(allPullRows);
+  pullsIdHelp.textContent = 'Item/Element ID is generated by compute_item_id in pipeline/interactive_capture.py: a deterministic SHA-1 hash of domain, URL, CSS selector, canonical bbox JSON, and element type (text content is excluded).';
+
   if (!allPullRows.length) {
     pullsTable.classList.add('hidden');
     setPullsStatus('No items found for this run.', 'empty');
@@ -187,6 +239,11 @@ async function loadPulls() {
 }
 
 pullsUrlSearch.addEventListener('input', () => {
+  const { domain, runId } = pullsQuery();
+  renderRows(domain, runId);
+});
+
+pullsElementTypeFilter.addEventListener('change', () => {
   const { domain, runId } = pullsQuery();
   renderRows(domain, runId);
 });

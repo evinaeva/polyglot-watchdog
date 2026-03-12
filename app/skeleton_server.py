@@ -1041,6 +1041,9 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                     continue
                 if tier_filter and tier_filter != str(row.get("user_tier") or "").lower():
                     continue
+                element_type = str(row.get("element_type", "")).strip()
+                if element_type.lower() == "script":
+                    continue
                 decision = decisions_by_item_url.get((str(row.get("item_id", "")), str(row.get("url", ""))), {})
                 rows.append({
                     "item_id": str(row.get("item_id", "")),
@@ -1050,7 +1053,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                     "language": str(row.get("language", "")),
                     "viewport_kind": str(row.get("viewport_kind", "")),
                     "user_tier": _normalize_optional_string(row.get("user_tier")),
-                    "element_type": str(row.get("element_type", "")),
+                    "element_type": element_type,
                     "text": str(row.get("text", "")),
                     "not_found": bool(row.get("not_found", False)),
                     "decision": str(decision.get("rule_type", "")),

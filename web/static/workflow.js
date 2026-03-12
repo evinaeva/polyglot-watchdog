@@ -8,10 +8,15 @@ const wfStatus = document.getElementById('wfStatus');
 const wfStatusSummary = document.getElementById('wfStatusSummary');
 const wfPayload = document.getElementById('wfPayload');
 const wfTransition = document.getElementById('wfTransition');
+const wfExistingRuns = document.getElementById('wfExistingRuns');
+const wfUseExistingRun = document.getElementById('wfUseExistingRun');
+const wfRefreshRuns = document.getElementById('wfRefreshRuns');
+const wfRunsStatus = document.getElementById('wfRunsStatus');
 
 let lastPayload = null;
 let activeRunId = '';
 let pollTimer = null;
+let availableRuns = [];
 
 function q() {
   const p = new URLSearchParams(window.location.search);
@@ -90,6 +95,91 @@ function setActionAvailability(payload) {
   setContinueLink(wfDomain.value.trim(), activeRunId, captureReady);
 }
 
+function setRunsStatus(message) {
+  wfRunsStatus.textContent = message || '';
+}
+
+function parseCreatedAt(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return Number.NaN;
+  const ts = Date.parse(raw);
+  return Number.isFinite(ts) ? ts : Number.NaN;
+}
+
+function sortRunsNewestFirst(runs) {
+  return [...runs].sort((a, b) => {
+    const aTs = parseCreatedAt((a || {}).created_at);
+    const bTs = parseCreatedAt((b || {}).created_at);
+    if (Number.isFinite(aTs) && Number.isFinite(bTs) && aTs !== bTs) return bTs - aTs;
+    if (Number.isFinite(aTs) && !Number.isFinite(bTs)) return -1;
+    if (!Number.isFinite(aTs) && Number.isFinite(bTs)) return 1;
+    const aRunId = String((a || {}).run_id || '');
+    const bRunId = String((b || {}).run_id || '');
+    return bRunId.localeCompare(aRunId);
+  });
+}
+
+function deriveRunState(run) {
+  const jobs = Array.isArray(run.jobs) ? run.jobs : [];
+  const hasRunning = jobs.some((job) => {
+    const status = String((job || {}).status || '').toLowerCase();
+    return status === 'running' || status === 'queued';
+  });
+  return hasRunning ? 'running' : 'idle';
+}
+
+function renderExistingRuns() {
+  const selected = activeRunId;
+  wfExistingRuns.innerHTML = '';
+
+  if (!availableRuns.length) {
+    wfExistingRuns.innerHTML = '<option value="">No runs found</option>';
+    wfUseExistingRun.disabled = true;
+    setRunsStatus('No existing runs found for this domain yet.');
+    return;
+  }
+
+  for (const run of availableRuns) {
+    const runId = String((run || {}).run_id || '').trim();
+    if (!runId) continue;
+    const option = document.createElement('option');
+    option.value = runId;
+    const createdAt = String((run || {}).created_at || '').trim() || 'created time unknown';
+    const jobsCount = Array.isArray((run || {}).jobs) ? run.jobs.length : 0;
+    option.textContent = `${runId} (${deriveRunState(run)} · jobs: ${jobsCount} · ${createdAt})`;
+    wfExistingRuns.appendChild(option);
+  }
+
+  if (!wfExistingRuns.options.length) {
+    wfExistingRuns.innerHTML = '<option value="">No runs found</option>';
+    wfUseExistingRun.disabled = true;
+    setRunsStatus('No existing runs found for this domain yet.');
+    return;
+  }
+
+  if (selected && availableRuns.some((run) => String(run.run_id || '') === selected)) {
+    wfExistingRuns.value = selected;
+  }
+
+  wfUseExistingRun.disabled = !wfExistingRuns.value;
+  setRunsStatus(`Existing runs available: ${availableRuns.length}.`);
+}
+
+async function loadExistingRuns() {
+  const domain = wfDomain.value.trim();
+  availableRuns = [];
+  renderExistingRuns();
+  if (!domain) return;
+
+  const response = await fetch(`/api/capture/runs?${new URLSearchParams({ domain }).toString()}`);
+  const payload = await safeReadPayload(response);
+  if (!response.ok) throw new Error(payload.error || 'failed to load runs');
+
+  const runs = Array.isArray(payload.runs) ? payload.runs : [];
+  availableRuns = sortRunsNewestFirst(runs);
+  renderExistingRuns();
+}
+
 function stopPolling() {
   if (pollTimer) {
     clearInterval(pollTimer);
@@ -103,7 +193,10 @@ function startPolling() {
     try {
       await loadWorkflowStatus();
       const captureStatus = readCaptureStatus(lastPayload || {});
-      if (isCaptureTerminal(captureStatus)) stopPolling();
+      if (isCaptureTerminal(captureStatus)) {
+        stopPolling();
+        await loadExistingRuns();
+      }
     } catch (error) {
       setStatus(error.message || 'Failed to refresh status', 'error');
       stopPolling();
@@ -181,17 +274,35 @@ async function initWorkflow() {
   activeRunId = query.runId;
 
   await loadSavedUrls();
+  await loadExistingRuns();
   await loadWorkflowStatus();
 
   wfDomain.addEventListener('change', async () => {
     activeRunId = '';
     setQuery(wfDomain.value.trim(), '');
     await loadSavedUrls();
+    await loadExistingRuns();
     await loadWorkflowStatus();
     stopPolling();
   });
 
   wfRefreshUrls.addEventListener('click', loadSavedUrls);
+  wfRefreshRuns.addEventListener('click', loadExistingRuns);
+
+  wfExistingRuns.addEventListener('change', () => {
+    wfUseExistingRun.disabled = !wfExistingRuns.value;
+  });
+
+  wfUseExistingRun.addEventListener('click', async () => {
+    const selectedRunId = String(wfExistingRuns.value || '').trim();
+    if (!selectedRunId) {
+      setStatus('Choose an existing run first.', 'warning');
+      return;
+    }
+    activeRunId = selectedRunId;
+    setQuery(wfDomain.value.trim(), activeRunId);
+    await loadWorkflowStatus();
+  });
 
   wfStartCapture.addEventListener('click', async () => {
     const domain = wfDomain.value.trim();
@@ -203,6 +314,7 @@ async function initWorkflow() {
     const result = await postAction('/api/workflow/start-capture', { domain, language: 'en', viewport_kind: 'desktop', state: 'baseline' });
     activeRunId = String(result.run_id || '').trim();
     setQuery(domain, activeRunId);
+    await loadExistingRuns();
     await loadWorkflowStatus();
     startPolling();
   });

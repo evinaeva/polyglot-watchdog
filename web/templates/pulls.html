@@ -10,25 +10,35 @@
   {{header}}
   <main>
     <h1>CHOOSE NEEDED</h1>
-    <p>Select the items you want to keep or ignore for this run, then save your selection.</p>
+    <p>Review captured items for this workflow run, then keep or ignore each item.</p>
     <p>
       <a id="pullsBackToRunHub" href="/workflow">Previous step</a> |
       <a id="continueCheckLanguages" href="#">Next step: Check Languages</a>
     </p>
+    <p id="pullsWorkflowContextSummary" class="muted"></p>
+
+    <div class="controls">
+      <label for="pullsUrlSearch">Search by URL</label>
+      <input id="pullsUrlSearch" type="search" placeholder="Type part of a URL" />
+      <label for="pullsElementTypeFilter">Element Type</label>
+      <select id="pullsElementTypeFilter">
+        <option value="">All types</option>
+      </select>
+    </div>
+
     <details>
-      <summary>Technical paths</summary>
+      <summary>Advanced links and metadata</summary>
       <p>
         <a id="pullsOpenContexts" href="#">Open Contexts</a> |
         <a id="pullsOpenIssues" href="#">Open Issues</a>
       </p>
+      <p id="pullsIdHelp" class="inline-help"></p>
     </details>
-    <p>
-      <label for="pullsUrlSearch">Search by URL:</label>
-      <input id="pullsUrlSearch" type="search" placeholder="Type part of a URL" />
-    </p>
+
     <div id="pullsStatus"></div>
+    <p id="pullsLanguageSummary" class="hidden"></p>
     <table id="pullsTable" class="hidden">
-      <thead><tr><th>URL</th><th>Item/Element ID</th><th>Element Type</th><th>Language</th><th>Preview/Snippet</th><th>Decision</th><th>Action</th></tr></thead>
+      <thead><tr><th>URL</th><th>Item/Element ID</th><th>Element Type</th><th>Preview/Snippet</th><th>Decision</th><th>Action</th></tr></thead>
       <tbody></tbody>
     </table>
   </main>

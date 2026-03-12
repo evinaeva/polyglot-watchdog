@@ -104,7 +104,7 @@ def test_stage_c_workflow_routes_and_artifact_endpoints(api_env):
 
     status_urls, body_urls = _request("GET", api_env, "/urls")
     assert status_urls == HTTPStatus.OK
-    assert '<a href="/" data-i18n="nav.issues">Issues</a>' in body_urls
+    assert '<h1>ADD URL</h1>' in body_urls
     status_runs, body_runs = _request("GET", api_env, "/runs")
     assert status_runs == HTTPStatus.OK
     assert 'selectedRunId' in body_runs
@@ -113,7 +113,13 @@ def test_stage_c_workflow_routes_and_artifact_endpoints(api_env):
     assert 'selectedOpenIssues' in body_runs
     assert 'selectedExportCsv' in body_runs
     assert _request("GET", api_env, f"/contexts?domain={domain}&run_id={run_id}")[0] == HTTPStatus.OK
-    assert _request("GET", api_env, f"/pulls?domain={domain}&run_id={run_id}")[0] == HTTPStatus.OK
+    pulls_page_status, pulls_page_body = _request("GET", api_env, f"/pulls?domain={domain}&run_id={run_id}")
+    assert pulls_page_status == HTTPStatus.OK
+    assert 'id="pullsElementTypeFilter"' in pulls_page_body
+    assert '<th>Language</th>' not in pulls_page_body
+    workflow_page_status, workflow_page_body = _request("GET", api_env, f"/workflow?domain={domain}&run_id={run_id}")
+    assert workflow_page_status == HTTPStatus.OK
+    assert 'id="wfExistingRuns"' in workflow_page_body
     assert _request("GET", api_env, f"/?domain={domain}&run_id={run_id}")[0] == HTTPStatus.OK
     status_detail_page, body_detail_page = _request("GET", api_env, f"/issues/detail?domain={domain}&run_id={run_id}&id=1")
     assert status_detail_page == HTTPStatus.OK
@@ -191,6 +197,8 @@ def test_stage_c_ui_not_ready_and_error_states_have_explicit_render_targets():
     assert "await safeReadPayload(response)" in detail_js
     assert "await safeReadPayload(response)" in runs_js
     assert "await safeReadPayload(response)" in pulls_js
+    assert "compute_item_id in pipeline/interactive_capture.py" in pulls_js
+    assert "Showing ${rows.length} of ${totalCount} items." in pulls_js
     assert "async function safeReadPayload" not in contexts_js
     assert "async function safeReadPayload" not in issues_js
     assert "async function safeReadPayload" not in detail_js
