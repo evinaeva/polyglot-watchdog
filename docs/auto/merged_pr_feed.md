@@ -112,3 +112,16 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
 - Changed files:
   - web/static/styles.css
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #73 — 2026-03-12T13:13:06Z
+
+- Title: Fix pulls preview bbox scaling using actual screenshot dimensions
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/73
+- Author: evinaeva
+- Base branch: main
+- Head branch: h0kmtz-codex/find-cause-of-incorrect-bbox-positioning
+- Merge commit: 6572a8351f551338069bca8640347591942cefa2
+- Changed files:
+  - tests/test_stage_c_operator_workflow.py
+  - web/static/pulls.js
+- Notes: Auto-generated from merged PR metadata.
