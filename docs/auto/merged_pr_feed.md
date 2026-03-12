@@ -100,3 +100,15 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   - web/static/styles.css
   - web/templates/pulls.html
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #72 — 2026-03-12T12:56:30Z
+
+- Title: Add page-screenshot proxy, enrich /api/pulls with screenshot metadata, and preview UI
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/72
+- Author: evinaeva
+- Base branch: main
+- Head branch: 7ysw7j-codex/implement-screenshot-visualization-for-choose-needed
+- Merge commit: 20c631b28cc6eb176b2ba80d5851449a7fe267e1
+- Changed files:
+  - web/static/styles.css
+- Notes: Auto-generated from merged PR metadata.
