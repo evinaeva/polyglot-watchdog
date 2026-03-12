@@ -26,19 +26,26 @@
       </select>
     </div>
 
+    <section class="controls" aria-label="Element type whitelist">
+      <label for="pullsWhitelistInput">Element Type whitelist (domain)</label>
+      <input id="pullsWhitelistInput" type="text" placeholder="e.g. button" />
+      <button id="pullsWhitelistAdd" type="button">Add type</button>
+      <span id="pullsWhitelistStatus" class="muted"></span>
+      <div id="pullsWhitelistChips" class="inline-help">No whitelisted element types.</div>
+    </section>
+
     <details>
       <summary>Advanced links and metadata</summary>
       <p>
         <a id="pullsOpenContexts" href="#">Open Contexts</a> |
         <a id="pullsOpenIssues" href="#">Open Issues</a>
       </p>
-      <p id="pullsIdHelp" class="inline-help"></p>
     </details>
 
     <div id="pullsStatus"></div>
     <p id="pullsLanguageSummary" class="hidden"></p>
     <table id="pullsTable" class="hidden">
-      <thead><tr><th>URL</th><th>Item/Element ID</th><th>Element Type</th><th>Preview/Snippet</th><th>Decision</th><th>Action</th></tr></thead>
+      <thead><tr><th>URL</th><th>Element Type</th><th>Preview/Snippet</th><th>Decision</th><th>Action</th></tr></thead>
       <tbody></tbody>
     </table>
   </main>

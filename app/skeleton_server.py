@@ -364,6 +364,52 @@ def _upsert_phase2_decision(domain: str, run_id: str, decision: dict) -> dict:
     return out
 
 
+
+_WHITELIST_RUN_ID = "_shared"
+_WHITELIST_FILENAME = "element_type_whitelist.json"
+
+
+def _load_domain_element_type_whitelist(domain: str) -> list[str]:
+    if not _artifact_exists(domain, _WHITELIST_RUN_ID, _WHITELIST_FILENAME):
+        return []
+    payload = _read_json_required(domain, _WHITELIST_RUN_ID, _WHITELIST_FILENAME)
+    if not isinstance(payload, list):
+        raise ValueError(f"{_WHITELIST_FILENAME} artifact_invalid")
+    values: list[str] = []
+    seen: set[str] = set()
+    for row in payload:
+        value = str(row or '').strip()
+        if not value:
+            continue
+        if value in seen:
+            continue
+        seen.add(value)
+        values.append(value)
+    return sorted(values)
+
+
+def _save_domain_element_type_whitelist(domain: str, values: list[str]) -> list[str]:
+    from pipeline.storage import write_json_artifact
+
+    normalized = sorted({str(v or '').strip() for v in values if str(v or '').strip()})
+    write_json_artifact(domain, _WHITELIST_RUN_ID, _WHITELIST_FILENAME, normalized)
+    return normalized
+
+
+def _add_domain_element_type_whitelist(domain: str, element_type: str) -> list[str]:
+    values = _load_domain_element_type_whitelist(domain)
+    normalized = str(element_type or '').strip()
+    if normalized and normalized not in values:
+        values.append(normalized)
+    return _save_domain_element_type_whitelist(domain, values)
+
+
+def _remove_domain_element_type_whitelist(domain: str, element_type: str) -> list[str]:
+    normalized = str(element_type or '').strip()
+    values = [v for v in _load_domain_element_type_whitelist(domain) if v != normalized]
+    return _save_domain_element_type_whitelist(domain, values)
+
+
 def _review_writer() -> GCSArtifactWriter:
     from pipeline.storage import BUCKET_NAME
 
@@ -1081,6 +1127,22 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(image_bytes)
             return
+        if parsed.path == "/api/element-type-whitelist":
+            if not self._require_auth(api=True):
+                return
+            query = parse_qs(parsed.query)
+            required, missing = _require_query_params(query, "domain")
+            if missing:
+                self._json_response(_missing_required_query_params(*missing), status=HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                domain = validate_domain(required["domain"])
+                values = _load_domain_element_type_whitelist(domain)
+            except ValueError as exc:
+                self._json_response({"error": str(exc), "status": "artifact_invalid"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+            self._json_response({"domain": domain, "element_types": values})
+            return
         if parsed.path == "/api/pulls":
             if not self._require_auth(api=True):
                 return
@@ -1099,6 +1161,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 universal_sections_optional = _read_list_artifact_optional_strict(domain, run_id, "universal_sections.json")
                 universal_sections = universal_sections_optional or []
                 decisions = _load_phase2_decisions(domain, run_id)
+                whitelist = set(_load_domain_element_type_whitelist(domain))
             except FileNotFoundError:
                 if not _artifact_exists(domain, run_id, "collected_items.json"):
                     self._json_response(_not_ready_payload("collected_items"), status=HTTPStatus.NOT_FOUND)
@@ -1137,6 +1200,10 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 if element_type.lower() == "script":
                     continue
                 decision = decisions_by_item_url.get((str(row.get("item_id", "")), str(row.get("url", ""))), {})
+                if element_type in whitelist and not decision:
+                    decision = {"rule_type": "ALWAYS_COLLECT"}
+                if element_type in whitelist:
+                    continue
                 page_id = str(row.get("page_id", ""))
                 page_row = pages_by_id.get(page_id, {})
                 page_viewport = page_row.get("viewport") if isinstance(page_row.get("viewport"), dict) else None
@@ -1181,7 +1248,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                     "decision": "",
                 })
             rows.sort(key=lambda item: item.get("item_id", ""))
-            self._json_response({"rows": rows, "missing_universal_sections": universal_sections_optional is None})
+            self._json_response({"rows": rows, "missing_universal_sections": universal_sections_optional is None, "element_type_whitelist": sorted(whitelist)})
             return
         if parsed.path == "/api/rules":
             if not self._require_auth(api=True):
@@ -1840,6 +1907,26 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             except Exception as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
+        if self.path in {"/api/element-type-whitelist", "/api/element-type-whitelist/remove"}:
+            if not self._require_auth(api=True):
+                return
+            payload = self._read_json_payload()
+            domain = str(payload.get("domain", "")).strip()
+            element_type = str(payload.get("element_type", "")).strip()
+            if not domain or not element_type:
+                self._json_response({"status": "error", "message": "domain and element_type are required"}, status=HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                domain = validate_domain(domain)
+                if self.path.endswith("/remove"):
+                    values = _remove_domain_element_type_whitelist(domain, element_type)
+                else:
+                    values = _add_domain_element_type_whitelist(domain, element_type)
+                self._json_response({"status": "ok", "domain": domain, "element_types": values})
+            except ValueError as exc:
+                self._json_response({"error": str(exc), "status": "artifact_invalid"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
 
         if self.path == "/api/rules":

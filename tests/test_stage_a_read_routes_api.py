@@ -70,6 +70,17 @@ def _request(port: int, path: str):
     return response.status, headers, body
 
 
+def _request_with_payload(port: int, method: str, path: str, payload: dict):
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    body = json.dumps(payload)
+    conn.request(method, path, body=body, headers={"Content-Type": "application/json"})
+    response = conn.getresponse()
+    raw = response.read()
+    headers = dict(response.getheaders())
+    conn.close()
+    return response.status, headers, raw
+
+
 @pytest.fixture
 def api_env(monkeypatch):
     objects: dict[tuple[str, str], bytes] = {}
@@ -478,3 +489,58 @@ def test_capture_contexts_artifact_backed_and_corruption(api_env):
     status3, _, body3 = _request(api_env, f"/api/capture-contexts?domain={domain}&run_id=run-bad")
     assert status3 == HTTPStatus.INTERNAL_SERVER_ERROR
     assert json.loads(body3) == {"error": "page_screenshots.json artifact_invalid", "status": "artifact_invalid"}
+
+
+def test_element_type_whitelist_domain_scoped_and_pulls_hidden(api_env):
+    domain = "example.com"
+    run_a = "run-whitelist-a"
+    run_b = "run-whitelist-b"
+    _write(domain, run_a, "collected_items.json", [
+        {"item_id": "i1", "page_id": "p1", "url": "https://example.com/a", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "element_type": "button", "css_selector": "button", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}, "text": "Acheter", "visible": True},
+        {"item_id": "i2", "page_id": "p2", "url": "https://example.com/a", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "element_type": "link", "css_selector": "a", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}, "text": "Voir", "visible": True},
+    ])
+    _write(domain, run_a, "page_screenshots.json", [
+        {"page_id": "p1", "url": "https://example.com/a", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "screenshot_id": "s1", "storage_uri": "gs://test-bucket/example.com/run-whitelist-a/screenshots/p1.png", "captured_at": "2026-01-01T00:00:00Z", "viewport": {"width": 100, "height": 100}},
+        {"page_id": "p2", "url": "https://example.com/a", "state": "baseline", "language": "fr", "viewport_kind": "desktop", "user_tier": "guest", "screenshot_id": "s2", "storage_uri": "gs://test-bucket/example.com/run-whitelist-a/screenshots/p2.png", "captured_at": "2026-01-01T00:00:00Z", "viewport": {"width": 100, "height": 100}},
+    ])
+    _write(domain, run_a, "template_rules.json", [])
+
+    _write(domain, run_b, "collected_items.json", [
+        {"item_id": "i3", "page_id": "p3", "url": "https://example.com/b", "state": "baseline", "language": "de", "viewport_kind": "mobile", "user_tier": "pro", "element_type": "button", "css_selector": "button", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}, "text": "Kaufen", "visible": True}
+    ])
+    _write(domain, run_b, "page_screenshots.json", [
+        {"page_id": "p3", "url": "https://example.com/b", "state": "baseline", "language": "de", "viewport_kind": "mobile", "user_tier": "pro", "screenshot_id": "s3", "storage_uri": "gs://test-bucket/example.com/run-whitelist-b/screenshots/p3.png", "captured_at": "2026-01-01T00:00:00Z", "viewport": {"width": 100, "height": 100}},
+    ])
+    _write(domain, run_b, "template_rules.json", [])
+
+    status_add, _, body_add = _request_with_payload(api_env, "POST", "/api/element-type-whitelist", {"domain": domain, "element_type": "button"})
+    assert status_add == HTTPStatus.OK
+    assert json.loads(body_add)["element_types"] == ["button"]
+
+    status_wl, _, body_wl = _request(api_env, f"/api/element-type-whitelist?domain={domain}")
+    assert status_wl == HTTPStatus.OK
+    assert json.loads(body_wl)["element_types"] == ["button"]
+
+    status_a, _, body_a = _request(api_env, f"/api/pulls?domain={domain}&run_id={run_a}")
+    payload_a = json.loads(body_a)
+    assert status_a == HTTPStatus.OK
+    assert [row["item_id"] for row in payload_a["rows"]] == ["i2"]
+
+    status_b, _, body_b = _request(api_env, f"/api/pulls?domain={domain}&run_id={run_b}")
+    payload_b = json.loads(body_b)
+    assert status_b == HTTPStatus.OK
+    assert payload_b["rows"] == []
+
+    status_remove, _, body_remove = _request_with_payload(api_env, "POST", "/api/element-type-whitelist/remove", {"domain": domain, "element_type": "button"})
+    assert status_remove == HTTPStatus.OK
+    assert json.loads(body_remove)["element_types"] == []
+
+    status_a2, _, body_a2 = _request(api_env, f"/api/pulls?domain={domain}&run_id={run_a}")
+    payload_a2 = json.loads(body_a2)
+    assert status_a2 == HTTPStatus.OK
+    assert [row["item_id"] for row in payload_a2["rows"]] == ["i1", "i2"]
+
+    status_b2, _, body_b2 = _request(api_env, f"/api/pulls?domain={domain}&run_id={run_b}")
+    payload_b2 = json.loads(body_b2)
+    assert status_b2 == HTTPStatus.OK
+    assert [row["item_id"] for row in payload_b2["rows"]] == ["i3"]

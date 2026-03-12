@@ -28,7 +28,31 @@ from pipeline.schema_validator import SchemaValidationError, validate
 from pipeline.storage import BUCKET_NAME, read_json_artifact, write_json_artifact, write_phase_manifest
 
 _PLACEHOLDER_RE = re.compile(r"(%[^%]+%|\[[^\]]+\]|<[^>]+>)")
+_DYNAMIC_NUMBER_RE = re.compile(r"\d+")
+_HEADER_ONLINE_CLASS_TOKENS = {"header_online", "bc_flex", "bc_flex_items_center"}
 
+
+
+
+def _item_classes(item: dict) -> set[str]:
+    attributes = item.get("attributes") if isinstance(item, dict) else None
+    if not isinstance(attributes, dict):
+        return set()
+    class_value = str(attributes.get("class", "")).strip()
+    if not class_value:
+        return set()
+    return {token for token in class_value.split() if token}
+
+
+def _is_header_online_dynamic_counter(en_item: dict, target_item: dict) -> bool:
+    classes = _item_classes(en_item) | _item_classes(target_item)
+    return _HEADER_ONLINE_CLASS_TOKENS.issubset(classes)
+
+
+def _normalize_dynamic_counter_text(item: dict, text: str) -> str:
+    if _is_header_online_dynamic_counter(item, item):
+        return _DYNAMIC_NUMBER_RE.sub("<NUM>", text)
+    return text
 
 def _issue_id(category: str, en_item_id: str, target_url: str, message: str) -> str:
     raw = f"{category}|{en_item_id}|{target_url}|{message}"
@@ -117,7 +141,7 @@ def run(domain: str, en_run_id: str, target_run_id: str) -> list[dict]:
         en_item = en_by_item[item_id]
         t_item = target_by_item.get(item_id)
 
-        en_text = normalize_text(en_item.get("text", ""))
+        en_text = _normalize_dynamic_counter_text(en_item, normalize_text(en_item.get("text", "")))
 
         if not t_item:
             evidence = {
@@ -136,7 +160,7 @@ def run(domain: str, en_run_id: str, target_run_id: str) -> list[dict]:
             })
             continue
 
-        t_text = normalize_text(t_item.get("text", ""))
+        t_text = _normalize_dynamic_counter_text(t_item, normalize_text(t_item.get("text", "")))
         evidence = _build_evidence(t_item, target_collected_by_item, target_screens_by_page)
 
         en_placeholders = sorted(_PLACEHOLDER_RE.findall(en_text))
@@ -151,7 +175,8 @@ def run(domain: str, en_run_id: str, target_run_id: str) -> list[dict]:
                 "evidence": evidence,
             })
 
-        if en_text and t_text and en_text == t_text and not en_placeholders:
+        is_dynamic_counter = _is_header_online_dynamic_counter(en_item, t_item)
+        if en_text and t_text and en_text == t_text and not en_placeholders and not is_dynamic_counter:
             msg = "Target text appears untranslated (identical to EN)"
             issues.append({
                 "id": _issue_id("TRANSLATION_MISMATCH", item_id, t_item["url"], msg),
