@@ -199,7 +199,46 @@ SEE ERRORS is expected to read persisted Phase 6 issue artifacts and their evide
 The page should not depend on re-running OCR or AI checks during page rendering.  
 It should display what Phase 6 already generated and stored.
 
-## 12. Non-goals
+## 12. Phase 6 deterministic translation QA pipeline
+
+Phase 6 has been refactored into a modular deterministic translation QA pipeline with the following structure:
+
+### 12.1 Pipeline architecture
+
+The Phase 6 pipeline consists of:
+
+- **Provider layer** (`phase6_providers.py`): supplies curated EN and target-language items, pairing metadata, and evidence sources.
+- **Review layer** (`phase6_review.py`): runs deterministic and AI-assisted checks over paired items to identify suspicious localization cases.
+- **Runner** (`run_phase6.py`): orchestrates the pipeline, manages artifact I/O, and persists issues.
+
+### 12.2 Dynamic counter normalization
+
+Phase 6 normalizes dynamic counters (e.g., "1 item", "2 items") to a canonical form before comparison.
+
+This prevents false positives when the same content appears with different numeric values across languages.
+
+### 12.3 Missing-target evidence sourcing
+
+When a target-language item is missing (not captured or not found in the pairing), Phase 6 generates evidence that includes:
+
+- the EN reference item details;
+- the expected capture context (URL, state, viewport, tier);
+- a clear indication that the target was not found.
+
+This allows operators to understand why an issue was generated and to investigate missing captures.
+
+### 12.4 Evidence signals
+
+Phase 6 evidence includes deterministic signals that contributed to issue generation:
+
+- text comparison results (EN vs. target);
+- placeholder consistency checks;
+- OCR quality signals when applicable;
+- AI-assisted review signals (spelling, grammar, meaning).
+
+These signals are preserved in the persisted issue artifact so that operators can understand the reasoning behind each issue.
+
+## 13. Non-goals
 
 Phase 6 does **not** exist to:
 
