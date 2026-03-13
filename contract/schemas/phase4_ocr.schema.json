@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://polyglot-watchdog/contract/schemas/phase4_ocr.schema.json",
+  "title": "Phase 4 OCR Artifact",
+  "description": "OCR output rows for approved image-backed eligible items. OCR.Space provider only (engine 3).",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "item_id",
+      "page_id",
+      "url",
+      "language",
+      "viewport_kind",
+      "state",
+      "user_tier",
+      "source_image_uri",
+      "ocr_text",
+      "ocr_provider",
+      "ocr_engine",
+      "ocr_notes",
+      "provider_meta",
+      "status"
+    ],
+    "properties": {
+      "item_id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "page_id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "url": {
+        "type": "string",
+        "format": "uri"
+      },
+      "language": {
+        "type": "string",
+        "minLength": 2
+      },
+      "viewport_kind": {
+        "type": "string"
+      },
+      "state": {
+        "type": "string"
+      },
+      "user_tier": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "source_image_uri": {
+        "type": "string",
+        "minLength": 1
+      },
+      "ocr_text": {
+        "type": "string"
+      },
+      "ocr_provider": {
+        "type": "string",
+        "const": "ocr.space"
+      },
+      "ocr_engine": {
+        "type": "string",
+        "const": "3"
+      },
+      "ocr_notes": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "provider_meta": {
+        "type": "object"
+      },
+      "status": {
+        "type": "string",
+        "enum": [
+          "ok",
+          "skipped",
+          "failed"
+        ],
+        "description": "ok: OCR produced usable normalized text; skipped: OCR intentionally not attempted for a non-error reason; failed: OCR attempted/expected but no valid text could be produced."
+      }
+    },
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "status": {
+              "const": "ok"
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "ocr_text": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    ]
+  }
+}

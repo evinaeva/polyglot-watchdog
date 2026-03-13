@@ -42,6 +42,7 @@ _ARTIFACT_NAME_BY_FILENAME = {
     "universal_sections.json": "universal_sections",
     "template_rules.json": "template_rules",
     "eligible_dataset.json": "eligible_dataset",
+    "phase4_ocr.json": "phase4_ocr",
     "issues.json": "issues",
 }
 

@@ -3,6 +3,7 @@ from unittest.mock import patch
 from pipeline.phase4_ocr import build_phase4_ocr_rows
 from pipeline.phase4_ocr_provider import ocrspace_extract_text
 from pipeline.run_phase6 import run
+from pipeline.schema_validator import SchemaValidationError, validate
 
 
 class _FakeResponse:
@@ -78,6 +79,70 @@ def test_phase4_rows_include_only_image_backed_items_and_stable_shape():
     }
 
 
+
+def _phase4_row(status: str = "ok") -> dict:
+    row = {
+        "item_id": "img-1",
+        "page_id": "p1",
+        "url": "https://example.com",
+        "language": "fr",
+        "viewport_kind": "desktop",
+        "state": "baseline",
+        "user_tier": "guest",
+        "source_image_uri": "gs://bucket/page.png",
+        "ocr_text": "cta" if status == "ok" else "",
+        "ocr_provider": "ocr.space",
+        "ocr_engine": "3",
+        "ocr_notes": [],
+        "provider_meta": {"provider": "ocr.space"},
+        "status": status,
+    }
+    if status == "skipped":
+        row["ocr_notes"] = ["missing_api_key"]
+    if status == "failed":
+        row["ocr_notes"] = ["request_failed"]
+    return row
+
+
+def test_phase4_ocr_schema_accepts_ok_skipped_failed_rows():
+    rows = [_phase4_row("ok"), _phase4_row("skipped"), _phase4_row("failed")]
+    validate("phase4_ocr", rows)
+
+
+def test_phase4_ocr_schema_rejects_invalid_status():
+    rows = [_phase4_row("unknown")]
+    try:
+        validate("phase4_ocr", rows)
+        assert False, "expected schema validation to fail for invalid status"
+    except SchemaValidationError:
+        pass
+
+
+def test_phase4_ocr_schema_rejects_missing_required_field():
+    row = _phase4_row("ok")
+    del row["ocr_engine"]
+    try:
+        validate("phase4_ocr", [row])
+        assert False, "expected schema validation to fail for missing required field"
+    except SchemaValidationError:
+        pass
+
+
+def test_phase4_output_rows_validate_against_contract_schema():
+    eligible = [{"item_id": "img-1", "page_id": "p1", "url": "https://example.com", "language": "fr"}]
+    collected = [{"item_id": "img-1", "page_id": "p1", "element_type": "img", "tag": "img", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}, "viewport_kind": "desktop", "state": "baseline", "user_tier": "guest"}]
+    screenshots = [{"page_id": "p1", "storage_uri": "gs://b/page.png"}]
+
+    rows = build_phase4_ocr_rows(
+        eligible,
+        collected,
+        screenshots,
+        image_fetcher=lambda _: _tiny_png_bytes(),
+        ocr_fn=lambda _: {"status": "ok", "ocr_text": "cta", "ocr_provider": "ocr.space", "ocr_engine": "3", "ocr_notes": [], "provider_meta": {"provider": "ocr.space"}},
+    )
+
+    validate("phase4_ocr", rows)
+
 def test_phase6_consumes_phase4_ocr_artifact_without_contract_changes():
     en_item = {"item_id": "item-1", "page_id": "en-page-1", "url": "https://example.com/p", "language": "en", "text": "Buy", "element_type": "p", "tag": "p", "attributes": None}
     target_item = {"item_id": "item-1", "page_id": "fr-page-1", "url": "https://example.com/fr/p", "language": "fr", "text": "Acheter", "element_type": "img", "tag": "img", "attributes": None}
@@ -99,3 +164,23 @@ def test_phase6_consumes_phase4_ocr_artifact_without_contract_changes():
     assert len(issues) == 1
     assert issues[0]["category"] == "FORMATTING_MISMATCH"
     assert issues[0]["evidence"]["ocr_text"] == "X"
+
+
+def test_phase6_continues_when_phase4_ocr_artifact_is_absent():
+    en_item = {"item_id": "item-1", "page_id": "en-page-1", "url": "https://example.com/p", "language": "en", "text": "Buy", "element_type": "p", "tag": "p", "attributes": None}
+    target_item = {"item_id": "item-1", "page_id": "fr-page-1", "url": "https://example.com/fr/p", "language": "fr", "text": "Acheter", "element_type": "img", "tag": "img", "attributes": None}
+    artifacts = [
+        [en_item],
+        [target_item],
+        [{"item_id": "item-1", "page_id": "en-page-1", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}}],
+        [{"item_id": "item-1", "page_id": "fr-page-1", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}}],
+        [{"page_id": "en-page-1", "storage_uri": "gs://b/en.png"}],
+        [{"page_id": "fr-page-1", "storage_uri": "gs://b/fr.png"}],
+    ]
+
+    with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts + [FileNotFoundError("missing")]), patch(
+        "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+    ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
+        issues = run("example.com", "run-en", "run-fr")
+
+    assert issues == []
