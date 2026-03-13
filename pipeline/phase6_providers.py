@@ -28,6 +28,15 @@ class MeaningSignals:
     provider_meta: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class _PairReviewResult:
+    spelling_score: float
+    grammar_score: float
+    meaning_mismatch_score: float
+    notes: list[str]
+    provider_meta: dict[str, Any] = field(default_factory=dict)
+
+
 class Phase6ReviewProvider(Protocol):
     def review_spelling_grammar(self, text_en: str, text_target: str, language: str) -> SpellingGrammarSignals:
         ...
@@ -101,55 +110,73 @@ class LLMReviewProvider:
         self._endpoint = endpoint
         self._fallback = fallback_provider or DeterministicOfflineProvider()
         self._request_fn = request_fn or self._default_request
+        self._pair_reviews: dict[tuple[str, str, str], _PairReviewResult] = {}
 
     def review_spelling_grammar(self, text_en: str, text_target: str, language: str) -> SpellingGrammarSignals:
-        parsed = self._review(text_en=text_en, text_target=text_target, language=language)
-        if parsed is None:
-            fallback = self._fallback.review_spelling_grammar(text_en, text_target, language)
-            return SpellingGrammarSignals(
-                spelling_score=fallback.spelling_score,
-                grammar_score=fallback.grammar_score,
-                notes=[*fallback.notes, "ai_fallback_used"],
-                provider_meta={"provider": "llm", "mode": "ai", "model": self._model, "fallback_used": True},
-            )
+        pair_review = self._get_pair_review(text_en=text_en, text_target=text_target, language=language)
 
         return SpellingGrammarSignals(
-            spelling_score=self._clamp(parsed.get("spelling_score")),
-            grammar_score=self._clamp(parsed.get("grammar_score")),
-            notes=self._sanitize_notes(parsed.get("notes")),
-            provider_meta={
-                "provider": "llm",
-                "mode": "ai",
-                "model": self._model,
-                "fallback_used": False,
-                "provider_score_summary": {
-                    "spelling_score": self._clamp(parsed.get("spelling_score")),
-                    "grammar_score": self._clamp(parsed.get("grammar_score")),
-                },
-            },
+            spelling_score=pair_review.spelling_score,
+            grammar_score=pair_review.grammar_score,
+            notes=pair_review.notes,
+            provider_meta=pair_review.provider_meta,
         )
 
     def review_meaning(self, text_en: str, text_target: str, language: str) -> MeaningSignals:
-        parsed = self._review(text_en=text_en, text_target=text_target, language=language)
-        if parsed is None:
-            fallback = self._fallback.review_meaning(text_en, text_target, language)
-            return MeaningSignals(
-                meaning_mismatch_score=fallback.meaning_mismatch_score,
-                notes=[*fallback.notes, "ai_fallback_used"],
-                provider_meta={"provider": "llm", "mode": "ai", "model": self._model, "fallback_used": True},
-            )
+        pair_review = self._get_pair_review(text_en=text_en, text_target=text_target, language=language)
 
         return MeaningSignals(
-            meaning_mismatch_score=self._clamp(parsed.get("meaning_mismatch_score")),
-            notes=self._sanitize_notes(parsed.get("notes")),
-            provider_meta={
-                "provider": "llm",
-                "mode": "ai",
-                "model": self._model,
-                "fallback_used": False,
-                "provider_score_summary": {"meaning_mismatch_score": self._clamp(parsed.get("meaning_mismatch_score"))},
-            },
+            meaning_mismatch_score=pair_review.meaning_mismatch_score,
+            notes=pair_review.notes,
+            provider_meta=pair_review.provider_meta,
         )
+
+    def _get_pair_review(self, text_en: str, text_target: str, language: str) -> _PairReviewResult:
+        cache_key = (text_en, text_target, language)
+        cached = self._pair_reviews.get(cache_key)
+        if cached is not None:
+            return cached
+
+        parsed = self._review(text_en=text_en, text_target=text_target, language=language)
+        if parsed is None:
+            fallback_spelling_grammar = self._fallback.review_spelling_grammar(text_en, text_target, language)
+            fallback_meaning = self._fallback.review_meaning(text_en, text_target, language)
+            fallback_notes = self._merge_notes(
+                fallback_spelling_grammar.notes,
+                fallback_meaning.notes,
+                ["ai_fallback_used"],
+            )
+            result = _PairReviewResult(
+                spelling_score=fallback_spelling_grammar.spelling_score,
+                grammar_score=fallback_spelling_grammar.grammar_score,
+                meaning_mismatch_score=fallback_meaning.meaning_mismatch_score,
+                notes=fallback_notes,
+                provider_meta={"provider": "llm", "mode": "ai", "model": self._model, "fallback_used": True},
+            )
+        else:
+            spelling_score = self._clamp(parsed.get("spelling_score"))
+            grammar_score = self._clamp(parsed.get("grammar_score"))
+            meaning_score = self._clamp(parsed.get("meaning_mismatch_score"))
+            result = _PairReviewResult(
+                spelling_score=spelling_score,
+                grammar_score=grammar_score,
+                meaning_mismatch_score=meaning_score,
+                notes=self._sanitize_notes(parsed.get("notes")),
+                provider_meta={
+                    "provider": "llm",
+                    "mode": "ai",
+                    "model": self._model,
+                    "fallback_used": False,
+                    "provider_score_summary": {
+                        "spelling_score": spelling_score,
+                        "grammar_score": grammar_score,
+                        "meaning_mismatch_score": meaning_score,
+                    },
+                },
+            )
+
+        self._pair_reviews[cache_key] = result
+        return result
 
     def _review(self, text_en: str, text_target: str, language: str) -> dict[str, Any] | None:
         if not self._api_key:
@@ -220,6 +247,16 @@ class LLMReviewProvider:
             return ["llm_response_no_notes"]
         sanitized = [str(n).strip() for n in notes if str(n).strip()]
         return sanitized[:5] if sanitized else ["llm_response_no_notes"]
+
+    @staticmethod
+    def _merge_notes(*note_lists: list[str]) -> list[str]:
+        merged: list[str] = []
+        for notes in note_lists:
+            for note in notes:
+                cleaned = str(note).strip()
+                if cleaned and cleaned not in merged:
+                    merged.append(cleaned)
+        return merged[:5] if merged else ["llm_response_no_notes"]
 
 
 def build_provider(mode: str = "offline") -> Phase6ReviewProvider:
