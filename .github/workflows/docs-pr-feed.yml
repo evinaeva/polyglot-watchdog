@@ -15,7 +15,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
+
+      - name: Preserve feed script from main
+        run: |
+          cp .github/docs_autoupdate/scripts/update_merged_pr_feed.py "$RUNNER_TEMP/update_merged_pr_feed.py"
 
       - name: Configure git
         run: |
@@ -34,7 +39,7 @@ jobs:
       - name: Append merged PR feed entry
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python .github/docs_autoupdate/scripts/update_merged_pr_feed.py
+        run: python "$RUNNER_TEMP/update_merged_pr_feed.py"
 
       - name: Commit and push feed update
         run: |
