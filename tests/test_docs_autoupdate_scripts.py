@@ -4,12 +4,11 @@ import os
 import subprocess
 import sys
 
-import pytest
 from pathlib import Path
 
 
-def run(cmd, cwd, env=None):
-    return subprocess.run(cmd, cwd=cwd, env=env, text=True, capture_output=True, check=False)
+def run(cmd, cwd):
+    return subprocess.run(cmd, cwd=cwd, text=True, capture_output=True, check=False)
 
 
 def init_git_repo(tmp_path: Path) -> None:
@@ -22,7 +21,7 @@ def init_git_repo(tmp_path: Path) -> None:
 
 
 def load_docs_ai_module():
-    script_path = Path(__file__).resolve().parents[1] / ".github" / "scripts" / "docs_ai_sync.py"
+    script_path = Path(__file__).resolve().parents[1] / ".github" / "docs_autoupdate" / "scripts" / "docs_ai_sync.py"
     spec = importlib.util.spec_from_file_location("docs_ai_sync_test", script_path)
     mod = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -35,10 +34,10 @@ def test_validate_docs_diff_allows_allowlist(tmp_path):
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / "x.md").write_text("x\n", encoding="utf-8")
     repo = Path(__file__).resolve().parents[1]
-    script = repo / ".github" / "scripts" / "validate_docs_diff.py"
+    script = repo / ".github" / "docs_autoupdate" / "scripts" / "validate_docs_diff.py"
     env = os.environ.copy()
-    env["DOCS_AUTOUPDATE_CONFIG"] = str(repo / ".github" / "scripts" / "config.json")
-    res = run([sys.executable, str(script), "--ref", "HEAD"], tmp_path, env=env)
+    env["DOCS_AUTOUPDATE_CONFIG"] = str(repo / ".github" / "docs_autoupdate" / "scripts" / "config.json")
+    res = run([sys.executable, str(script), "--ref", "HEAD"], tmp_path)
     assert res.returncode == 0, res.stderr
 
 
@@ -48,10 +47,10 @@ def test_validate_docs_diff_ignores_github_tmp_state_file(tmp_path):
     tmp_dir.mkdir(parents=True)
     (tmp_dir / "docs_sync_state.json").write_text("{}\n", encoding="utf-8")
     repo = Path(__file__).resolve().parents[1]
-    script = repo / ".github" / "scripts" / "validate_docs_diff.py"
+    script = repo / ".github" / "docs_autoupdate" / "scripts" / "validate_docs_diff.py"
     env = os.environ.copy()
-    env["DOCS_AUTOUPDATE_CONFIG"] = str(repo / ".github" / "scripts" / "config.json")
-    res = run([sys.executable, str(script), "--ref", "HEAD"], tmp_path, env=env)
+    env["DOCS_AUTOUPDATE_CONFIG"] = str(repo / ".github" / "docs_autoupdate" / "scripts" / "config.json")
+    res = run([sys.executable, str(script), "--ref", "HEAD"], tmp_path)
     assert res.returncode == 0, res.stderr
 
 
@@ -59,10 +58,10 @@ def test_validate_docs_diff_rejects_blacklist(tmp_path):
     init_git_repo(tmp_path)
     (tmp_path / "Dockerfile").write_text("FROM alpine\n", encoding="utf-8")
     repo = Path(__file__).resolve().parents[1]
-    script = repo / ".github" / "scripts" / "validate_docs_diff.py"
+    script = repo / ".github" / "docs_autoupdate" / "scripts" / "validate_docs_diff.py"
     env = os.environ.copy()
-    env["DOCS_AUTOUPDATE_CONFIG"] = str(repo / ".github" / "scripts" / "config.json")
-    res = run([sys.executable, str(script), "--ref", "HEAD"], tmp_path, env=env)
+    env["DOCS_AUTOUPDATE_CONFIG"] = str(repo / ".github" / "docs_autoupdate" / "scripts" / "config.json")
+    res = run([sys.executable, str(script), "--ref", "HEAD"], tmp_path)
     assert res.returncode == 1
     assert "Blacklisted files" in res.stderr
 
@@ -90,10 +89,10 @@ def test_merged_feed_duplicate_guard(tmp_path):
     event_path = tmp_path / "event.json"
     event_path.write_text(json.dumps(event), encoding="utf-8")
 
-    script = repo / ".github" / "scripts" / "update_merged_pr_feed.py"
+    script = repo / ".github" / "docs_autoupdate" / "scripts" / "update_merged_pr_feed.py"
     env = os.environ.copy()
     env["GITHUB_EVENT_PATH"] = str(event_path)
-    env["DOCS_AUTOUPDATE_CONFIG"] = str(repo / ".github" / "scripts" / "config.json")
+    env["DOCS_AUTOUPDATE_CONFIG"] = str(repo / ".github" / "docs_autoupdate" / "scripts" / "config.json")
 
     first = subprocess.run([sys.executable, str(script)], cwd=tmp_path, env=env, text=True, capture_output=True)
     assert first.returncode == 0, first.stderr
@@ -422,44 +421,3 @@ def test_docs_ai_rejects_replace_file_contract(monkeypatch, tmp_path):
         '{"updates":[{"path":"docs/a.md","action":"replace_file","content":"x"}]}',
     )
     assert rc == 1
-
-
-def test_docs_autoupdate_config_loader_reads_canonical_config():
-    loader_path = Path(__file__).resolve().parents[1] / ".github" / "scripts" / "config_loader.py"
-    spec = importlib.util.spec_from_file_location("docs_config_loader_test", loader_path)
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(mod)
-
-    cfg = mod.load_config()
-    assert cfg["paths"]["prompt_template_path"] == ".github/docs_autoupdate/prompts/docs_sync_prompt.txt"
-    assert cfg["workflows"]["docs_ai_sync"]["feed_ref"] == "origin/DOCS_AUTOUPDATE"
-
-
-def test_check_schedule_sync_matches_config():
-    repo = Path(__file__).resolve().parents[1]
-    script = repo / ".github" / "scripts" / "check_schedule_sync.py"
-    res = run([sys.executable, str(script)], repo)
-    assert res.returncode == 0, res.stderr
-
-
-def test_validate_docs_diff_fails_on_empty_blacklist_config(monkeypatch, tmp_path):
-    bad_config = {
-        "workflows": {},
-        "paths": {"runtime_temp_prefixes": [".github/tmp/"]},
-        "docs_rules": {
-            "allowed_prefixes": ["docs/"],
-            "allowed_root_files": [],
-            "blacklist": []
-        }
-    }
-    cfg_path = tmp_path / "config.json"
-    cfg_path.write_text(json.dumps(bad_config), encoding="utf-8")
-
-    monkeypatch.setenv("DOCS_AUTOUPDATE_CONFIG", str(cfg_path))
-    script_path = Path(__file__).resolve().parents[1] / ".github" / "scripts" / "validate_docs_diff.py"
-    spec = importlib.util.spec_from_file_location("validate_docs_diff_bad_cfg", script_path)
-    mod = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    with pytest.raises(RuntimeError, match="blacklist cannot be empty"):
-        spec.loader.exec_module(mod)

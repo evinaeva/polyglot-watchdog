@@ -11,8 +11,6 @@ permissions:
 jobs:
   docs-sync:
     runs-on: ubuntu-latest
-    env:
-      PYTHONDONTWRITEBYTECODE: "1"
     steps:
       - name: Checkout main
         uses: actions/checkout@v4
@@ -20,42 +18,16 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Locate docs auto-update scripts
-        run: |
-          for candidate in .github/scripts .github/docs_autoupdate/scripts scripts/docs_autoupdate; do
-            if [ -f "$candidate/config.json" ] && [ -f "$candidate/docs_ai_sync.py" ]; then
-              echo "DOCS_AUTOUPDATE_SCRIPT_DIR=$candidate" >> "$GITHUB_ENV"
-              echo "DOCS_AUTOUPDATE_CONFIG=$candidate/config.json" >> "$GITHUB_ENV"
-              exit 0
-            fi
-          done
-          echo "Unable to locate docs auto-update scripts directory" >&2
-          exit 1
-
       - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Load docs auto-update config
-        run: |
-          CONFIG="$DOCS_AUTOUPDATE_CONFIG"
-          echo "TARGET_BRANCH=$(python -c 'import json;print(json.load(open("'"$CONFIG"'"))["workflows"]["docs_ai_sync"]["target_branch"])')" >> "$GITHUB_ENV"
-          echo "FEED_BRANCH=$(python -c 'import json;print(json.load(open("'"$CONFIG"'"))["workflows"]["docs_pr_feed"]["feed_branch"])')" >> "$GITHUB_ENV"
-          echo "FEED_PATH=$(python -c 'import json;print(json.load(open("'"$CONFIG"'"))["paths"]["feed_path"])')" >> "$GITHUB_ENV"
-          echo "STATE_PATH=$(python -c 'import json;print(json.load(open("'"$CONFIG"'"))["paths"]["state_path"])')" >> "$GITHUB_ENV"
-          echo "RAW_RESPONSE_PATH=$(python -c 'import json;print(json.load(open("'"$CONFIG"'"))["paths"]["claude_raw_response_debug_path"])')" >> "$GITHUB_ENV"
-          echo "DOCS_COMMIT_MSG=$(python -c 'import json;print(json.load(open("'"$CONFIG"'"))["workflows"]["docs_ai_sync"]["docs_commit_message"])')" >> "$GITHUB_ENV"
-          echo "STATE_COMMIT_MSG=$(python -c 'import json;print(json.load(open("'"$CONFIG"'"))["workflows"]["docs_ai_sync"]["state_commit_message"])')" >> "$GITHUB_ENV"
-
       - name: Fetch branches
         run: |
-          git fetch origin "$TARGET_BRANCH"
-          git fetch origin "$FEED_BRANCH" || true
-          git checkout "$TARGET_BRANCH"
-
-      - name: Verify schedule consistency
-        run: python "$DOCS_AUTOUPDATE_SCRIPT_DIR/check_schedule_sync.py"
+          git fetch origin main
+          git fetch origin DOCS_AUTOUPDATE || true
+          git checkout main
 
       - name: AI docs sync (apply docs updates to main working tree)
         id: sync
@@ -65,38 +37,38 @@ jobs:
           if [ -n "${{ vars.ANTHROPIC_MODEL }}" ]; then
             export ANTHROPIC_MODEL="${{ vars.ANTHROPIC_MODEL }}"
           fi
-          python "$DOCS_AUTOUPDATE_SCRIPT_DIR/docs_ai_sync.py" --github-output "$GITHUB_OUTPUT"
+          python .github/docs_autoupdate/scripts/docs_ai_sync.py --github-output "$GITHUB_OUTPUT"
 
       - name: Upload Claude raw response on sync failure
         if: failure() && steps.sync.outcome == 'failure' && hashFiles('.github/tmp/claude_raw_response.txt') != ''
         uses: actions/upload-artifact@v4
         with:
           name: claude-raw-response
-          path: ${{ env.RAW_RESPONSE_PATH }}
+          path: .github/tmp/claude_raw_response.txt
           if-no-files-found: ignore
 
       - name: Validate documentation diff scope
         if: steps.sync.outputs.docs_changed == 'true'
-        run: python "$DOCS_AUTOUPDATE_SCRIPT_DIR/validate_docs_diff.py" --ref HEAD
+        run: python .github/docs_autoupdate/scripts/validate_docs_diff.py --ref HEAD
 
-      - name: Commit docs updates to target branch
+      - name: Commit docs updates to main
         if: steps.sync.outputs.docs_changed == 'true'
         run: |
-          if [ "$(git branch --show-current)" != "$TARGET_BRANCH" ]; then
-            echo "Refusing to commit docs: not on $TARGET_BRANCH" >&2
+          if [ "$(git branch --show-current)" != "main" ]; then
+            echo "Refusing to commit docs: not on main" >&2
             exit 1
           fi
           git add -A -- docs spec contract/schemas README.md RELEASE_CRITERIA.md APPLYING_STREAM1.md
-          git reset -- "$FEED_PATH" 2>/dev/null || true
-          git reset -- "$STATE_PATH" 2>/dev/null || true
+          git reset -- docs/auto/merged_pr_feed.md 2>/dev/null || true
+          git reset -- docs/auto/docs_sync_state.json 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "No docs changes to commit."
             exit 0
           fi
-          git commit -m "$DOCS_COMMIT_MSG"
-          git push origin "$TARGET_BRANCH"
+          git commit -m "chore(docs): automated AI docs sync"
+          git push origin main
 
-      - name: Update sync state in feed branch
+      - name: Update sync state in DOCS_AUTOUPDATE
         if: steps.sync.outputs.state_changed == 'true'
         run: |
           state_file="${{ steps.sync.outputs.state_output_path }}"
@@ -104,18 +76,18 @@ jobs:
             echo "State output file missing" >&2
             exit 1
           fi
-          git fetch origin "$FEED_BRANCH" || true
-          if git show-ref --verify --quiet "refs/remotes/origin/$FEED_BRANCH"; then
-            git checkout -B "$FEED_BRANCH" "origin/$FEED_BRANCH"
+          git fetch origin DOCS_AUTOUPDATE || true
+          if git show-ref --verify --quiet refs/remotes/origin/DOCS_AUTOUPDATE; then
+            git checkout -B DOCS_AUTOUPDATE origin/DOCS_AUTOUPDATE
           else
-            git checkout -B "$FEED_BRANCH"
+            git checkout -B DOCS_AUTOUPDATE
           fi
-          mkdir -p "$(dirname "$STATE_PATH")"
-          cp "$state_file" "$STATE_PATH"
-          git add "$STATE_PATH"
+          mkdir -p docs/auto
+          cp "$state_file" docs/auto/docs_sync_state.json
+          git add docs/auto/docs_sync_state.json
           if git diff --cached --quiet; then
             echo "No state changes to commit."
             exit 0
           fi
-          git commit -m "$STATE_COMMIT_MSG"
-          git push origin "$FEED_BRANCH"
+          git commit -m "chore(docs-auto): advance docs sync state"
+          git push origin DOCS_AUTOUPDATE

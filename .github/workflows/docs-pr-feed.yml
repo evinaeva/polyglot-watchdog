@@ -9,73 +9,39 @@ permissions:
 
 jobs:
   append-feed:
-    if: ${{ github.event.pull_request.merged == true }}
+    if: ${{ github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main' }}
     runs-on: ubuntu-latest
-    env:
-      PYTHONDONTWRITEBYTECODE: "1"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: main
           fetch-depth: 0
-
-      - name: Locate docs auto-update scripts
-        run: |
-          for candidate in .github/scripts .github/docs_autoupdate/scripts scripts/docs_autoupdate; do
-            if [ -f "$candidate/config.json" ] && [ -f "$candidate/update_merged_pr_feed.py" ]; then
-              echo "DOCS_AUTOUPDATE_SCRIPT_DIR=$candidate" >> "$GITHUB_ENV"
-              echo "DOCS_AUTOUPDATE_CONFIG=$candidate/config.json" >> "$GITHUB_ENV"
-              exit 0
-            fi
-          done
-          echo "Unable to locate docs auto-update scripts directory" >&2
-          exit 1
 
       - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Load docs auto-update config
+      - name: Switch to DOCS_AUTOUPDATE
         run: |
-          CONFIG="$DOCS_AUTOUPDATE_CONFIG"
-          echo "FEED_BRANCH=$(python -c 'import json;print(json.load(open("'"$CONFIG"'"))["workflows"]["docs_pr_feed"]["feed_branch"])')" >> "$GITHUB_ENV"
-          echo "FEED_PATH=$(python -c 'import json;print(json.load(open("'"$CONFIG"'"))["paths"]["feed_path"])')" >> "$GITHUB_ENV"
-          echo "FEED_COMMIT_TEMPLATE=$(python -c 'import json;print(json.load(open("'"$CONFIG"'"))["workflows"]["docs_pr_feed"]["commit_message_template"])')" >> "$GITHUB_ENV"
-
-      - name: Preserve feed writer scripts from main
-        run: |
-          TEMP_SCRIPTS_DIR="$RUNNER_TEMP/docs-pr-feed-scripts"
-          mkdir -p "$TEMP_SCRIPTS_DIR"
-          cp "$DOCS_AUTOUPDATE_SCRIPT_DIR/update_merged_pr_feed.py" "$TEMP_SCRIPTS_DIR/update_merged_pr_feed.py"
-          cp "$DOCS_AUTOUPDATE_SCRIPT_DIR/config_loader.py" "$TEMP_SCRIPTS_DIR/config_loader.py"
-          cp "$DOCS_AUTOUPDATE_CONFIG" "$TEMP_SCRIPTS_DIR/config.json"
-          echo "TEMP_SCRIPTS_DIR=$TEMP_SCRIPTS_DIR" >> "$GITHUB_ENV"
-          echo "DOCS_AUTOUPDATE_CONFIG=$TEMP_SCRIPTS_DIR/config.json" >> "$GITHUB_ENV"
-
-      - name: Switch to feed branch
-        run: |
-          git fetch origin "$FEED_BRANCH" || true
-          if git show-ref --verify --quiet "refs/remotes/origin/$FEED_BRANCH"; then
-            git checkout -B "$FEED_BRANCH" "origin/$FEED_BRANCH"
+          git fetch origin DOCS_AUTOUPDATE || true
+          if git show-ref --verify --quiet refs/remotes/origin/DOCS_AUTOUPDATE; then
+            git checkout -B DOCS_AUTOUPDATE origin/DOCS_AUTOUPDATE
           else
-            git checkout -B "$FEED_BRANCH"
+            git checkout -B DOCS_AUTOUPDATE
           fi
 
       - name: Append merged PR feed entry
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PYTHONPATH: ${{ env.TEMP_SCRIPTS_DIR }}
-        run: python "${{ env.TEMP_SCRIPTS_DIR }}/update_merged_pr_feed.py"
+        run: python .github/docs_autoupdate/scripts/update_merged_pr_feed.py
 
       - name: Commit and push feed update
         run: |
-          git add "$FEED_PATH"
+          git add docs/auto/merged_pr_feed.md
           if git diff --cached --quiet; then
             echo "No feed changes to commit."
             exit 0
           fi
-          msg="${FEED_COMMIT_TEMPLATE//\{pr_number\}/${{ github.event.pull_request.number }}}"
-          git commit -m "$msg"
-          git push origin "$FEED_BRANCH"
+          git commit -m "chore(docs-auto): append merged PR #${{ github.event.pull_request.number }} to feed"
+          git push origin DOCS_AUTOUPDATE
