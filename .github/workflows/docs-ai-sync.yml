@@ -25,7 +25,7 @@ jobs:
 
       - name: Load docs auto-update config
         run: |
-          CONFIG=.github/docs_autoupdate/config.json
+          CONFIG=.github/scripts/config.json
           echo "TARGET_BRANCH=$(python -c 'import json;print(json.load(open("'"$CONFIG"'"))["workflows"]["docs_ai_sync"]["target_branch"])')" >> "$GITHUB_ENV"
           echo "FEED_BRANCH=$(python -c 'import json;print(json.load(open("'"$CONFIG"'"))["workflows"]["docs_pr_feed"]["feed_branch"])')" >> "$GITHUB_ENV"
           echo "FEED_PATH=$(python -c 'import json;print(json.load(open("'"$CONFIG"'"))["paths"]["feed_path"])')" >> "$GITHUB_ENV"

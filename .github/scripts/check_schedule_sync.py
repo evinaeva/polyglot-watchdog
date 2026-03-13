@@ -7,7 +7,7 @@ import json
 import re
 from pathlib import Path
 
-CONFIG_PATH = Path('.github/docs_autoupdate/config.json')
+CONFIG_PATH = Path('.github/scripts/config.json')
 WORKFLOW_PATH = Path('.github/workflows/docs-ai-sync.yml')
 
 
