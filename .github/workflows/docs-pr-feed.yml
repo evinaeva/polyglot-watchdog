@@ -41,7 +41,7 @@ jobs:
       - name: Append merged PR feed entry
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python .github/docs_autoupdate/scripts/update_merged_pr_feed.py
+        run: python .github/scripts/update_merged_pr_feed.py
 
       - name: Commit and push feed update
         run: |
