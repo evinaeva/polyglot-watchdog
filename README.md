@@ -96,10 +96,11 @@ Use these statements consistently:
 - "The repository contains real artifact-backed pipeline components and partial operator UI integration."
 - "The project is pre-production and not yet production-ready."
 - "The operator workflow is multi-page by design."
-- "OCR is deferred from v1.0."
+- "OCR beyond the current narrow approved image-backed handoff scope is deferred from v1.0."
+- "OCR remains non-blocking/additive for v1.0 scope; when OCR handoff exists, Phase 6 may use usable OCR text as canonical comparison text for approved image-backed items and otherwise falls back to normalized DOM text."
 - "Manual seed URL workflow is valid for v1.0."
 - "Phase 6 uses a two-layer taxonomy: persisted `issue.category` (coarse contract) and evidence-level `review_class` (detailed QA)."
-- "Phase 6 compares curated EN reference content against curated target-language content; OCR text is consumed only for approved `<img>` elements and participates in the same EN ↔ target comparison flow."
+- "Phase 6 compares curated EN reference content against curated target-language content; OCR text is consumed only for approved `<img>` elements, is supporting input overall, and does not introduce new top-level contract categories."
 
 Avoid these outdated statements:
 

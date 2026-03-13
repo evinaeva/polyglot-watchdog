@@ -38,8 +38,8 @@ The primary comparison is:
 
 This is true for both DOM-backed text and image-backed text.
 
-OCR is **not** the main comparison target.  
-OCR is only a way to supply text for image-based content so that those items can also participate in the EN ↔ target comparison flow.
+OCR remains **supporting input overall** and is **not** a separate main comparison model.
+For approved image-backed items only, usable OCR may become the canonical target-side comparison text inside the same EN ↔ target flow; when OCR quality is not usable, Phase 6 falls back to normalized DOM text.
 
 Phase 6 operates on **curated inputs only**:
 
@@ -63,7 +63,7 @@ This means detailed QA classes (for example `SPELLING`, `GRAMMAR`, `MEANING`, `P
 
 ## 4. OCR scope for Phase 6
 
-Phase 6 assumes a strict **DOM-first** model.
+Phase 6 assumes a **DOM-first pipeline with a narrow OCR exception for approved image-backed items**.
 
 ### 4.1 What gets OCR
 OCR is applied **only** to `<img>` elements.
@@ -89,7 +89,7 @@ The baseline OCR choice for this Phase 6 design is:
 This is the default OCR path that Phase 6 expects when OCR text is present for approved `<img>` items.
 
 ### 4.4 OCR role in Phase 6
-OCR output is an input to localization QA, not the final result by itself, and not a standalone issue-type generator.
+OCR output is an input to localization QA, not the final result by itself, and not a standalone issue-type generator. This OCR slice does not change the broader Phase 6 model, does not run whole-page OCR, does not OCR DOM text, and does not add multi-engine orchestration.
 
 OCR should supply:
 
@@ -116,7 +116,7 @@ Status semantics:
 - `skipped`: OCR intentionally not attempted for a non-error reason (for example missing API key).
 - `failed`: OCR attempted or expected but no valid result was produced (input/provider/processing failure).
 
-Phase 6 may consume this artifact when present, but must continue safely when it is absent. OCR text from this artifact is supporting evidence for approved image-backed items in EN ↔ target review and does not create standalone issue categories.
+Phase 6 may consume this artifact when present, but must continue safely when it is absent. OCR text from this artifact is supporting input for approved image-backed items in EN ↔ target review; when quality is usable it may be used as canonical comparison text for that pair, and otherwise Phase 6 falls back to normalized DOM text. This does not create standalone issue categories or alter top-level contract taxonomy.
 
 ## 5. Checks that Phase 6 must perform
 
