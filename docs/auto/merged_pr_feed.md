@@ -282,3 +282,41 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   - pipeline/run_phase6.py
   - tests/test_phase4_ocr.py
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #92 — 2026-03-13T12:09:13Z
+
+- Title: fix: complete docs auto-update path migration to .github/scripts
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/92
+- Author: evinaeva
+- Base branch: main
+- Head branch: tcnch7-codex/fix-path-migration-in-docs-auto-update-system
+- Merge commit: e1f1f7b170abc12b11a92d0ffebf86d3271c92e2
+- Changed files:
+  - .github/docs_autoupdate/README.md
+  - .github/scripts/check_schedule_sync.py
+  - .github/scripts/config.json
+  - .github/scripts/config_loader.py
+  - .github/workflows/docs-ai-sync.yml
+  - .github/workflows/docs-pr-feed.yml
+  - tests/test_docs_autoupdate_scripts.py
+- Description:
+  ### Motivation
+  - The docs auto-update subsystem was in a mixed state where workflows and scripts referenced both `.github/docs_autoupdate/` and `.github/scripts/`, causing a `FileNotFoundError` for the old config path. 
+  - The goal was to converge onto a single canonical automation bundle location so workflows run reliably and preserved temporary execution has all required local dependencies. 
+  - This change is strictly a path migration and stabilization to `.github/scripts/` without changing workflow triggers, branch strategy, or product behavior.
+  
+  ### Description
+  - Moved the canonical config into `.github/scripts/config.json` and updated the shared loader default to point at `.github/scripts/config.json` while preserving the `DOCS_AUTOUPDATE_CONFIG` override mechanism. 
+  - Updated `check_schedule_sync.py` to read the schedule from `.github/scripts/config.json` instead of the obsolete location. 
+  - Updated both workflow YAML files (`.github/workflows/docs-pr-feed.yml` and `.github/workflows/docs-ai-sync.yml`) to load config from `.github/scripts/config.json` and to invoke scripts from `.github/scripts/...` only. 
+  - Made the Docs PR Feed workflow preserve `update_merged_pr_feed.py`, `config_loader.py`, and `config.json` from `main` into the runner temp directory and export `DOCS_AUTOUPDATE_CONFIG` to that preserved config path so preserved execution has the needed files and imports work. 
+  - Adjusted tests and README references to point to the canonical `.github/scripts/` paths so repository tests validate the migration.
+  
+  ### Testing
+  - Ran `pytest -q tests/test_docs_autoupdate_scripts.py` and all tests passed (`19 passed`). 
+  - Performed repository-wide searches to confirm workflows and scripts no longer reference `.github/docs_autoupdate/config.json` or `.github/docs_autoupdate/scripts/` and to verify the canonical path is `.github/scripts/`. 
+  - Verified `check_schedule_sync.py`, `config_loader.py`, workflows, and preserved-temp execution logic resolve and use `.github/scripts/config.json` as intended.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69b3fc3e79e0832c99e4364f18b1c288)
+- Notes: Auto-generated from merged PR metadata.
