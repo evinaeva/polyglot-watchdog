@@ -25,6 +25,8 @@ _PLACEHOLDER_RE = re.compile(r"(%[^%]+%|\[[^\]]+\]|<[^>]+>)")
 _DYNAMIC_NUMBER_RE = re.compile(r"\d+")
 _HEADER_ONLINE_CLASS_TOKENS = {"header_online", "bc_flex", "bc_flex_items_center"}
 _IMAGE_TAGS = {"img", "image"}
+_REPEATED_CHAR_RE = re.compile(r"(.)\1{3,}")
+_NOISY_NOTE_HINTS = ("ambig", "uncertain", "low_conf", "failed", "no_text", "empty")
 
 # Internal Phase 6 QA classes collapse into coarse persisted issue categories.
 # Do not expose these review classes as replacements for top-level `category`.
@@ -84,6 +86,79 @@ def _extract_ocr_text(item: dict) -> str:
         if isinstance(value, str) and value.strip():
             return value.strip()
     return ""
+
+
+def _assess_ocr_quality(en_text: str, ocr_text: str, ocr_notes: list[str] | None) -> dict:
+    text = (ocr_text or "").strip()
+    normalized = re.sub(r"\s+", " ", text)
+    notes = [str(note).strip().lower() for note in (ocr_notes or []) if str(note).strip()]
+
+    signals: dict[str, float] = {}
+    flags: list[str] = []
+    penalty = 0.0
+
+    if not normalized:
+        flags.append("ocr_missing_text")
+        signals["ocr_missing_text"] = 1.0
+        penalty += 0.65
+    else:
+        alnum_count = sum(1 for ch in normalized if ch.isalnum())
+        non_space_count = sum(1 for ch in normalized if not ch.isspace())
+        symbol_ratio = (non_space_count - alnum_count) / max(non_space_count, 1)
+        alnum_ratio = alnum_count / max(non_space_count, 1)
+        ocr_len = len(normalized)
+        en_len = len(en_text.strip())
+        length_ratio = ocr_len / max(en_len, 1)
+        tokens = [token for token in normalized.split(" ") if token]
+        short_token_ratio = (sum(1 for token in tokens if len(token) <= 1) / len(tokens)) if tokens else 1.0
+
+        signals["ocr_symbol_ratio"] = round(symbol_ratio, 4)
+        signals["ocr_alnum_ratio"] = round(alnum_ratio, 4)
+        signals["ocr_length_ratio_vs_en"] = round(length_ratio, 4)
+
+        if ocr_len <= 2:
+            flags.append("ocr_too_short_absolute")
+            penalty += 0.5
+        if length_ratio < 0.15:
+            flags.append("ocr_too_short_vs_source")
+            penalty += 0.25
+        if symbol_ratio > 0.45:
+            flags.append("ocr_symbol_heavy")
+            penalty += 0.2
+        if alnum_ratio < 0.35:
+            flags.append("ocr_low_alnum")
+            penalty += 0.2
+        if short_token_ratio > 0.6:
+            flags.append("ocr_fragmented_tokens")
+            penalty += 0.15
+        if _REPEATED_CHAR_RE.search(normalized.lower()):
+            flags.append("ocr_repeated_chars")
+            penalty += 0.15
+
+    if notes and any(any(hint in note for hint in _NOISY_NOTE_HINTS) for note in notes):
+        flags.append("ocr_provider_uncertainty")
+        signals["ocr_provider_uncertainty"] = 1.0
+        penalty += 0.2
+
+    trust_score = _clamp(1.0 - penalty)
+    if trust_score <= 0.35:
+        trust_bucket = "weak"
+        confidence_adjustment = -0.25
+    elif trust_score < 0.65:
+        trust_bucket = "borderline"
+        confidence_adjustment = -0.1
+    else:
+        trust_bucket = "good"
+        confidence_adjustment = 0.0
+
+    return {
+        "trust_score": trust_score,
+        "trust_bucket": trust_bucket,
+        "confidence_adjustment": confidence_adjustment,
+        "suppress_meaning_claims": trust_bucket == "weak",
+        "flags": flags,
+        "signals": signals,
+    }
 
 
 def _build_evidence(evidence_base: dict, en_text: str, target_text: str, review_class: str, reason: str, signals: dict, pairing_basis: str, ocr_text: str = "", ocr_engine: str = "", provider_notes: list[str] | None = None, provider_meta: dict | None = None) -> dict:
@@ -167,13 +242,28 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
     # supporting input for translation QA, not a standalone issue generator.
     is_image = _is_image_item(target_item) or _is_image_item(en_item)
     ocr_text = _extract_ocr_text(target_item) if is_image else ""
-    ocr_engine = "OCR.Space:engine3" if ocr_text else ""
+    ocr_engine = str(target_item.get("ocr_engine", "")).strip() if is_image else ""
+    if is_image and ocr_text and not ocr_engine:
+        ocr_engine = "OCR.Space:engine3"
+    ocr_notes = list(target_item.get("ocr_notes", [])) if is_image and isinstance(target_item.get("ocr_notes"), list) else []
+    has_ocr_handoff = is_image and any(key in target_item for key in ("ocr_text", "ocr_notes", "ocr_engine"))
+    ocr_quality = _assess_ocr_quality(en_text, ocr_text, ocr_notes) if has_ocr_handoff else None
+
+    def with_ocr_signals(base_signals: dict[str, float], include_quality_metrics: bool = False) -> dict[str, float]:
+        if not ocr_quality:
+            return dict(base_signals)
+        merged = dict(base_signals)
+        merged["ocr_confidence_adjustment"] = ocr_quality["confidence_adjustment"]
+        if include_quality_metrics:
+            for key, value in ocr_quality["signals"].items():
+                merged[key] = value
+        return merged
 
     if en_placeholders != target_placeholders:
-        signals = {
+        signals = with_ocr_signals({
             "placeholder_count_delta": float(abs(len(en_placeholders) - len(target_placeholders))) * 0.08,
             "placeholder_set_mismatch": 0.12,
-        }
+        })
         reason = "Placeholder tokens differ between source and target"
         evidence = _build_evidence(
             context.evidence_base,
@@ -199,7 +289,7 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
         )
 
     if en_text and target_text and en_text == target_text and not en_placeholders and not is_dynamic_counter:
-        signals = {"identical_text": 0.2, "untranslated_indicator": 0.1}
+        signals = with_ocr_signals({"identical_text": 0.2, "untranslated_indicator": 0.1})
         reason = "Source and target text are identical after deterministic normalization"
         evidence = _build_evidence(
             context.evidence_base,
@@ -226,7 +316,7 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
 
     spelling_grammar = provider.review_spelling_grammar(en_text, target_text, context.language)
     if spelling_grammar.spelling_score >= 0.8:
-        signals = {"spelling_score": spelling_grammar.spelling_score}
+        signals = with_ocr_signals({"spelling_score": spelling_grammar.spelling_score})
         reason = "Provider suggests potential spelling issue"
         evidence = _build_evidence(
             context.evidence_base,
@@ -252,7 +342,7 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             )
         )
     if spelling_grammar.grammar_score >= 0.75:
-        signals = {"grammar_score": spelling_grammar.grammar_score}
+        signals = with_ocr_signals({"grammar_score": spelling_grammar.grammar_score})
         reason = "Provider suggests potential grammar issue"
         evidence = _build_evidence(
             context.evidence_base,
@@ -279,8 +369,8 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
         )
 
     meaning = provider.review_meaning(en_text, target_text, context.language)
-    if meaning.meaning_mismatch_score >= 0.7 and not (en_text == target_text):
-        signals = {"meaning_mismatch_score": meaning.meaning_mismatch_score}
+    if meaning.meaning_mismatch_score >= 0.7 and not (en_text == target_text) and not (ocr_quality and ocr_quality["suppress_meaning_claims"]):
+        signals = with_ocr_signals({"meaning_mismatch_score": meaning.meaning_mismatch_score})
         reason = "Provider suggests potential meaning drift"
         evidence = _build_evidence(
             context.evidence_base,
@@ -306,9 +396,11 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             )
         )
 
-    if is_image and ocr_text and len(ocr_text) <= 2:
-        signals = {"ocr_text_too_short": 0.2, "ocr_ambiguity": 0.15}
-        reason = "OCR result is too short for reliable comparison"
+    if ocr_quality and (ocr_quality["trust_bucket"] in {"weak", "borderline"}):
+        signals = with_ocr_signals({"ocr_ambiguity": 0.15 if ocr_quality["trust_bucket"] == "weak" else 0.08}, include_quality_metrics=True)
+        if ocr_quality["flags"]:
+            signals["ocr_noise_flags"] = float(len(ocr_quality["flags"])) * 0.04
+        reason = f"OCR quality is {ocr_quality['trust_bucket']} for reliable translation comparison"
         evidence = _build_evidence(
             context.evidence_base,
             en_text=en_text,
@@ -319,11 +411,17 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             pairing_basis="item_id",
             ocr_text=ocr_text,
             ocr_engine=ocr_engine,
+            provider_notes=[f"ocr_quality_flags:{','.join(ocr_quality['flags'])}"] if ocr_quality["flags"] else None,
         )
+        evidence["ocr_quality"] = {
+            "trust_bucket": ocr_quality["trust_bucket"],
+            "trust_score": ocr_quality["trust_score"],
+            "flags": ocr_quality["flags"],
+        }
         issues.append(
             _assemble_issue(
                 category=REVIEW_TO_CATEGORY["OCR_NOISE"],
-                confidence=_confidence(0.45, signals),
+                confidence=_confidence(0.4, signals),
                 message="OCR output appears noisy for image-based item",
                 evidence=evidence,
                 en_item_id=item_id,
