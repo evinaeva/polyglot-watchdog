@@ -49,12 +49,15 @@ def _build_evidence(target_item: dict, target_collected_by_item: dict[str, dict]
 
 
 def _build_missing_target_evidence(en_item: dict, en_collected_by_item: dict[str, dict], en_screens_by_page: dict[str, dict]) -> dict:
+    item_id = en_item.get("item_id", "")
+    collected = en_collected_by_item.get(item_id, {})
+    page_id = collected.get("page_id") or en_item.get("page_id", "")
     return {
         "url": en_item.get("url", ""),
-        "bbox": en_collected_by_item.get(en_item.get("item_id", ""), {}).get("bbox", {"x": 0, "y": 0, "width": 0, "height": 0}),
-        "storage_uri": en_screens_by_page.get(en_item.get("page_id"), {}).get("storage_uri", ""),
-        "item_id": en_item.get("item_id", ""),
-        "page_id": en_item.get("page_id", ""),
+        "bbox": collected.get("bbox", {"x": 0, "y": 0, "width": 0, "height": 0}),
+        "storage_uri": en_screens_by_page.get(page_id, {}).get("storage_uri", ""),
+        "item_id": item_id,
+        "page_id": page_id,
     }
 
 

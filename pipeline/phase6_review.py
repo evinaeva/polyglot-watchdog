@@ -56,8 +56,8 @@ def _is_header_online_dynamic_counter(en_item: dict, target_item: dict) -> bool:
     return _HEADER_ONLINE_CLASS_TOKENS.issubset(classes)
 
 
-def _normalize_dynamic_counter_text(item: dict, text: str) -> str:
-    if _is_header_online_dynamic_counter(item, item):
+def _normalize_dynamic_counter_text(en_item: dict, target_item: dict, text: str) -> str:
+    if _is_header_online_dynamic_counter(en_item, target_item):
         return _DYNAMIC_NUMBER_RE.sub("<NUM>", text)
     return text
 
@@ -76,7 +76,7 @@ def _extract_ocr_text(item: dict) -> str:
     return ""
 
 
-def _build_evidence(evidence_base: dict, en_text: str, target_text: str, review_class: str, reason: str, signals: dict, pairing_basis: str, ocr_text: str = "", ocr_engine: str = "") -> dict:
+def _build_evidence(evidence_base: dict, en_text: str, target_text: str, review_class: str, reason: str, signals: dict, pairing_basis: str, ocr_text: str = "", ocr_engine: str = "", provider_notes: list[str] | None = None) -> dict:
     evidence = {
         **evidence_base,
         "text_en": en_text,
@@ -89,6 +89,8 @@ def _build_evidence(evidence_base: dict, en_text: str, target_text: str, review_
     if ocr_text:
         evidence["ocr_text"] = ocr_text
         evidence["ocr_engine"] = ocr_engine
+    if provider_notes:
+        evidence["provider_notes"] = provider_notes
     return evidence
 
 
@@ -114,7 +116,8 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
     en_item = context.en_item
     target_item = context.target_item
 
-    en_text = _normalize_dynamic_counter_text(en_item, normalize_text(en_item.get("text", "")))
+    is_dynamic_counter = _is_header_online_dynamic_counter(en_item, target_item or {})
+    en_text = _normalize_dynamic_counter_text(en_item, target_item or {}, normalize_text(en_item.get("text", "")))
 
     if not target_item:
         signals = {"missing_target": 0.15}
@@ -140,7 +143,7 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             )
         ]
 
-    target_text = _normalize_dynamic_counter_text(target_item, normalize_text(target_item.get("text", "")))
+    target_text = _normalize_dynamic_counter_text(en_item, target_item, normalize_text(target_item.get("text", "")))
     en_placeholders = sorted(_PLACEHOLDER_RE.findall(en_text))
     target_placeholders = sorted(_PLACEHOLDER_RE.findall(target_text))
 
@@ -181,7 +184,6 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             )
         )
 
-    is_dynamic_counter = _is_header_online_dynamic_counter(en_item, target_item)
     if en_text and target_text and en_text == target_text and not en_placeholders and not is_dynamic_counter:
         signals = {"identical_text": 0.2, "untranslated_indicator": 0.1}
         reason = "Source and target text are identical after deterministic normalization"
@@ -218,7 +220,8 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             target_text=target_text,
             review_class="SPELLING",
             reason=reason,
-            signals={**signals, "notes": spelling_grammar.notes},
+            signals=signals,
+            provider_notes=spelling_grammar.notes,
             pairing_basis="item_id",
             ocr_text=ocr_text,
             ocr_engine=ocr_engine,
@@ -242,7 +245,8 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             target_text=target_text,
             review_class="GRAMMAR",
             reason=reason,
-            signals={**signals, "notes": spelling_grammar.notes},
+            signals=signals,
+            provider_notes=spelling_grammar.notes,
             pairing_basis="item_id",
             ocr_text=ocr_text,
             ocr_engine=ocr_engine,
@@ -268,7 +272,8 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             target_text=target_text,
             review_class="MEANING",
             reason=reason,
-            signals={**signals, "notes": meaning.notes},
+            signals=signals,
+            provider_notes=meaning.notes,
             pairing_basis="item_id",
             ocr_text=ocr_text,
             ocr_engine=ocr_engine,
