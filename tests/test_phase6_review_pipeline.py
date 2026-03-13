@@ -46,6 +46,7 @@ def _base_artifacts(target_item_overrides=None):
         [{"item_id": "item-1", "page_id": "fr-page-1", "bbox": {"x": 1, "y": 2, "width": 3, "height": 4}}],
         [{"page_id": "en-page-1", "storage_uri": "gs://b/en.png"}],
         [{"page_id": "fr-page-1", "storage_uri": "gs://b/fr.png"}],
+        FileNotFoundError("phase4_ocr missing"),
     ]
 
 
@@ -83,6 +84,29 @@ def test_ocr_metadata_applies_only_to_image_items():
     assert issue["category"] == "FORMATTING_MISMATCH"
     assert issue["evidence"]["ocr_text"] == "X"
     assert issue["evidence"]["ocr_engine"] == "OCR.Space:engine3"
+
+
+
+
+def test_image_backed_review_uses_ocr_text_as_canonical_comparison_text():
+    artifacts = _base_artifacts(
+        {
+            "tag": "img",
+            "element_type": "img",
+            "text": "Texte DOM non fiable",
+            "ocr_text": "teh translation",
+            "ocr_notes": [],
+        }
+    )
+
+    with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+    ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
+        issues = run("example.com", "run-en", "run-fr")
+
+    spelling_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "SPELLING")
+    assert spelling_issue["evidence"]["text_target"] == "teh translation"
+    assert spelling_issue["evidence"]["ocr_text"] == "teh translation"
 
 
 def test_non_image_items_do_not_receive_ocr_signals():
@@ -212,5 +236,81 @@ def test_ai_mode_enriches_evidence_metadata_when_response_valid(monkeypatch):
     assert spelling_issue["evidence"]["provider_meta"]["provider_score_summary"] == {
         "spelling_score": 0.82,
         "grammar_score": 0.1,
+        "meaning_mismatch_score": 0.2,
     }
     assert spelling_issue["evidence"]["provider_notes"] == ["possible typo", "uncertain due to short text"]
+
+
+class _HighMeaningProvider:
+    def review_spelling_grammar(self, text_en, text_target, language):
+        from pipeline.phase6_providers import SpellingGrammarSignals
+
+        return SpellingGrammarSignals(spelling_score=0.0, grammar_score=0.0, notes=[])
+
+    def review_meaning(self, text_en, text_target, language):
+        from pipeline.phase6_providers import MeaningSignals
+
+        return MeaningSignals(meaning_mismatch_score=0.92, notes=["forced_mismatch"])
+
+
+def test_good_ocr_allows_normal_meaning_review_for_image_items():
+    artifacts = _base_artifacts(
+        {
+            "tag": "img",
+            "element_type": "img",
+            "ocr_text": "Acheter maintenant",
+            "ocr_notes": [],
+            "text": "Acheter maintenant",
+        }
+    )
+
+    with patch("pipeline.run_phase6.build_provider", return_value=_HighMeaningProvider()), patch(
+        "pipeline.run_phase6.read_json_artifact", side_effect=artifacts
+    ), patch("pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]), patch(
+        "pipeline.run_phase6.write_json_artifact"
+    ), patch("pipeline.run_phase6.write_phase_manifest"):
+        issues = run("example.com", "run-en", "run-fr")
+
+    meaning_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "MEANING")
+    assert meaning_issue["category"] == "TRANSLATION_MISMATCH"
+    assert "ocr_confidence_adjustment" in meaning_issue["evidence"]["signals"]
+    assert meaning_issue["evidence"]["signals"]["ocr_confidence_adjustment"] == 0.0
+
+
+def test_weak_ocr_suppresses_strong_meaning_claims_and_adds_quality_evidence():
+    artifacts = _base_artifacts(
+        {
+            "tag": "img",
+            "element_type": "img",
+            "ocr_text": "!!! $$$$ ----",
+            "ocr_notes": ["uncertain parse"],
+            "text": "Acheter",
+        }
+    )
+
+    with patch("pipeline.run_phase6.build_provider", return_value=_HighMeaningProvider()), patch(
+        "pipeline.run_phase6.read_json_artifact", side_effect=artifacts
+    ), patch("pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]), patch(
+        "pipeline.run_phase6.write_json_artifact"
+    ), patch("pipeline.run_phase6.write_phase_manifest"):
+        issues = run("example.com", "run-en", "run-fr")
+
+    assert not any(issue for issue in issues if issue["evidence"]["review_class"] == "MEANING")
+    ocr_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "OCR_NOISE")
+    assert ocr_issue["category"] == "FORMATTING_MISMATCH"
+    assert ocr_issue["evidence"]["ocr_quality"]["trust_bucket"] == "weak"
+    assert ocr_issue["evidence"]["ocr_quality"]["flags"]
+    assert "ocr_symbol_ratio" in ocr_issue["evidence"]["signals"]
+
+
+def test_nearly_empty_ocr_text_is_treated_as_weak_quality_noise():
+    artifacts = _base_artifacts({"tag": "img", "element_type": "img", "ocr_text": " ", "text": "Acheter"})
+
+    with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+    ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
+        issues = run("example.com", "run-en", "run-fr")
+
+    ocr_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "OCR_NOISE")
+    assert ocr_issue["evidence"]["ocr_quality"]["trust_bucket"] == "weak"
+    assert "ocr_missing_text" in ocr_issue["evidence"]["ocr_quality"]["flags"]

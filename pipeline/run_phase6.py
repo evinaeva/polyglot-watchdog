@@ -154,8 +154,12 @@ def run(domain: str, en_run_id: str, target_run_id: str) -> list[dict]:
         # evidence for EN↔target review, not a standalone issue generator.
         if not _is_image_item(item):
             continue
-        if ocr_row.get("status") == "ok" and str(ocr_row.get("ocr_text", "")).strip():
+        if ocr_row.get("status") == "ok":
             item["ocr_text"] = str(ocr_row.get("ocr_text", "")).strip()
+            item["ocr_engine"] = f"{ocr_row.get('ocr_provider', '')}:{ocr_row.get('ocr_engine', '')}".strip(":")
+            notes = ocr_row.get("ocr_notes", [])
+            if isinstance(notes, list):
+                item["ocr_notes"] = [str(note).strip() for note in notes if str(note).strip()]
     en_collected_by_item = _index_collected(en_collected)
     en_screens_by_page = _index_screenshots(en_screens)
     target_collected_by_item = _index_collected(target_collected)
