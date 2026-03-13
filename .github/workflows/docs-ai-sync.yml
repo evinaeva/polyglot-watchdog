@@ -42,7 +42,7 @@ jobs:
 
 
       - name: Verify schedule consistency
-        run: python .github/docs_autoupdate/scripts/check_schedule_sync.py
+        run: python .github/scripts/check_schedule_sync.py
 
       - name: AI docs sync (apply docs updates to main working tree)
         id: sync
@@ -52,7 +52,7 @@ jobs:
           if [ -n "${{ vars.ANTHROPIC_MODEL }}" ]; then
             export ANTHROPIC_MODEL="${{ vars.ANTHROPIC_MODEL }}"
           fi
-          python .github/docs_autoupdate/scripts/docs_ai_sync.py --github-output "$GITHUB_OUTPUT"
+          python .github/scripts/docs_ai_sync.py --github-output "$GITHUB_OUTPUT"
 
       - name: Upload Claude raw response on sync failure
         if: failure() && steps.sync.outcome == 'failure' && hashFiles('.github/tmp/claude_raw_response.txt') != ''
@@ -64,7 +64,7 @@ jobs:
 
       - name: Validate documentation diff scope
         if: steps.sync.outputs.docs_changed == 'true'
-        run: python .github/docs_autoupdate/scripts/validate_docs_diff.py --ref HEAD
+        run: python .github/scripts/validate_docs_diff.py --ref HEAD
 
       - name: Commit docs updates to target branch
         if: steps.sync.outputs.docs_changed == 'true'
