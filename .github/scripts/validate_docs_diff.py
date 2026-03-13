@@ -16,6 +16,7 @@ ALLOWED_PREFIXES = tuple(CONFIG["docs_rules"]["allowed_prefixes"])
 ALLOWED_ROOT_FILES = set(CONFIG["docs_rules"]["allowed_root_files"])
 BLACKLIST = set(CONFIG["docs_rules"]["blacklist"])
 IGNORED_RUNTIME_PREFIXES = tuple(CONFIG["paths"]["runtime_temp_prefixes"])
+IGNORED_RUNTIME_SUFFIXES = (".pyc", ".pyo")
 
 if not ALLOWED_PREFIXES:
     raise RuntimeError("Config error: allowed_prefixes cannot be empty")
@@ -25,7 +26,11 @@ if not BLACKLIST:
 
 
 def is_ignored_runtime_path(path: str) -> bool:
-    return path.startswith(IGNORED_RUNTIME_PREFIXES)
+    return (
+        path.startswith(IGNORED_RUNTIME_PREFIXES)
+        or "/__pycache__/" in path
+        or path.endswith(IGNORED_RUNTIME_SUFFIXES)
+    )
 
 
 def is_allowed(path: str) -> bool:

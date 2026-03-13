@@ -3,16 +3,16 @@
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 
-CONFIG_PATH = Path('.github/scripts/config.json')
+from config_loader import load_config
+
 WORKFLOW_PATH = Path('.github/workflows/docs-ai-sync.yml')
 
 
 def read_config_cron() -> str:
-    config = json.loads(CONFIG_PATH.read_text(encoding='utf-8'))
+    config = load_config()
     return str(config['workflows']['docs_ai_sync']['schedule_cron']).strip()
 
 
