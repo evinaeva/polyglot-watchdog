@@ -86,7 +86,7 @@ def _extract_ocr_text(item: dict) -> str:
     return ""
 
 
-def _build_evidence(evidence_base: dict, en_text: str, target_text: str, review_class: str, reason: str, signals: dict, pairing_basis: str, ocr_text: str = "", ocr_engine: str = "", provider_notes: list[str] | None = None) -> dict:
+def _build_evidence(evidence_base: dict, en_text: str, target_text: str, review_class: str, reason: str, signals: dict, pairing_basis: str, ocr_text: str = "", ocr_engine: str = "", provider_notes: list[str] | None = None, provider_meta: dict | None = None) -> dict:
     evidence = {
         **evidence_base,
         "text_en": en_text,
@@ -101,6 +101,8 @@ def _build_evidence(evidence_base: dict, en_text: str, target_text: str, review_
         evidence["ocr_engine"] = ocr_engine
     if provider_notes:
         evidence["provider_notes"] = provider_notes
+    if provider_meta:
+        evidence["provider_meta"] = provider_meta
     return evidence
 
 
@@ -225,7 +227,7 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
     spelling_grammar = provider.review_spelling_grammar(en_text, target_text, context.language)
     if spelling_grammar.spelling_score >= 0.8:
         signals = {"spelling_score": spelling_grammar.spelling_score}
-        reason = "Deterministic provider suggests potential spelling issue"
+        reason = "Provider suggests potential spelling issue"
         evidence = _build_evidence(
             context.evidence_base,
             en_text=en_text,
@@ -234,6 +236,7 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             reason=reason,
             signals=signals,
             provider_notes=spelling_grammar.notes,
+            provider_meta=spelling_grammar.provider_meta,
             pairing_basis="item_id",
             ocr_text=ocr_text,
             ocr_engine=ocr_engine,
@@ -250,7 +253,7 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
         )
     if spelling_grammar.grammar_score >= 0.75:
         signals = {"grammar_score": spelling_grammar.grammar_score}
-        reason = "Deterministic provider suggests potential grammar issue"
+        reason = "Provider suggests potential grammar issue"
         evidence = _build_evidence(
             context.evidence_base,
             en_text=en_text,
@@ -259,6 +262,7 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             reason=reason,
             signals=signals,
             provider_notes=spelling_grammar.notes,
+            provider_meta=spelling_grammar.provider_meta,
             pairing_basis="item_id",
             ocr_text=ocr_text,
             ocr_engine=ocr_engine,
@@ -277,7 +281,7 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
     meaning = provider.review_meaning(en_text, target_text, context.language)
     if meaning.meaning_mismatch_score >= 0.7 and not (en_text == target_text):
         signals = {"meaning_mismatch_score": meaning.meaning_mismatch_score}
-        reason = "Deterministic provider suggests potential meaning drift"
+        reason = "Provider suggests potential meaning drift"
         evidence = _build_evidence(
             context.evidence_base,
             en_text=en_text,
@@ -286,6 +290,7 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             reason=reason,
             signals=signals,
             provider_notes=meaning.notes,
+            provider_meta=meaning.provider_meta,
             pairing_basis="item_id",
             ocr_text=ocr_text,
             ocr_engine=ocr_engine,

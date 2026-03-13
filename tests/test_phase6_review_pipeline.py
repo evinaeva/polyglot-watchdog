@@ -160,3 +160,57 @@ def test_provider_notes_are_not_mixed_into_signals():
     spelling_issue = next(issue for issue in issues if issue["message"] == "Potential spelling issue in target text")
     assert "notes" not in spelling_issue["evidence"]["signals"]
     assert spelling_issue["evidence"]["provider_notes"] == ["spelling_marker_detected"]
+
+
+def test_ai_mode_missing_key_falls_back_without_changing_category(monkeypatch):
+    artifacts = _base_artifacts({"text": "teh translation"})
+
+    monkeypatch.setenv("PHASE6_REVIEW_PROVIDER", "ai")
+    monkeypatch.delenv("PHASE6_REVIEW_API_KEY", raising=False)
+
+    with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+    ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
+        issues = run("example.com", "run-en", "run-fr")
+
+    spelling_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "SPELLING")
+    assert spelling_issue["category"] == "TRANSLATION_MISMATCH"
+    assert spelling_issue["evidence"]["provider_meta"]["provider"] == "llm"
+    assert spelling_issue["evidence"]["provider_meta"]["mode"] == "ai"
+    assert spelling_issue["evidence"]["provider_meta"]["fallback_used"] is True
+    assert "ai_fallback_used" in spelling_issue["evidence"]["provider_notes"]
+
+
+def test_ai_mode_enriches_evidence_metadata_when_response_valid(monkeypatch):
+    artifacts = _base_artifacts({"text": "Acheter"})
+
+    def fake_request(endpoint, api_key, timeout_s, payload):
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": '{"spelling_score": 0.82, "grammar_score": 0.1, "meaning_mismatch_score": 0.2, "notes": ["possible typo", "uncertain due to short text"]}'
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setenv("PHASE6_REVIEW_PROVIDER", "ai")
+    monkeypatch.setenv("PHASE6_REVIEW_API_KEY", "test-key")
+
+    with patch("pipeline.phase6_providers.LLMReviewProvider._default_request", side_effect=fake_request), patch(
+        "pipeline.run_phase6.read_json_artifact", side_effect=artifacts
+    ), patch("pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]), patch(
+        "pipeline.run_phase6.write_json_artifact"
+    ), patch("pipeline.run_phase6.write_phase_manifest"):
+        issues = run("example.com", "run-en", "run-fr")
+
+    spelling_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "SPELLING")
+    assert spelling_issue["category"] == "TRANSLATION_MISMATCH"
+    assert spelling_issue["evidence"]["provider_meta"]["model"] == "gpt-4o-mini"
+    assert spelling_issue["evidence"]["provider_meta"]["fallback_used"] is False
+    assert spelling_issue["evidence"]["provider_meta"]["provider_score_summary"] == {
+        "spelling_score": 0.82,
+        "grammar_score": 0.1,
+    }
+    assert spelling_issue["evidence"]["provider_notes"] == ["possible typo", "uncertain due to short text"]
