@@ -88,12 +88,12 @@ def test_ocr_metadata_applies_only_to_image_items():
 
 
 
-def test_image_backed_review_uses_ocr_text_as_canonical_comparison_text():
+def test_image_backed_review_prefers_good_ocr_text_over_unreliable_dom_text():
     artifacts = _base_artifacts(
         {
             "tag": "img",
             "element_type": "img",
-            "text": "Texte DOM non fiable",
+            "text": "Texte DOM fiable mais non fautif",
             "ocr_text": "teh translation",
             "ocr_notes": [],
         }
@@ -107,6 +107,52 @@ def test_image_backed_review_uses_ocr_text_as_canonical_comparison_text():
     spelling_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "SPELLING")
     assert spelling_issue["evidence"]["text_target"] == "teh translation"
     assert spelling_issue["evidence"]["ocr_text"] == "teh translation"
+    assert spelling_issue["evidence"]["comparison_text_source"] == "ocr"
+
+
+def test_weak_ocr_falls_back_to_dom_for_canonical_comparison_text():
+    artifacts = _base_artifacts(
+        {
+            "tag": "img",
+            "element_type": "img",
+            "text": "teh translation",
+            "ocr_text": "!!! $$$$ ----",
+            "ocr_notes": ["uncertain parse"],
+        }
+    )
+
+    with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+    ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
+        issues = run("example.com", "run-en", "run-fr")
+
+    spelling_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "SPELLING")
+    assert spelling_issue["evidence"]["text_target"] == "teh translation"
+    assert spelling_issue["evidence"]["comparison_text_source"] == "dom"
+    ocr_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "OCR_NOISE")
+    assert ocr_issue["evidence"]["ocr_quality"]["trust_bucket"] == "weak"
+
+
+def test_image_item_with_ocr_handoff_metadata_but_unusable_text_falls_back_to_dom():
+    artifacts = _base_artifacts(
+        {
+            "tag": "img",
+            "element_type": "img",
+            "text": "teh translation",
+            "ocr_text": "   ",
+            "ocr_notes": ["empty result"],
+            "ocr_engine": "OCR.Space:engine3",
+        }
+    )
+
+    with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+    ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
+        issues = run("example.com", "run-en", "run-fr")
+
+    spelling_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "SPELLING")
+    assert spelling_issue["evidence"]["text_target"] == "teh translation"
+    assert spelling_issue["evidence"]["comparison_text_source"] == "dom"
 
 
 def test_non_image_items_do_not_receive_ocr_signals():
@@ -260,7 +306,7 @@ def test_good_ocr_allows_normal_meaning_review_for_image_items():
             "element_type": "img",
             "ocr_text": "Acheter maintenant",
             "ocr_notes": [],
-            "text": "Acheter maintenant",
+            "text": "Buy now",
         }
     )
 
@@ -275,6 +321,8 @@ def test_good_ocr_allows_normal_meaning_review_for_image_items():
     assert meaning_issue["category"] == "TRANSLATION_MISMATCH"
     assert "ocr_confidence_adjustment" in meaning_issue["evidence"]["signals"]
     assert meaning_issue["evidence"]["signals"]["ocr_confidence_adjustment"] == 0.0
+    assert meaning_issue["evidence"]["text_target"] == "Acheter maintenant"
+    assert meaning_issue["evidence"]["comparison_text_source"] == "ocr"
 
 
 def test_weak_ocr_suppresses_strong_meaning_claims_and_adds_quality_evidence():

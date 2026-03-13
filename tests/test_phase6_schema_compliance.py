@@ -233,6 +233,40 @@ class Phase6SchemaComplianceTests(unittest.TestCase):
 
         assert [issue["category"] for issue in issues] == []
 
+    def test_phase6_schema_accepts_comparison_text_source_in_evidence(self):
+        en_eligible, target_eligible, en_collected, target_collected, en_screens, target_screens = self._artifacts()
+        target_eligible = [
+            {
+                "item_id": "item-1",
+                "page_id": "fr-page-1",
+                "url": "https://fr.example.com/p",
+                "language": "fr",
+                "viewport_kind": "desktop",
+                "state": "baseline",
+                "user_tier": "guest",
+                "element_type": "img",
+                "css_selector": "main > img",
+                "bbox": {"x": 1, "y": 2, "width": 3, "height": 4},
+                "text": "Texte DOM non fiable",
+                "visible": True,
+                "tag": "img",
+                "attributes": None,
+                "ocr_text": "teh translation",
+                "ocr_notes": [],
+            }
+        ]
+        target_collected = [{"item_id": "item-1", "page_id": "fr-page-1", "bbox": {"x": 1, "y": 2, "width": 3, "height": 4}}]
+        target_screens = [{"page_id": "fr-page-1", "url": "https://fr.example.com/p", "viewport_kind": "desktop", "state": "baseline", "user_tier": "guest", "storage_uri": "gs://b/fr.png"}]
+
+        artifacts = [en_eligible, target_eligible, en_collected, target_collected, en_screens, target_screens]
+        with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts + [FileNotFoundError("missing")]), patch(
+            "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+        ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
+            issues = run("example.com", "run-en", "run-fr")
+
+        spelling_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "SPELLING")
+        self.assertEqual(spelling_issue["evidence"]["comparison_text_source"], "ocr")
+
 
 if __name__ == "__main__":
     unittest.main()
