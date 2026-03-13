@@ -99,6 +99,25 @@ OCR should supply:
 
 If OCR output is visibly weak or noisy, Phase 6 should lower trust in that pair and preserve the uncertainty in evidence rather than creating an overconfident translation claim.
 
+
+### 4.5 Phase 4 OCR artifact contract (`phase4_ocr.json`)
+
+Phase 4 emits `phase4_ocr.json` as an array of OCR rows for approved image-backed items only.
+
+Current narrow contract:
+
+- provider: `ocr.space`
+- engine: `3`
+- statuses: `ok`, `skipped`, `failed`
+
+Status semantics:
+
+- `ok`: OCR completed and produced usable normalized text (`ocr_text`).
+- `skipped`: OCR intentionally not attempted for a non-error reason (for example missing API key).
+- `failed`: OCR attempted or expected but no valid result was produced (input/provider/processing failure).
+
+Phase 6 may consume this artifact when present, but must continue safely when it is absent. OCR text from this artifact is supporting evidence for approved image-backed items in EN ↔ target review and does not create standalone issue categories.
+
 ## 5. Checks that Phase 6 must perform
 
 Phase 6 is expected to run a combined review layer with both deterministic checks and AI-assisted checks.

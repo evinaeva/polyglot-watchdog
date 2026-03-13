@@ -41,6 +41,8 @@ def _is_image_item(item: dict) -> bool:
 
 
 def _load_phase4_ocr_by_item(domain: str, run_id: str) -> dict[str, dict]:
+    # Optional additive handoff: Phase 6 consumes Phase 4 OCR rows when present,
+    # but must remain safe and fully functional when phase4_ocr.json is absent.
     try:
         rows = read_json_artifact(domain, run_id, "phase4_ocr.json")
     except Exception:
@@ -139,6 +141,8 @@ def run(domain: str, en_run_id: str, target_run_id: str) -> list[dict]:
     ocr_by_item = _load_phase4_ocr_by_item(domain, target_run_id)
     for item_id, item in target_by_item.items():
         ocr_row = ocr_by_item.get(item_id, {})
+        # OCR text applies only to approved image-backed items and is supporting
+        # evidence for EN↔target review, not a standalone issue generator.
         if not _is_image_item(item):
             continue
         if ocr_row.get("status") == "ok" and str(ocr_row.get("ocr_text", "")).strip():

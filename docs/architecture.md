@@ -15,7 +15,7 @@
 - Phase 1: `page_screenshots`, `collected_items`, `universal_sections` (EN only)
 - Phase 2: `template_rules` (manual labels)
 - Phase 3: `eligible_dataset` (EN reference build)
-- Phase 4: OCR extraction for approved `<img>` elements only; Phase 6 currently expects OCR.Space `engine 3` when OCR text is present
+- Phase 4: `phase4_ocr.json` OCR extraction artifact for approved `<img>` elements only (OCR.Space, engine `3`). Status contract: `ok` (usable normalized OCR text), `skipped` (intentionally not attempted for non-error reason), `failed` (attempted/expected but no valid OCR result). Phase 6 may consume this artifact when present and must continue safely when absent
 - Phase 5: normalization (deterministic; no double-space normalization)
 - Phase 6: `issues` (AI-assisted translation QA findings + evidence for suspicious EN ↔ target pairs). Compares curated EN reference against curated target-language content; OCR text is consumed only for approved `<img>` elements and participates in the same EN ↔ target comparison flow. `category` stays the stable persisted contract enum; detailed QA classes are carried in evidence (for example `review_class`).
 
