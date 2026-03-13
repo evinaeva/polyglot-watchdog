@@ -230,16 +230,14 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             )
         ]
 
-    target_text = _normalize_dynamic_counter_text(en_item, target_item, normalize_text(target_item.get("text", "")))
-    en_placeholders = sorted(_PLACEHOLDER_RE.findall(en_text))
-    target_placeholders = sorted(_PLACEHOLDER_RE.findall(target_text))
+    dom_target_text = _normalize_dynamic_counter_text(en_item, target_item, normalize_text(target_item.get("text", "")))
 
     issues: list[dict] = []
     item_id = str(en_item.get("item_id", ""))
     target_url = str(target_item.get("url", ""))
 
-    # OCR evidence is limited to approved image-backed items only. OCR text is
-    # supporting input for translation QA, not a standalone issue generator.
+    # OCR evidence is limited to approved image-backed items only. For these
+    # items, Phase 6 compares EN text against OCR handoff text when present.
     is_image = _is_image_item(target_item) or _is_image_item(en_item)
     ocr_text = _extract_ocr_text(target_item) if is_image else ""
     ocr_engine = str(target_item.get("ocr_engine", "")).strip() if is_image else ""
@@ -248,6 +246,10 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
     ocr_notes = list(target_item.get("ocr_notes", [])) if is_image and isinstance(target_item.get("ocr_notes"), list) else []
     has_ocr_handoff = is_image and any(key in target_item for key in ("ocr_text", "ocr_notes", "ocr_engine"))
     ocr_quality = _assess_ocr_quality(en_text, ocr_text, ocr_notes) if has_ocr_handoff else None
+    target_text = _normalize_dynamic_counter_text(en_item, target_item, normalize_text(ocr_text)) if has_ocr_handoff else dom_target_text
+
+    en_placeholders = sorted(_PLACEHOLDER_RE.findall(en_text))
+    target_placeholders = sorted(_PLACEHOLDER_RE.findall(target_text))
 
     def with_ocr_signals(base_signals: dict[str, float], include_quality_metrics: bool = False) -> dict[str, float]:
         if not ocr_quality:

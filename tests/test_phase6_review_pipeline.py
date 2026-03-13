@@ -86,6 +86,29 @@ def test_ocr_metadata_applies_only_to_image_items():
     assert issue["evidence"]["ocr_engine"] == "OCR.Space:engine3"
 
 
+
+
+def test_image_backed_review_uses_ocr_text_as_canonical_comparison_text():
+    artifacts = _base_artifacts(
+        {
+            "tag": "img",
+            "element_type": "img",
+            "text": "Texte DOM non fiable",
+            "ocr_text": "teh translation",
+            "ocr_notes": [],
+        }
+    )
+
+    with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+    ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
+        issues = run("example.com", "run-en", "run-fr")
+
+    spelling_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "SPELLING")
+    assert spelling_issue["evidence"]["text_target"] == "teh translation"
+    assert spelling_issue["evidence"]["ocr_text"] == "teh translation"
+
+
 def test_non_image_items_do_not_receive_ocr_signals():
     artifacts = _base_artifacts({"ocr_text": "X", "text": "Acheter"})
 
