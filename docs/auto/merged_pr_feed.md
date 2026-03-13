@@ -205,3 +205,17 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   - tests/test_phase6_review_pipeline.py
   - tests/test_phase6_schema_compliance.py
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #79 — 2026-03-13T07:07:12Z
+
+- Title: Switch docs AI sync to strict patch-based updates
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/79
+- Author: evinaeva
+- Base branch: main
+- Head branch: 4yjpr1-codex/change-ai-sync-to-use-patch-updates
+- Merge commit: b2f00ef52c77ec9185f73b0a42caecacf69ab111
+- Changed files:
+  - .github/prompts/docs_sync_prompt.txt
+  - .github/scripts/docs_ai_sync.py
+  - tests/test_docs_autoupdate_scripts.py
+- Notes: Auto-generated from merged PR metadata.
