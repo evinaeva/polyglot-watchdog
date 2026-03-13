@@ -54,10 +54,8 @@ def _load_phase4_ocr_by_item(domain: str, run_id: str) -> dict[str, dict]:
             return {}
         raise
 
-    # OCR handoff is additive. Non-list data is treated as unusable OCR payload and
-    # safely ignored instead of failing the primary EN↔target review path.
-    if not isinstance(rows, list):
-        return {}
+    validate("phase4_ocr", rows)
+
     out: dict[str, dict] = {}
     for row in rows:
         item_id = str(row.get("item_id", ""))
