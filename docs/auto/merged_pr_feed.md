@@ -219,3 +219,21 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   - .github/scripts/docs_ai_sync.py
   - tests/test_docs_autoupdate_scripts.py
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #80 — 2026-03-13T07:19:26Z
+
+- Title: Phase 6: Clarify persisted category vs evidence review_class semantics
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/80
+- Author: evinaeva
+- Base branch: main
+- Head branch: ygmid6-codex/align-phase-6-contract-semantics
+- Merge commit: 81488894993f6997421202e05628ce43cea649ee
+- Changed files:
+  - README.md
+  - contract/schemas/issues.schema.json
+  - docs/PHASE6_TRANSLATION_QA.md
+  - docs/architecture.md
+  - pipeline/phase6_review.py
+  - pipeline/run_phase6.py
+  - tests/test_phase6_schema_compliance.py
+- Notes: Auto-generated from merged PR metadata.
