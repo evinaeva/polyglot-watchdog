@@ -1,5 +1,10 @@
 """Phase 6 runner — Localization QA issues generation.
 
+Contract semantics:
+- `issue.category` is the stable persisted external contract field.
+- `issue.evidence.review_class` is richer internal review metadata from
+  `phase6_review` that explains why an issue was emitted.
+
 Inputs:
 - EN run artifacts: eligible_dataset.json, collected_items.json, page_screenshots.json
 - Target run artifacts: eligible_dataset.json, collected_items.json, page_screenshots.json

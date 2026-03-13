@@ -1,7 +1,15 @@
 """Phase 6 internal review pipeline.
 
-This module keeps rich QA metadata in `issue["evidence"]` while preserving the
-persisted top-level issue schema contract.
+Phase 6 intentionally uses two classification layers:
+
+* `issue["category"]` is the stable persisted contract field used by downstream
+  consumers and validated by `issues.schema.json`.
+* `issue["evidence"]["review_class"]` is richer internal QA metadata used to
+  explain why an issue was emitted.
+
+Multiple review classes can map into one persisted category. Keep this mapping
+coarse and backward-compatible unless the external `issues.json` contract is
+explicitly revised.
 """
 
 from __future__ import annotations
@@ -18,6 +26,8 @@ _DYNAMIC_NUMBER_RE = re.compile(r"\d+")
 _HEADER_ONLINE_CLASS_TOKENS = {"header_online", "bc_flex", "bc_flex_items_center"}
 _IMAGE_TAGS = {"img", "image"}
 
+# Internal Phase 6 QA classes collapse into coarse persisted issue categories.
+# Do not expose these review classes as replacements for top-level `category`.
 REVIEW_TO_CATEGORY = {
     "SPELLING": "TRANSLATION_MISMATCH",
     "GRAMMAR": "TRANSLATION_MISMATCH",
@@ -151,6 +161,8 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
     item_id = str(en_item.get("item_id", ""))
     target_url = str(target_item.get("url", ""))
 
+    # OCR evidence is limited to approved image-backed items only. OCR text is
+    # supporting input for translation QA, not a standalone issue generator.
     is_image = _is_image_item(target_item) or _is_image_item(en_item)
     ocr_text = _extract_ocr_text(target_item) if is_image else ""
     ocr_engine = "OCR.Space:engine3" if ocr_text else ""

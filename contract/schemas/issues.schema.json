@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://polyglot-watchdog/contract/schemas/issues.schema.json",
   "title": "Localization Issues",
-  "description": "Phase 6 QA issues artifact. Evidence must include at least url + bbox + screenshot storage reference.",
+  "description": "Phase 6 QA issues artifact. `category` is the stable persisted contract enum for downstream consumers; detailed Phase 6 QA classes belong in evidence metadata (for example `evidence.review_class`). Evidence must include at least url + bbox + screenshot storage reference.",
   "type": "array",
   "items": {
     "type": "object",
@@ -20,6 +20,7 @@
         "minLength": 1
       },
       "category": {
+        "description": "Stable persisted contract category. Keep backward-compatible for issues.json consumers; do not replace with detailed Phase 6 review classes.",
         "type": "string",
         "enum": [
           "TRANSLATION_MISMATCH",

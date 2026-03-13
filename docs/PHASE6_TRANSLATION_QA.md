@@ -43,6 +43,16 @@ This is true for both DOM-backed text and image-backed text.
 OCR is **not** the main comparison target.  
 OCR is only a way to supply text for image-based content so that those items can also participate in the EN ↔ target comparison flow.
 
+## 3.1 Two-layer classification model (canonical)
+
+Phase 6 intentionally uses two classification layers:
+
+- `issue.category` is the stable persisted contract category used by downstream consumers.
+- `issue.evidence.review_class` is a richer internal Phase 6 QA classification used to explain why the issue was emitted.
+- Multiple review classes may map into the same persisted contract category.
+
+This means detailed QA classes (for example `SPELLING`, `GRAMMAR`, `MEANING`, `PLACEHOLDER`, `OCR_NOISE`) must remain evidence-level metadata, while persisted top-level categories stay backward-compatible.
+
 ## 4. OCR scope for Phase 6
 
 Phase 6 assumes a strict **DOM-first** model.
@@ -71,7 +81,7 @@ The baseline OCR choice for this Phase 6 design is:
 This is the default OCR path that Phase 6 expects when OCR text is present for approved `<img>` items.
 
 ### 4.4 OCR role in Phase 6
-OCR output is an input to localization QA, not the final result by itself.
+OCR output is an input to localization QA, not the final result by itself, and not a standalone issue-type generator.
 
 OCR should supply:
 

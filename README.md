@@ -98,6 +98,7 @@ Use these statements consistently:
 - "The operator workflow is multi-page by design."
 - "OCR is deferred from v1.0."
 - "Manual seed URL workflow is valid for v1.0."
+- "Phase 6 uses a two-layer taxonomy: persisted `issue.category` (coarse contract) and evidence-level `review_class` (detailed QA)."
 
 Avoid these outdated statements:
 
