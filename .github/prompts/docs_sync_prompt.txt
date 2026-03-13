@@ -34,10 +34,21 @@ Response contract:
   "updates": [
     {
       "path": "<allowed path>",
-      "action": "replace_file",
-      "content": "<full new file content>"
+      "action": "patch",
+      "patches": [
+        {
+          "search": "<exact existing text block copied from docs_snapshot>",
+          "replace": "<replacement text block>"
+        }
+      ]
     }
   ]
 }
+- Return patch-based updates only.
+- Never use action "replace_file".
+- Never return full-file rewrites.
+- Preserve all unchanged text exactly.
+- Use exact `search` blocks copied from the provided docs snapshot.
+- Prefer the smallest possible patch; avoid rewriting large sections when a smaller edit works.
+- Each patch entry must include a non-empty `search` string and a string `replace` value.
 - If no documentation updates are needed, return exactly: {"updates":[]}
-- Each replace_file entry must include non-empty content.

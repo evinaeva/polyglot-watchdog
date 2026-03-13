@@ -223,6 +223,30 @@ def compute_new_entries(entries: list[dict[str, Any]], state: dict[str, Any]) ->
     raise RuntimeError(
         "State marker not found in feed and no PR-number recovery marker exists; refusing unsafe full replay."
     )
+
+
+def apply_patch_operations(path: str, content: str, patches: list[dict[str, Any]]) -> str:
+    updated = content
+    for patch in patches:
+        if not isinstance(patch, dict):
+            raise ValueError(f"Invalid patch entry for {path}: expected object.")
+        search = patch.get("search")
+        replace = patch.get("replace")
+        if not isinstance(search, str) or not search:
+            raise ValueError(f"Invalid patch entry for {path}: 'search' must be a non-empty string.")
+        if not isinstance(replace, str):
+            raise ValueError(f"Invalid patch entry for {path}: 'replace' must be a string.")
+        if replace == "":
+            raise ValueError(f"Invalid patch entry for {path}: empty 'replace' is not allowed.")
+        match_count = updated.count(search)
+        if match_count == 0:
+            raise ValueError(f"Patch search text not found in {path}.")
+        if match_count > 1:
+            raise ValueError(f"Patch search text matched more than once in {path}.")
+        updated = updated.replace(search, replace, 1)
+    return updated
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--feed-ref", default="origin/DOCS_AUTOUPDATE")
@@ -305,28 +329,46 @@ def main() -> int:
         print("Claude response missing 'updates' list.", file=sys.stderr)
         return 1
     docs_changed = False
+    virtual_contents: dict[str, str] = {}
+    planned_writes: dict[str, str] = {}
     for update in updates:
         if not isinstance(update, dict):
             print("Invalid update entry type.", file=sys.stderr)
             return 1
         path = str(update.get("path", "")).strip()
         action = update.get("action")
-        content = update.get("content")
-        if action != "replace_file":
+        patches = update.get("patches")
+        if action != "patch":
             print(f"Unsupported action: {action}", file=sys.stderr)
             return 1
         if not path or not is_allowed(path):
             print(f"Disallowed target path: {path}", file=sys.stderr)
             return 1
-        if not isinstance(content, str) or not content.strip():
-            print(f"Invalid content for {path}", file=sys.stderr)
+        if not isinstance(patches, list):
+            print(f"Invalid patches for {path}: expected list.", file=sys.stderr)
             return 1
         target = Path(path)
+        if path not in virtual_contents:
+            if not target.exists():
+                print(f"Patch target file does not exist: {path}", file=sys.stderr)
+                return 1
+            virtual_contents[path] = target.read_text(encoding="utf-8")
+        try:
+            updated = apply_patch_operations(path, virtual_contents[path], patches)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        virtual_contents[path] = updated
+        if updated != target.read_text(encoding="utf-8"):
+            planned_writes[path] = updated
+        elif path in planned_writes:
+            del planned_writes[path]
+
+    for path, content in planned_writes.items():
+        target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        existing = target.read_text(encoding="utf-8") if target.exists() else ""
-        if existing != content:
-            target.write_text(content, encoding="utf-8")
-            docs_changed = True
+        target.write_text(content, encoding="utf-8")
+        docs_changed = True
     newest = new_entries[-1]
     new_state = {
         "last_processed_merge_commit": newest.get("merge_commit", ""),
