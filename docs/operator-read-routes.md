@@ -26,6 +26,7 @@ Notes:
 - Requires `collected_items.json`; otherwise `404 not_ready` with `collected_items artifact missing`.
 - Adds synthetic universal rows only from persisted `universal_sections.json`.
 - `user_tier` normalization: null/empty/`"none"`/`"null"` (case-insensitive) => `null`, otherwise trimmed string.
+- Element signature whitelist filtering: items are filtered by element-signature (specific signatures) rather than simple element-type strings. Only items matching whitelisted signatures are included in the response.
 - Returns:
 
 ```json
