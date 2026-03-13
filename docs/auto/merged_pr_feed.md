@@ -174,3 +174,19 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   - web/static/pulls.js
   - web/templates/pulls.html
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #77 — 2026-03-13T06:47:05Z
+
+- Title: Refactor Phase 6 into modular deterministic translation QA pipeline
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/77
+- Author: evinaeva
+- Base branch: main
+- Head branch: mngqo2-codex/implement-phase-6-translation-qa-pipeline
+- Merge commit: 1dd3302ad1e748d1dcc50302220ee7f5f260a309
+- Changed files:
+  - pipeline/phase6_providers.py
+  - pipeline/phase6_review.py
+  - pipeline/run_phase6.py
+  - tests/test_phase6_review_pipeline.py
+  - tests/test_phase6_schema_compliance.py
+- Notes: Auto-generated from merged PR metadata.
