@@ -45,10 +45,21 @@ def _load_phase4_ocr_by_item(domain: str, run_id: str) -> dict[str, dict]:
     # but must remain safe and fully functional when phase4_ocr.json is absent.
     try:
         rows = read_json_artifact(domain, run_id, "phase4_ocr.json")
-    except Exception:
+    except FileNotFoundError:
+        return {}
+    except Exception as exc:
+        # Missing optional artifacts can surface as provider-specific "NotFound"
+        # errors depending on storage backend wiring; treat only those as absent.
+        if exc.__class__.__name__ == "NotFound":
+            return {}
+        raise
+
+    # OCR handoff is additive. Non-list data is treated as unusable OCR payload and
+    # safely ignored instead of failing the primary EN↔target review path.
+    if not isinstance(rows, list):
         return {}
     out: dict[str, dict] = {}
-    for row in rows if isinstance(rows, list) else []:
+    for row in rows:
         item_id = str(row.get("item_id", ""))
         if not item_id:
             continue

@@ -143,6 +143,25 @@ def test_phase4_output_rows_validate_against_contract_schema():
 
     validate("phase4_ocr", rows)
 
+
+def test_phase6_ocr_fixture_row_is_schema_valid():
+    validate("phase4_ocr", [{
+        "item_id": "item-1",
+        "page_id": "fr-page-1",
+        "url": "https://example.com/fr/p",
+        "language": "fr",
+        "viewport_kind": "desktop",
+        "state": "baseline",
+        "user_tier": "guest",
+        "source_image_uri": "gs://b/fr.png",
+        "ocr_text": "X",
+        "ocr_provider": "ocr.space",
+        "ocr_engine": "3",
+        "ocr_notes": [],
+        "provider_meta": {"provider": "ocr.space"},
+        "status": "ok",
+    }])
+
 def test_phase6_consumes_phase4_ocr_artifact_without_contract_changes():
     en_item = {"item_id": "item-1", "page_id": "en-page-1", "url": "https://example.com/p", "language": "en", "text": "Buy", "element_type": "p", "tag": "p", "attributes": None}
     target_item = {"item_id": "item-1", "page_id": "fr-page-1", "url": "https://example.com/fr/p", "language": "fr", "text": "Acheter", "element_type": "img", "tag": "img", "attributes": None}
@@ -153,7 +172,22 @@ def test_phase6_consumes_phase4_ocr_artifact_without_contract_changes():
         [{"item_id": "item-1", "page_id": "fr-page-1", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}}],
         [{"page_id": "en-page-1", "storage_uri": "gs://b/en.png"}],
         [{"page_id": "fr-page-1", "storage_uri": "gs://b/fr.png"}],
-        [{"item_id": "item-1", "status": "ok", "ocr_text": "X", "ocr_engine": "3"}],
+        [{
+            "item_id": "item-1",
+            "page_id": "fr-page-1",
+            "url": "https://example.com/fr/p",
+            "language": "fr",
+            "viewport_kind": "desktop",
+            "state": "baseline",
+            "user_tier": "guest",
+            "source_image_uri": "gs://b/fr.png",
+            "ocr_text": "X",
+            "ocr_provider": "ocr.space",
+            "ocr_engine": "3",
+            "ocr_notes": [],
+            "provider_meta": {"provider": "ocr.space"},
+            "status": "ok",
+        }],
     ]
 
     with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
@@ -184,3 +218,25 @@ def test_phase6_continues_when_phase4_ocr_artifact_is_absent():
         issues = run("example.com", "run-en", "run-fr")
 
     assert issues == []
+
+
+def test_phase6_raises_unexpected_ocr_artifact_read_errors():
+    en_item = {"item_id": "item-1", "page_id": "en-page-1", "url": "https://example.com/p", "language": "en", "text": "Buy", "element_type": "p", "tag": "p", "attributes": None}
+    target_item = {"item_id": "item-1", "page_id": "fr-page-1", "url": "https://example.com/fr/p", "language": "fr", "text": "Acheter", "element_type": "img", "tag": "img", "attributes": None}
+    artifacts = [
+        [en_item],
+        [target_item],
+        [{"item_id": "item-1", "page_id": "en-page-1", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}}],
+        [{"item_id": "item-1", "page_id": "fr-page-1", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}}],
+        [{"page_id": "en-page-1", "storage_uri": "gs://b/en.png"}],
+        [{"page_id": "fr-page-1", "storage_uri": "gs://b/fr.png"}],
+    ]
+
+    with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts + [RuntimeError("boom")]), patch(
+        "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+    ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
+        try:
+            run("example.com", "run-en", "run-fr")
+            assert False, "expected unexpected OCR artifact read failures to propagate"
+        except RuntimeError as exc:
+            assert str(exc) == "boom"
