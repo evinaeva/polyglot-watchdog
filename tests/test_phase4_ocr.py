@@ -220,6 +220,75 @@ def test_phase6_continues_when_phase4_ocr_artifact_is_absent():
     assert issues == []
 
 
+def test_phase6_continues_when_phase4_ocr_artifact_not_found_style_error():
+    class NotFound(Exception):
+        pass
+
+    en_item = {"item_id": "item-1", "page_id": "en-page-1", "url": "https://example.com/p", "language": "en", "text": "Buy", "element_type": "p", "tag": "p", "attributes": None}
+    target_item = {"item_id": "item-1", "page_id": "fr-page-1", "url": "https://example.com/fr/p", "language": "fr", "text": "Acheter", "element_type": "img", "tag": "img", "attributes": None}
+    artifacts = [
+        [en_item],
+        [target_item],
+        [{"item_id": "item-1", "page_id": "en-page-1", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}}],
+        [{"item_id": "item-1", "page_id": "fr-page-1", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}}],
+        [{"page_id": "en-page-1", "storage_uri": "gs://b/en.png"}],
+        [{"page_id": "fr-page-1", "storage_uri": "gs://b/fr.png"}],
+    ]
+
+    with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts + [NotFound("missing")]), patch(
+        "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+    ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
+        issues = run("example.com", "run-en", "run-fr")
+
+    assert issues == []
+
+
+def test_phase6_rejects_invalid_present_phase4_ocr_artifact():
+    en_item = {"item_id": "item-1", "page_id": "en-page-1", "url": "https://example.com/p", "language": "en", "text": "Buy", "element_type": "p", "tag": "p", "attributes": None}
+    target_item = {"item_id": "item-1", "page_id": "fr-page-1", "url": "https://example.com/fr/p", "language": "fr", "text": "Acheter", "element_type": "img", "tag": "img", "attributes": None}
+    artifacts = [
+        [en_item],
+        [target_item],
+        [{"item_id": "item-1", "page_id": "en-page-1", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}}],
+        [{"item_id": "item-1", "page_id": "fr-page-1", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}}],
+        [{"page_id": "en-page-1", "storage_uri": "gs://b/en.png"}],
+        [{"page_id": "fr-page-1", "storage_uri": "gs://b/fr.png"}],
+        [{"item_id": "item-1", "status": "ok"}],
+    ]
+
+    with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+    ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
+        try:
+            run("example.com", "run-en", "run-fr")
+            assert False, "expected invalid present OCR artifact to fail schema validation"
+        except SchemaValidationError as exc:
+            assert "phase4_ocr" in str(exc)
+
+
+def test_phase6_rejects_non_list_present_phase4_ocr_artifact():
+    en_item = {"item_id": "item-1", "page_id": "en-page-1", "url": "https://example.com/p", "language": "en", "text": "Buy", "element_type": "p", "tag": "p", "attributes": None}
+    target_item = {"item_id": "item-1", "page_id": "fr-page-1", "url": "https://example.com/fr/p", "language": "fr", "text": "Acheter", "element_type": "img", "tag": "img", "attributes": None}
+    artifacts = [
+        [en_item],
+        [target_item],
+        [{"item_id": "item-1", "page_id": "en-page-1", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}}],
+        [{"item_id": "item-1", "page_id": "fr-page-1", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}}],
+        [{"page_id": "en-page-1", "storage_uri": "gs://b/en.png"}],
+        [{"page_id": "fr-page-1", "storage_uri": "gs://b/fr.png"}],
+        {"item_id": "item-1", "status": "ok"},
+    ]
+
+    with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+    ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
+        try:
+            run("example.com", "run-en", "run-fr")
+            assert False, "expected non-list OCR artifact to fail schema validation"
+        except SchemaValidationError as exc:
+            assert "phase4_ocr" in str(exc)
+
+
 def test_phase6_raises_unexpected_ocr_artifact_read_errors():
     en_item = {"item_id": "item-1", "page_id": "en-page-1", "url": "https://example.com/p", "language": "en", "text": "Buy", "element_type": "p", "tag": "p", "attributes": None}
     target_item = {"item_id": "item-1", "page_id": "fr-page-1", "url": "https://example.com/fr/p", "language": "fr", "text": "Acheter", "element_type": "img", "tag": "img", "attributes": None}

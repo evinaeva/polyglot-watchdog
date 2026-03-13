@@ -41,7 +41,7 @@ class Phase6SchemaComplianceTests(unittest.TestCase):
     def test_phase6_uses_schema_approved_categories(self):
         artifacts = self._artifacts()
 
-        with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts + [FileNotFoundError("missing")]), patch(
             "pipeline.run_phase6.write_json_artifact"
         ) as write_mock, patch("pipeline.run_phase6.write_phase_manifest") as manifest_mock:
             issues = run("example.com", "run-en", "run-fr")
@@ -56,7 +56,7 @@ class Phase6SchemaComplianceTests(unittest.TestCase):
     def test_phase6_does_not_persist_when_schema_invalid(self):
         artifacts = self._artifacts()
 
-        with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts + [FileNotFoundError("missing")]), patch(
             "pipeline.run_phase6.validate", side_effect=SchemaValidationError("STOP: invalid")
         ), patch("pipeline.run_phase6.write_json_artifact") as write_mock, self.assertRaises(SystemExit):
             run("example.com", "run-en", "run-fr")
@@ -87,7 +87,7 @@ class Phase6SchemaComplianceTests(unittest.TestCase):
         target_screens = [{"page_id": "fr-page-1", "url": "https://fr.example.com/p", "viewport_kind": "desktop", "state": "baseline", "user_tier": "guest", "storage_uri": "gs://b/fr.png"}]
 
         artifacts = [en_eligible, target_eligible, en_collected, target_collected, en_screens, target_screens]
-        with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts + [FileNotFoundError("missing")]), patch(
             "pipeline.run_phase6._load_blocked_overlay_pages",
             return_value=[{"capture_context_id": "ctx-1", "url": "https://fr.example.com/p", "storage_uri": "gs://b/fr.png"}],
         ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
@@ -122,7 +122,7 @@ class Phase6SchemaComplianceTests(unittest.TestCase):
         target_screens = [{"page_id": "fr-page-1", "url": "https://fr.example.com/p", "viewport_kind": "desktop", "state": "baseline", "user_tier": "guest", "storage_uri": "gs://b/fr.png"}]
 
         artifacts = [en_eligible, target_eligible, en_collected, target_collected, en_screens, target_screens]
-        with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts + [FileNotFoundError("missing")]), patch(
             "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
         ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
             issues = run("example.com", "run-en", "run-fr")
@@ -174,7 +174,7 @@ class Phase6SchemaComplianceTests(unittest.TestCase):
         target_screens = [{"page_id": "fr-page-dyn", "storage_uri": "gs://b/fr-dyn.png"}]
 
         artifacts = [en_eligible, target_eligible, en_collected, target_collected, en_screens, target_screens]
-        with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts + [FileNotFoundError("missing")]), patch(
             "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
         ), patch("pipeline.run_phase6.write_json_artifact"
         ), patch("pipeline.run_phase6.write_phase_manifest"):
@@ -225,7 +225,7 @@ class Phase6SchemaComplianceTests(unittest.TestCase):
         target_screens = [{"page_id": "fr-page-dyn", "storage_uri": "gs://b/fr-dyn.png"}]
 
         artifacts = [en_eligible, target_eligible, en_collected, target_collected, en_screens, target_screens]
-        with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts + [FileNotFoundError("missing")]), patch(
             "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
         ), patch("pipeline.run_phase6.write_json_artifact"
         ), patch("pipeline.run_phase6.write_phase_manifest"):
