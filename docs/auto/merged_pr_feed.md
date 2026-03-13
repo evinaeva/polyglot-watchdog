@@ -237,3 +237,16 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   - pipeline/run_phase6.py
   - tests/test_phase6_schema_compliance.py
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #83 — 2026-03-13T09:43:09Z
+
+- Title: phase6: reuse one AI review result per EN-target-language pair
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/83
+- Author: evinaeva
+- Base branch: main
+- Head branch: brbcq6-codex/fix-phase-6-ai-provider-inefficiency
+- Merge commit: 4d952d47c7e4ee9c2c387856bee425b3bbebc4bc
+- Changed files:
+  - pipeline/phase6_providers.py
+  - tests/test_phase6_providers.py
+- Notes: Auto-generated from merged PR metadata.
