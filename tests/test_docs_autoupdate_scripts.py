@@ -35,8 +35,6 @@ def test_validate_docs_diff_allows_allowlist(tmp_path):
     (tmp_path / "docs" / "x.md").write_text("x\n", encoding="utf-8")
     repo = Path(__file__).resolve().parents[1]
     script = repo / ".github" / "docs_autoupdate" / "scripts" / "validate_docs_diff.py"
-    env = os.environ.copy()
-    env["DOCS_AUTOUPDATE_CONFIG"] = str(repo / ".github" / "docs_autoupdate" / "scripts" / "config.json")
     res = run([sys.executable, str(script), "--ref", "HEAD"], tmp_path)
     assert res.returncode == 0, res.stderr
 
@@ -48,8 +46,6 @@ def test_validate_docs_diff_ignores_github_tmp_state_file(tmp_path):
     (tmp_dir / "docs_sync_state.json").write_text("{}\n", encoding="utf-8")
     repo = Path(__file__).resolve().parents[1]
     script = repo / ".github" / "docs_autoupdate" / "scripts" / "validate_docs_diff.py"
-    env = os.environ.copy()
-    env["DOCS_AUTOUPDATE_CONFIG"] = str(repo / ".github" / "docs_autoupdate" / "scripts" / "config.json")
     res = run([sys.executable, str(script), "--ref", "HEAD"], tmp_path)
     assert res.returncode == 0, res.stderr
 
@@ -59,8 +55,6 @@ def test_validate_docs_diff_rejects_blacklist(tmp_path):
     (tmp_path / "Dockerfile").write_text("FROM alpine\n", encoding="utf-8")
     repo = Path(__file__).resolve().parents[1]
     script = repo / ".github" / "docs_autoupdate" / "scripts" / "validate_docs_diff.py"
-    env = os.environ.copy()
-    env["DOCS_AUTOUPDATE_CONFIG"] = str(repo / ".github" / "docs_autoupdate" / "scripts" / "config.json")
     res = run([sys.executable, str(script), "--ref", "HEAD"], tmp_path)
     assert res.returncode == 1
     assert "Blacklisted files" in res.stderr
@@ -92,7 +86,6 @@ def test_merged_feed_duplicate_guard(tmp_path):
     script = repo / ".github" / "docs_autoupdate" / "scripts" / "update_merged_pr_feed.py"
     env = os.environ.copy()
     env["GITHUB_EVENT_PATH"] = str(event_path)
-    env["DOCS_AUTOUPDATE_CONFIG"] = str(repo / ".github" / "docs_autoupdate" / "scripts" / "config.json")
 
     first = subprocess.run([sys.executable, str(script)], cwd=tmp_path, env=env, text=True, capture_output=True)
     assert first.returncode == 0, first.stderr
@@ -112,7 +105,7 @@ def test_docs_ai_noop_and_state_advancement_and_blank_model_fallback(monkeypatch
 
     feed_text = (
         "# Merged PR Feed\n\n"
-        "## PR #1 — 2026-01-01T00:00:00Z\n"
+        "## PR #1 \u2014 2026-01-01T00:00:00Z\n"
         "- Merge commit: sha1\n"
         "- Changed files:\n"
         "  - docs/a.md\n"
@@ -177,7 +170,7 @@ def test_docs_ai_parse_feed_extracts_description_and_empty_body():
     mod = load_docs_ai_module()
     feed_text = (
         "# Merged PR Feed\n\n"
-        "## PR #8 — 2026-01-01T00:00:00Z\n"
+        "## PR #8 \u2014 2026-01-01T00:00:00Z\n"
         "- Merge commit: sha8\n"
         "- Changed files:\n"
         "  - docs/a.md\n"
@@ -186,7 +179,7 @@ def test_docs_ai_parse_feed_extracts_description_and_empty_body():
         "  - item one\n"
         "  Keep docs aligned.\n"
         "- Notes: Auto-generated from merged PR metadata.\n\n"
-        "## PR #9 — 2026-01-02T00:00:00Z\n"
+        "## PR #9 \u2014 2026-01-02T00:00:00Z\n"
         "- Merge commit: sha9\n"
         "- Changed files:\n"
         "  - docs/b.md\n"
@@ -233,7 +226,7 @@ def test_docs_ai_rejects_invalid_claude_output(monkeypatch, tmp_path):
     monkeypatch.setattr(
         mod,
         "git_show",
-        lambda ref_path: "# Merged PR Feed\n\n## PR #1 — 2026-01-01T00:00:00Z\n- Merge commit: sha1\n"
+        lambda ref_path: "# Merged PR Feed\n\n## PR #1 \u2014 2026-01-01T00:00:00Z\n- Merge commit: sha1\n"
         if ref_path.endswith("merged_pr_feed.md")
         else '{"last_processed_merge_commit":"","last_processed_pr_number":0,"last_sync_at_utc":""}',
     )
@@ -262,7 +255,7 @@ def test_docs_ai_rejects_malformed_anthropic_model_before_api_call(monkeypatch, 
     monkeypatch.setattr(
         mod,
         "git_show",
-        lambda ref_path: "# Merged PR Feed\n\n## PR #1 — 2026-01-01T00:00:00Z\n- Merge commit: sha1\n"
+        lambda ref_path: "# Merged PR Feed\n\n## PR #1 \u2014 2026-01-01T00:00:00Z\n- Merge commit: sha1\n"
         if ref_path.endswith("merged_pr_feed.md")
         else '{"last_processed_merge_commit":"","last_processed_pr_number":0,"last_sync_at_utc":""}',
     )
@@ -299,7 +292,7 @@ def _run_docs_ai_main(mod, tmp_path: Path, monkeypatch, claude_response: str):
 
     feed_text = (
         "# Merged PR Feed\n\n"
-        "## PR #1 — 2026-01-01T00:00:00Z\n"
+        "## PR #1 \u2014 2026-01-01T00:00:00Z\n"
         "- Merge commit: sha1\n"
         "- Changed files:\n"
         "  - docs/a.md\n"
@@ -361,7 +354,7 @@ def test_docs_ai_patch_search_multiple_matches_fails(monkeypatch, tmp_path):
 
     feed_text = (
         "# Merged PR Feed\n\n"
-        "## PR #1 — 2026-01-01T00:00:00Z\n"
+        "## PR #1 \u2014 2026-01-01T00:00:00Z\n"
         "- Merge commit: sha1\n"
         "- Changed files:\n"
         "  - docs/a.md\n"
