@@ -6,22 +6,26 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
-ALLOWED_PREFIXES = ("docs/", "spec/", "contract/schemas/")
-ALLOWED_ROOT_FILES = {"RELEASE_CRITERIA.md", "README.md", "APPLYING_STREAM1.md"}
-BLACKLIST = {
-    "contract/watchdog_contract_v1.0.md",
-    "Dockerfile",
-    "Dockerfile.e2e",
-    "cloudbuild.yaml",
-    "requirements.txt",
-}
+from pathlib import Path
 
-IGNORED_RUNTIME_PREFIXES = (".github/tmp/",)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from config_loader import load_config
+
+CONFIG = load_config()
+ALLOWED_PREFIXES = tuple(CONFIG["docs_rules"]["allowed_prefixes"])
+ALLOWED_ROOT_FILES = set(CONFIG["docs_rules"]["allowed_root_files"])
+BLACKLIST = set(CONFIG["docs_rules"]["blacklist"])
+IGNORED_RUNTIME_PREFIXES = tuple(CONFIG["paths"]["runtime_temp_prefixes"])
+
+if not ALLOWED_PREFIXES:
+    raise RuntimeError("Config error: allowed_prefixes cannot be empty")
+
+if not BLACKLIST:
+    raise RuntimeError("Config error: blacklist cannot be empty")
 
 
 def is_ignored_runtime_path(path: str) -> bool:
     return path.startswith(IGNORED_RUNTIME_PREFIXES)
-
 
 
 def is_allowed(path: str) -> bool:
@@ -31,12 +35,7 @@ def is_allowed(path: str) -> bool:
 
 
 def get_changed_name_status(ref: str) -> list[tuple[str, str]]:
-    result = subprocess.run(
-        ["git", "diff", "--name-status", ref],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+    result = subprocess.run(["git", "diff", "--name-status", ref], check=True, capture_output=True, text=True)
     entries: list[tuple[str, str]] = []
     for line in result.stdout.splitlines():
         if not line.strip():

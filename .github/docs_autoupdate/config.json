@@ -1,0 +1,71 @@
+{
+  "workflows": {
+    "docs_pr_feed": {
+      "base_branch": "main",
+      "feed_branch": "DOCS_AUTOUPDATE",
+      "commit_message_template": "chore(docs-auto): append merged PR #{pr_number} to feed"
+    },
+    "docs_ai_sync": {
+      "schedule_cron": "0 5 * * *",
+      "target_branch": "main",
+      "feed_ref": "origin/DOCS_AUTOUPDATE",
+      "state_ref": "origin/DOCS_AUTOUPDATE",
+      "docs_commit_message": "chore(docs): automated AI docs sync",
+      "state_commit_message": "chore(docs-auto): advance docs sync state"
+    }
+  },
+  "paths": {
+    "feed_path": "docs/auto/merged_pr_feed.md",
+    "state_path": "docs/auto/docs_sync_state.json",
+    "prompt_template_path": ".github/docs_autoupdate/prompts/docs_sync_prompt.txt",
+    "state_output_path": ".github/tmp/docs_sync_state.json",
+    "claude_raw_response_debug_path": ".github/tmp/claude_raw_response.txt",
+    "runtime_temp_prefixes": [
+      ".github/tmp/"
+    ]
+  },
+  "docs_rules": {
+    "allowed_prefixes": [
+      "docs/",
+      "spec/",
+      "contract/schemas/"
+    ],
+    "machine_managed_prefixes": [
+      "docs/auto/"
+    ],
+    "allowed_root_files": [
+      "RELEASE_CRITERIA.md",
+      "README.md",
+      "APPLYING_STREAM1.md"
+    ],
+    "blacklist": [
+      "contract/watchdog_contract_v1.0.md",
+      "Dockerfile",
+      "Dockerfile.e2e",
+      "cloudbuild.yaml",
+      "requirements.txt"
+    ]
+  },
+  "ai": {
+    "default_model": "claude-3-5-sonnet-20241022",
+    "max_tokens": 12000,
+    "temperature": 0,
+    "api_timeout_seconds": 120,
+    "api_url": "https://api.anthropic.com/v1/messages",
+    "anthropic_version": "2023-06-01",
+    "api_key_env": "ANTHROPIC_API_KEY",
+    "model_env": "ANTHROPIC_MODEL",
+    "parse_preview_chars": 1000
+  },
+  "limits": {
+    "max_doc_files": 80,
+    "max_doc_chars": 300000,
+    "max_file_chars": 20000
+  },
+  "github": {
+    "token_env": "GITHUB_TOKEN",
+    "repository_env": "GITHUB_REPOSITORY",
+    "event_path_env": "GITHUB_EVENT_PATH",
+    "output_env": "GITHUB_OUTPUT"
+  }
+}

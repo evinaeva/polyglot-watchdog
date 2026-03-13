@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""Run incremental AI docs sync based on merged PR feed in DOCS_AUTOUPDATE.
-This script reads feed/state from a source ref (typically origin/DOCS_AUTOUPDATE),
-applies validated documentation updates in the current checkout (expected main), and
-emits outputs for workflow control.
-"""
+"""Run incremental AI docs sync based on merged PR feed in DOCS_AUTOUPDATE."""
+
 from __future__ import annotations
+
 import argparse
 import json
 import os
@@ -15,27 +13,44 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-ALLOWED_PREFIXES = ("docs/", "spec/", "contract/schemas/")
-MACHINE_MANAGED_PREFIXES = ("docs/auto/",)
-ALLOWED_ROOT_FILES = {"RELEASE_CRITERIA.md", "README.md", "APPLYING_STREAM1.md"}
-BLACKLIST = {
-    "contract/watchdog_contract_v1.0.md",
-    "Dockerfile",
-    "Dockerfile.e2e",
-    "cloudbuild.yaml",
-    "requirements.txt",
-}
-DEFAULT_MODEL = "claude-3-5-sonnet-20241022"
-MAX_DOC_FILES = 80
-MAX_DOC_CHARS = 300_000
-MAX_FILE_CHARS = 20_000
-CLAUDE_RAW_RESPONSE_DEBUG_PATH = Path(".github/tmp/claude_raw_response.txt")
-CLAUDE_PARSE_PREVIEW_CHARS = 1000
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from config_loader import load_config, resolve_repo_path
+
+CONFIG = load_config()
+ALLOWED_PREFIXES = tuple(CONFIG["docs_rules"]["allowed_prefixes"])
+MACHINE_MANAGED_PREFIXES = tuple(CONFIG["docs_rules"]["machine_managed_prefixes"])
+ALLOWED_ROOT_FILES = set(CONFIG["docs_rules"]["allowed_root_files"])
+BLACKLIST = set(CONFIG["docs_rules"]["blacklist"])
+DEFAULT_MODEL = CONFIG["ai"]["default_model"]
+MAX_DOC_FILES = CONFIG["limits"]["max_doc_files"]
+MAX_DOC_CHARS = CONFIG["limits"]["max_doc_chars"]
+MAX_FILE_CHARS = CONFIG["limits"]["max_file_chars"]
+CLAUDE_RAW_RESPONSE_DEBUG_PATH = resolve_repo_path(CONFIG["paths"]["claude_raw_response_debug_path"])
+CLAUDE_PARSE_PREVIEW_CHARS = CONFIG["ai"]["parse_preview_chars"]
+FEED_PATH = CONFIG["paths"]["feed_path"]
+STATE_PATH = CONFIG["paths"]["state_path"]
+PROMPT_TEMPLATE_PATH = CONFIG["paths"]["prompt_template_path"]
+STATE_OUTPUT_PATH = CONFIG["paths"]["state_output_path"]
+AI_API_KEY_ENV = CONFIG["ai"]["api_key_env"]
+AI_MODEL_ENV = CONFIG["ai"]["model_env"]
+AI_MAX_TOKENS = CONFIG["ai"]["max_tokens"]
+AI_TEMPERATURE = CONFIG["ai"]["temperature"]
+AI_API_TIMEOUT_SECONDS = CONFIG["ai"]["api_timeout_seconds"]
+AI_API_URL = CONFIG["ai"]["api_url"]
+AI_ANTHROPIC_VERSION = CONFIG["ai"]["anthropic_version"]
+WORKFLOW_FEED_REF = CONFIG["workflows"]["docs_ai_sync"]["feed_ref"]
+WORKFLOW_STATE_REF = CONFIG["workflows"]["docs_ai_sync"]["state_ref"]
+GITHUB_OUTPUT_ENV = CONFIG["github"]["output_env"]
+
+
 def git_show(ref_path: str) -> str:
     res = subprocess.run(["git", "show", ref_path], capture_output=True, text=True)
     if res.returncode != 0:
         return ""
     return res.stdout
+
+
 def parse_feed(feed_text: str) -> list[dict[str, Any]]:
     chunks = re.split(r"(?m)^## PR #", feed_text)
     entries: list[dict[str, Any]] = []
@@ -46,8 +61,7 @@ def parse_feed(feed_text: str) -> list[dict[str, Any]]:
             continue
         pr_number = int(m.group(1))
         merged_at = m.group(2).strip()
-        body = "\n".join(rest)
-        merge_match = re.search(r"(?m)^- Merge commit:\s*(\S+)\s*$", body)
+        merge_match = re.search(r"(?m)^- Merge commit:\s*(\S+)\s*$", "\n".join(rest))
         merge_commit = merge_match.group(1) if merge_match else ""
         changed_files: list[str] = []
         in_changed_section = False
@@ -74,10 +88,7 @@ def parse_feed(feed_text: str) -> list[dict[str, Any]]:
                 if line.startswith("- ") and not line.startswith("  - "):
                     in_description_section = False
                 else:
-                    if line.startswith("  "):
-                        description_lines.append(line[2:])
-                    else:
-                        description_lines.append(line)
+                    description_lines.append(line[2:] if line.startswith("  ") else line)
         entries.append(
             {
                 "pr_number": pr_number,
@@ -89,6 +100,8 @@ def parse_feed(feed_text: str) -> list[dict[str, Any]]:
             }
         )
     return entries
+
+
 def is_allowed(path: str) -> bool:
     if path.startswith(MACHINE_MANAGED_PREFIXES):
         return False
@@ -97,9 +110,11 @@ def is_allowed(path: str) -> bool:
     if path in ALLOWED_ROOT_FILES:
         return True
     return path.startswith(ALLOWED_PREFIXES)
+
+
 def _all_allowlisted_files() -> list[str]:
     files: list[Path] = []
-    for prefix in ["docs", "spec", "contract/schemas"]:
+    for prefix in [p.rstrip("/") for p in ALLOWED_PREFIXES]:
         root = Path(prefix)
         if root.exists():
             files.extend([p for p in root.rglob("*") if p.is_file()])
@@ -107,13 +122,9 @@ def _all_allowlisted_files() -> list[str]:
         p = Path(root_file)
         if p.exists():
             files.append(p)
-    return sorted(
-        {
-            f.as_posix()
-            for f in files
-            if not f.as_posix().startswith(MACHINE_MANAGED_PREFIXES)
-        }
-    )
+    return sorted({f.as_posix() for f in files if not f.as_posix().startswith(MACHINE_MANAGED_PREFIXES)})
+
+
 def gather_allowlisted_files(candidate_paths: list[str]) -> tuple[dict[str, str], dict[str, Any]]:
     all_paths = _all_allowlisted_files()
     if not all_paths:
@@ -128,6 +139,7 @@ def gather_allowlisted_files(candidate_paths: list[str]) -> tuple[dict[str, str]
     for path in all_paths:
         if path not in prioritized:
             prioritized.append(path)
+
     selected: dict[str, str] = {}
     total_chars = 0
     truncated_files: list[str] = []
@@ -150,6 +162,8 @@ def gather_allowlisted_files(candidate_paths: list[str]) -> tuple[dict[str, str]
         "max_chars": MAX_DOC_CHARS,
         "max_file_chars": MAX_FILE_CHARS,
     }
+
+
 def extract_json(text: str) -> dict[str, Any]:
     text = text.strip()
     if text.startswith("```"):
@@ -162,28 +176,32 @@ def extract_json(text: str) -> dict[str, Any]:
         if not match:
             raise
         return json.loads(match.group(0))
+
+
 def call_claude(prompt: str, model: str, api_key: str) -> str:
     payload = {
         "model": model,
-        "max_tokens": 12000,
-        "temperature": 0,
+        "max_tokens": AI_MAX_TOKENS,
+        "temperature": AI_TEMPERATURE,
         "messages": [{"role": "user", "content": prompt}],
     }
     req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages",
+        AI_API_URL,
         data=json.dumps(payload).encode("utf-8"),
         headers={
             "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
+            "anthropic-version": AI_ANTHROPIC_VERSION,
             "content-type": "application/json",
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=120) as resp:
+    with urllib.request.urlopen(req, timeout=AI_API_TIMEOUT_SECONDS) as resp:
         body = json.loads(resp.read().decode("utf-8"))
     parts = body.get("content", [])
     text_parts = [p.get("text", "") for p in parts if p.get("type") == "text"]
     return "\n".join(text_parts).strip()
+
+
 def resolve_model(raw_model: str | None) -> str:
     if raw_model is None:
         return DEFAULT_MODEL
@@ -191,18 +209,19 @@ def resolve_model(raw_model: str | None) -> str:
     if not model:
         return DEFAULT_MODEL
     if "=" in model:
-        raise ValueError(
-            "Invalid ANTHROPIC_MODEL: expected a model id (for example 'claude-3-5-sonnet-20241022'), "
-            "but got an assignment-like value containing '='."
-        )
+        raise ValueError("Invalid ANTHROPIC_MODEL: expected a model id (for example 'claude-3-5-sonnet-20241022'), but got an assignment-like value containing '='.")
     if any(ch.isspace() for ch in model):
         raise ValueError("Invalid ANTHROPIC_MODEL: model id must not contain whitespace.")
     return model
+
+
 def write_output(path: str | None, key: str, value: str) -> None:
     if not path:
         return
     with open(path, "a", encoding="utf-8") as f:
         f.write(f"{key}={value}\n")
+
+
 def compute_new_entries(entries: list[dict[str, Any]], state: dict[str, Any]) -> list[dict[str, Any]]:
     last_commit = (state.get("last_processed_merge_commit") or "").strip()
     last_pr = int(state.get("last_processed_pr_number") or 0)
@@ -212,17 +231,11 @@ def compute_new_entries(entries: list[dict[str, Any]], state: dict[str, Any]) ->
         for idx, entry in enumerate(entries):
             if entry.get("merge_commit") == last_commit:
                 return entries[idx + 1 :]
-        print(
-            "State marker merge commit was not found in feed; attempting PR-number recovery.",
-            file=sys.stderr,
-        )
+        print("State marker merge commit was not found in feed; attempting PR-number recovery.", file=sys.stderr)
     if last_pr > 0:
-        recovered = [entry for entry in entries if int(entry.get("pr_number", 0)) > last_pr]
         print(f"Recovered incrementality using last_processed_pr_number={last_pr}.", file=sys.stderr)
-        return recovered
-    raise RuntimeError(
-        "State marker not found in feed and no PR-number recovery marker exists; refusing unsafe full replay."
-    )
+        return [entry for entry in entries if int(entry.get("pr_number", 0)) > last_pr]
+    raise RuntimeError("State marker not found in feed and no PR-number recovery marker exists; refusing unsafe full replay.")
 
 
 def apply_patch_operations(path: str, content: str, patches: list[dict[str, Any]]) -> str:
@@ -249,19 +262,22 @@ def apply_patch_operations(path: str, content: str, patches: list[dict[str, Any]
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--feed-ref", default="origin/DOCS_AUTOUPDATE")
-    parser.add_argument("--state-ref", default="origin/DOCS_AUTOUPDATE")
-    parser.add_argument("--state-output", default=".github/tmp/docs_sync_state.json")
-    parser.add_argument("--prompt-template", default=".github/prompts/docs_sync_prompt.txt")
-    parser.add_argument("--github-output", default=os.environ.get("GITHUB_OUTPUT", ""))
+    parser.add_argument("--feed-ref", default=WORKFLOW_FEED_REF)
+    parser.add_argument("--state-ref", default=WORKFLOW_STATE_REF)
+    parser.add_argument("--state-output", default=STATE_OUTPUT_PATH)
+    parser.add_argument("--prompt-template", default=PROMPT_TEMPLATE_PATH)
+    parser.add_argument("--github-output", default=os.environ.get(GITHUB_OUTPUT_ENV, ""))
     args = parser.parse_args()
+
     write_output(args.github_output, "docs_changed", "false")
     write_output(args.github_output, "state_changed", "false")
-    feed_text = git_show(f"{args.feed_ref}:docs/auto/merged_pr_feed.md")
+
+    feed_text = git_show(f"{args.feed_ref}:{FEED_PATH}")
     if not feed_text:
         print("No feed content found; exiting no-op.")
         return 0
-    state_text = git_show(f"{args.state_ref}:docs/auto/docs_sync_state.json")
+
+    state_text = git_show(f"{args.state_ref}:{STATE_PATH}")
     state = {"last_processed_merge_commit": "", "last_processed_pr_number": 0, "last_sync_at_utc": ""}
     if state_text.strip():
         try:
@@ -269,10 +285,12 @@ def main() -> int:
         except json.JSONDecodeError:
             print("State file is invalid JSON.", file=sys.stderr)
             return 1
+
     entries = parse_feed(feed_text)
     if not entries:
         print("No feed entries found.")
         return 0
+
     try:
         new_entries = compute_new_entries(entries, state)
     except RuntimeError as exc:
@@ -281,18 +299,22 @@ def main() -> int:
     if not new_entries:
         print("No new feed entries to process.")
         return 0
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+
+    api_key = os.environ.get(AI_API_KEY_ENV, "")
     if not api_key:
-        print("ANTHROPIC_API_KEY is required.", file=sys.stderr)
+        print(f"{AI_API_KEY_ENV} is required.", file=sys.stderr)
         return 1
+
     try:
-        model = resolve_model(os.environ.get("ANTHROPIC_MODEL"))
+        model = resolve_model(os.environ.get(AI_MODEL_ENV))
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 1
+
     changed_candidates = [p for entry in new_entries for p in entry.get("changed_files", []) if is_allowed(p)]
     docs_snapshot, snapshot_meta = gather_allowlisted_files(changed_candidates)
     prompt_template = Path(args.prompt_template).read_text(encoding="utf-8")
+
     payload = {
         "feed_delta": [
             {
@@ -310,6 +332,7 @@ def main() -> int:
     }
     prompt = f"{prompt_template}\n\nINPUT_JSON:\n{json.dumps(payload, ensure_ascii=False)}"
     response_text = call_claude(prompt, model, api_key)
+
     try:
         response_json = extract_json(response_text)
     except Exception as exc:
@@ -324,10 +347,12 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+
     updates = response_json.get("updates")
     if not isinstance(updates, list):
         print("Claude response missing 'updates' list.", file=sys.stderr)
         return 1
+
     docs_changed = False
     virtual_contents: dict[str, str] = {}
     planned_writes: dict[str, str] = {}
@@ -347,6 +372,7 @@ def main() -> int:
         if not isinstance(patches, list):
             print(f"Invalid patches for {path}: expected list.", file=sys.stderr)
             return 1
+
         target = Path(path)
         if path not in virtual_contents:
             if not target.exists():
@@ -359,6 +385,7 @@ def main() -> int:
             print(str(exc), file=sys.stderr)
             return 1
         virtual_contents[path] = updated
+
         if updated != target.read_text(encoding="utf-8"):
             planned_writes[path] = updated
         elif path in planned_writes:
@@ -369,6 +396,7 @@ def main() -> int:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
         docs_changed = True
+
     newest = new_entries[-1]
     new_state = {
         "last_processed_merge_commit": newest.get("merge_commit", ""),
@@ -378,10 +406,13 @@ def main() -> int:
     out_path = Path(args.state_output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(new_state, indent=2) + "\n", encoding="utf-8")
+
     write_output(args.github_output, "docs_changed", "true" if docs_changed else "false")
     write_output(args.github_output, "state_changed", "true")
     write_output(args.github_output, "state_output_path", out_path.as_posix())
     print("No documentation changes proposed by AI." if not docs_changed else "Documentation updates applied.")
     return 0
+
+
 if __name__ == "__main__":
     raise SystemExit(main())
