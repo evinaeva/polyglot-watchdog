@@ -280,3 +280,133 @@ def test_docs_ai_rejects_malformed_anthropic_model_before_api_call(monkeypatch, 
     assert rc == 1
     assert called["value"] is False
     assert not out_state.exists()
+
+
+def _run_docs_ai_main(mod, tmp_path: Path, monkeypatch, claude_response: str):
+    (tmp_path / "docs").mkdir(exist_ok=True)
+    (tmp_path / "docs" / "a.md").write_text("alpha\nbeta\n", encoding="utf-8")
+
+    feed_text = (
+        "# Merged PR Feed\n\n"
+        "## PR #1 — 2026-01-01T00:00:00Z\n"
+        "- Merge commit: sha1\n"
+        "- Changed files:\n"
+        "  - docs/a.md\n"
+    )
+
+    def fake_show(ref_path: str) -> str:
+        if ref_path.endswith("merged_pr_feed.md"):
+            return feed_text
+        return '{"last_processed_merge_commit":"","last_processed_pr_number":0,"last_sync_at_utc":""}'
+
+    monkeypatch.setattr(mod, "git_show", fake_show)
+    monkeypatch.setattr(mod, "call_claude", lambda *_args, **_kwargs: claude_response)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+
+    prompt = tmp_path / "prompt.txt"
+    prompt.write_text("template", encoding="utf-8")
+    out_state = tmp_path / "state.json"
+
+    old_cwd = Path.cwd()
+    old_argv = sys.argv
+    os.chdir(tmp_path)
+    sys.argv = ["docs_ai_sync.py", "--prompt-template", str(prompt), "--state-output", str(out_state)]
+    try:
+        rc = mod.main()
+    finally:
+        sys.argv = old_argv
+        os.chdir(old_cwd)
+    return rc, out_state
+
+
+def test_docs_ai_patch_apply_success(monkeypatch, tmp_path):
+    mod = load_docs_ai_module()
+    rc, _ = _run_docs_ai_main(
+        mod,
+        tmp_path,
+        monkeypatch,
+        '{"updates":[{"path":"docs/a.md","action":"patch","patches":[{"search":"beta\\n","replace":"gamma\\n"}]}]}',
+    )
+    assert rc == 0
+    assert (tmp_path / "docs" / "a.md").read_text(encoding="utf-8") == "alpha\ngamma\n"
+
+
+def test_docs_ai_patch_search_not_found_fails(monkeypatch, tmp_path):
+    mod = load_docs_ai_module()
+    rc, _ = _run_docs_ai_main(
+        mod,
+        tmp_path,
+        monkeypatch,
+        '{"updates":[{"path":"docs/a.md","action":"patch","patches":[{"search":"missing\\n","replace":"gamma\\n"}]}]}',
+    )
+    assert rc == 1
+    assert (tmp_path / "docs" / "a.md").read_text(encoding="utf-8") == "alpha\nbeta\n"
+
+
+def test_docs_ai_patch_search_multiple_matches_fails(monkeypatch, tmp_path):
+    mod = load_docs_ai_module()
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "a.md").write_text("dup\ndup\n", encoding="utf-8")
+
+    feed_text = (
+        "# Merged PR Feed\n\n"
+        "## PR #1 — 2026-01-01T00:00:00Z\n"
+        "- Merge commit: sha1\n"
+        "- Changed files:\n"
+        "  - docs/a.md\n"
+    )
+    monkeypatch.setattr(
+        mod,
+        "git_show",
+        lambda ref_path: feed_text if ref_path.endswith("merged_pr_feed.md") else '{"last_processed_merge_commit":"","last_processed_pr_number":0,"last_sync_at_utc":""}',
+    )
+    monkeypatch.setattr(
+        mod,
+        "call_claude",
+        lambda *_args, **_kwargs: '{"updates":[{"path":"docs/a.md","action":"patch","patches":[{"search":"dup\\n","replace":"ok\\n"}]}]}',
+    )
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    prompt = tmp_path / "prompt.txt"
+    prompt.write_text("template", encoding="utf-8")
+    out_state = tmp_path / "state.json"
+    old_cwd = Path.cwd()
+    old_argv = sys.argv
+    os.chdir(tmp_path)
+    sys.argv = ["docs_ai_sync.py", "--prompt-template", str(prompt), "--state-output", str(out_state)]
+    try:
+        rc = mod.main()
+    finally:
+        sys.argv = old_argv
+        os.chdir(old_cwd)
+
+    assert rc == 1
+    assert (tmp_path / "docs" / "a.md").read_text(encoding="utf-8") == "dup\ndup\n"
+
+
+def test_docs_ai_invalid_patch_schema_fails(monkeypatch, tmp_path):
+    mod = load_docs_ai_module()
+    rc, _ = _run_docs_ai_main(
+        mod,
+        tmp_path,
+        monkeypatch,
+        '{"updates":[{"path":"docs/a.md","action":"patch","patches":[{"search":"beta\\n"}]}]}',
+    )
+    assert rc == 1
+
+
+def test_docs_ai_patch_noop_response_still_works(monkeypatch, tmp_path):
+    mod = load_docs_ai_module()
+    rc, out_state = _run_docs_ai_main(mod, tmp_path, monkeypatch, '{"updates":[]}')
+    assert rc == 0
+    assert out_state.exists()
+
+
+def test_docs_ai_rejects_replace_file_contract(monkeypatch, tmp_path):
+    mod = load_docs_ai_module()
+    rc, _ = _run_docs_ai_main(
+        mod,
+        tmp_path,
+        monkeypatch,
+        '{"updates":[{"path":"docs/a.md","action":"replace_file","content":"x"}]}',
+    )
+    assert rc == 1
