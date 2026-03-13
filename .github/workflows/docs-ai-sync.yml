@@ -18,6 +18,18 @@ jobs:
           ref: main
           fetch-depth: 0
 
+      - name: Locate docs auto-update scripts
+        run: |
+          for candidate in .github/scripts .github/docs_autoupdate/scripts scripts/docs_autoupdate; do
+            if [ -f "$candidate/config.json" ] && [ -f "$candidate/docs_ai_sync.py" ]; then
+              echo "DOCS_AUTOUPDATE_SCRIPT_DIR=$candidate" >> "$GITHUB_ENV"
+              echo "DOCS_AUTOUPDATE_CONFIG=$candidate/config.json" >> "$GITHUB_ENV"
+              exit 0
+            fi
+          done
+          echo "Unable to locate docs auto-update scripts directory" >&2
+          exit 1
+
       - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
@@ -25,7 +37,7 @@ jobs:
 
       - name: Load docs auto-update config
         run: |
-          CONFIG=.github/scripts/config.json
+          CONFIG="$DOCS_AUTOUPDATE_CONFIG"
           echo "TARGET_BRANCH=$(python -c 'import json;print(json.load(open("'"$CONFIG"'"))["workflows"]["docs_ai_sync"]["target_branch"])')" >> "$GITHUB_ENV"
           echo "FEED_BRANCH=$(python -c 'import json;print(json.load(open("'"$CONFIG"'"))["workflows"]["docs_pr_feed"]["feed_branch"])')" >> "$GITHUB_ENV"
           echo "FEED_PATH=$(python -c 'import json;print(json.load(open("'"$CONFIG"'"))["paths"]["feed_path"])')" >> "$GITHUB_ENV"
@@ -40,9 +52,8 @@ jobs:
           git fetch origin "$FEED_BRANCH" || true
           git checkout "$TARGET_BRANCH"
 
-
       - name: Verify schedule consistency
-        run: python .github/scripts/check_schedule_sync.py
+        run: python "$DOCS_AUTOUPDATE_SCRIPT_DIR/check_schedule_sync.py"
 
       - name: AI docs sync (apply docs updates to main working tree)
         id: sync
@@ -52,7 +63,7 @@ jobs:
           if [ -n "${{ vars.ANTHROPIC_MODEL }}" ]; then
             export ANTHROPIC_MODEL="${{ vars.ANTHROPIC_MODEL }}"
           fi
-          python .github/scripts/docs_ai_sync.py --github-output "$GITHUB_OUTPUT"
+          python "$DOCS_AUTOUPDATE_SCRIPT_DIR/docs_ai_sync.py" --github-output "$GITHUB_OUTPUT"
 
       - name: Upload Claude raw response on sync failure
         if: failure() && steps.sync.outcome == 'failure' && hashFiles('.github/tmp/claude_raw_response.txt') != ''
@@ -64,7 +75,7 @@ jobs:
 
       - name: Validate documentation diff scope
         if: steps.sync.outputs.docs_changed == 'true'
-        run: python .github/scripts/validate_docs_diff.py --ref HEAD
+        run: python "$DOCS_AUTOUPDATE_SCRIPT_DIR/validate_docs_diff.py" --ref HEAD
 
       - name: Commit docs updates to target branch
         if: steps.sync.outputs.docs_changed == 'true'
