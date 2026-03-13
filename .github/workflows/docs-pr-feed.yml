@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   append-feed:
-    if: ${{ github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main' }}
+    if: ${{ github.event.pull_request.merged == true }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -22,26 +22,34 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Switch to DOCS_AUTOUPDATE
+      - name: Load docs auto-update config
         run: |
-          git fetch origin DOCS_AUTOUPDATE || true
-          if git show-ref --verify --quiet refs/remotes/origin/DOCS_AUTOUPDATE; then
-            git checkout -B DOCS_AUTOUPDATE origin/DOCS_AUTOUPDATE
+          CONFIG=.github/docs_autoupdate/config.json
+          echo "FEED_BRANCH=$(python -c 'import json;print(json.load(open("'"$CONFIG"'"))["workflows"]["docs_pr_feed"]["feed_branch"])')" >> "$GITHUB_ENV"
+          echo "FEED_PATH=$(python -c 'import json;print(json.load(open("'"$CONFIG"'"))["paths"]["feed_path"])')" >> "$GITHUB_ENV"
+          echo "FEED_COMMIT_TEMPLATE=$(python -c 'import json;print(json.load(open("'"$CONFIG"'"))["workflows"]["docs_pr_feed"]["commit_message_template"])')" >> "$GITHUB_ENV"
+
+      - name: Switch to feed branch
+        run: |
+          git fetch origin "$FEED_BRANCH" || true
+          if git show-ref --verify --quiet "refs/remotes/origin/$FEED_BRANCH"; then
+            git checkout -B "$FEED_BRANCH" "origin/$FEED_BRANCH"
           else
-            git checkout -B DOCS_AUTOUPDATE
+            git checkout -B "$FEED_BRANCH"
           fi
 
       - name: Append merged PR feed entry
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python .github/scripts/update_merged_pr_feed.py
+        run: python .github/docs_autoupdate/scripts/update_merged_pr_feed.py
 
       - name: Commit and push feed update
         run: |
-          git add docs/auto/merged_pr_feed.md
+          git add "$FEED_PATH"
           if git diff --cached --quiet; then
             echo "No feed changes to commit."
             exit 0
           fi
-          git commit -m "chore(docs-auto): append merged PR #${{ github.event.pull_request.number }} to feed"
-          git push origin DOCS_AUTOUPDATE
+          msg="${FEED_COMMIT_TEMPLATE//\{pr_number\}/${{ github.event.pull_request.number }}}"
+          git commit -m "$msg"
+          git push origin "$FEED_BRANCH"

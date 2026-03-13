@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Append deterministic merged PR entries to docs/auto/merged_pr_feed.md.
-
-Designed for pull_request.closed events where merged=true and base=main.
-"""
+"""Append deterministic merged PR entries to docs feed."""
 
 from __future__ import annotations
 
@@ -13,6 +10,16 @@ import sys
 import urllib.request
 from pathlib import Path
 from typing import List
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from config_loader import load_config, resolve_repo_path
+
+CONFIG = load_config()
+BASE_BRANCH = CONFIG["workflows"]["docs_pr_feed"]["base_branch"]
+FEED_PATH = resolve_repo_path(CONFIG["paths"]["feed_path"])
+EVENT_PATH_ENV = CONFIG["github"]["event_path_env"]
+TOKEN_ENV = CONFIG["github"]["token_env"]
+REPOSITORY_ENV = CONFIG["github"]["repository_env"]
 
 
 def gh_api_get(url: str, token: str) -> dict | list:
@@ -33,8 +40,8 @@ def get_changed_files(event: dict) -> List[str]:
     if isinstance(files, list):
         return sorted({f.get("filename", "") for f in files if f.get("filename")})
 
-    token = os.environ.get("GITHUB_TOKEN")
-    repo = os.environ.get("GITHUB_REPOSITORY")
+    token = os.environ.get(TOKEN_ENV)
+    repo = os.environ.get(REPOSITORY_ENV)
     pr_number = event.get("pull_request", {}).get("number")
     if not token or not repo or not pr_number:
         return []
@@ -85,26 +92,25 @@ def build_entry(event: dict, files: List[str]) -> str:
 
 
 def main() -> int:
-    event_path = os.environ.get("GITHUB_EVENT_PATH")
+    event_path = os.environ.get(EVENT_PATH_ENV)
     if not event_path:
-        print("GITHUB_EVENT_PATH is required", file=sys.stderr)
+        print(f"{EVENT_PATH_ENV} is required", file=sys.stderr)
         return 1
 
     event = json.loads(Path(event_path).read_text(encoding="utf-8"))
     pr = event.get("pull_request", {})
-    if not pr.get("merged") or pr.get("base", {}).get("ref") != "main":
-        print("Not a merged PR into main; nothing to do.")
+    if not pr.get("merged") or pr.get("base", {}).get("ref") != BASE_BRANCH:
+        print(f"Not a merged PR into {BASE_BRANCH}; nothing to do.")
         return 0
 
     pr_number = pr.get("number")
     merge_sha = pr.get("merge_commit_sha", "")
 
-    feed_path = Path("docs/auto/merged_pr_feed.md")
-    feed_path.parent.mkdir(parents=True, exist_ok=True)
-    if not feed_path.exists():
-        feed_path.write_text("# Merged PR Feed\n\n", encoding="utf-8")
+    FEED_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if not FEED_PATH.exists():
+        FEED_PATH.write_text("# Merged PR Feed\n\n", encoding="utf-8")
 
-    existing = feed_path.read_text(encoding="utf-8")
+    existing = FEED_PATH.read_text(encoding="utf-8")
     duplicate_pattern = re.compile(
         rf"^## PR #{re.escape(str(pr_number))} — .*?^- Merge commit: {re.escape(merge_sha)}$",
         flags=re.MULTILINE | re.DOTALL,
@@ -116,7 +122,7 @@ def main() -> int:
     files = get_changed_files(event)
     entry = build_entry(event, files)
     updated = existing.rstrip() + "\n\n" + entry
-    feed_path.write_text(updated, encoding="utf-8")
+    FEED_PATH.write_text(updated, encoding="utf-8")
     print(f"Appended feed entry for PR #{pr_number}")
     return 0
 
