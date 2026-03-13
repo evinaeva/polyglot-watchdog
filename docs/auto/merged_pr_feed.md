@@ -250,3 +250,20 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   - pipeline/phase6_providers.py
   - tests/test_phase6_providers.py
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #84 — 2026-03-13T10:10:02Z
+
+- Title: Fix docs workflows to use .github/scripts paths
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/84
+- Author: evinaeva
+- Base branch: main
+- Head branch: em6bhr-codex/fix-github-actions-workflow-paths
+- Merge commit: 62e74925112050d36f107a60cfe8fc5b80e9d624
+- Changed files:
+  - .github/scripts/check_schedule_sync.py
+  - .github/scripts/config_loader.py
+  - .github/scripts/docs_ai_sync.py
+  - .github/scripts/update_merged_pr_feed.py
+  - .github/scripts/validate_docs_diff.py
+  - .github/workflows/docs-ai-sync.yml
+- Notes: Auto-generated from merged PR metadata.
