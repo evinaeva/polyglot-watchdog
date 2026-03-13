@@ -30,9 +30,13 @@ jobs:
           echo "FEED_PATH=$(python -c 'import json;print(json.load(open("'"$CONFIG"'"))["paths"]["feed_path"])')" >> "$GITHUB_ENV"
           echo "FEED_COMMIT_TEMPLATE=$(python -c 'import json;print(json.load(open("'"$CONFIG"'"))["workflows"]["docs_pr_feed"]["commit_message_template"])')" >> "$GITHUB_ENV"
 
-      - name: Preserve feed writer from main
+      - name: Preserve feed writer scripts from main
         run: |
-          cp .github/scripts/update_merged_pr_feed.py "$RUNNER_TEMP/update_merged_pr_feed.py"
+          TEMP_SCRIPTS_DIR="$RUNNER_TEMP/docs-pr-feed-scripts"
+          mkdir -p "$TEMP_SCRIPTS_DIR"
+          cp .github/scripts/update_merged_pr_feed.py "$TEMP_SCRIPTS_DIR/update_merged_pr_feed.py"
+          cp .github/scripts/config_loader.py "$TEMP_SCRIPTS_DIR/config_loader.py"
+          echo "TEMP_SCRIPTS_DIR=$TEMP_SCRIPTS_DIR" >> "$GITHUB_ENV"
 
       - name: Switch to feed branch
         run: |
@@ -46,7 +50,8 @@ jobs:
       - name: Append merged PR feed entry
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python "$RUNNER_TEMP/update_merged_pr_feed.py"
+          PYTHONPATH: ${{ env.TEMP_SCRIPTS_DIR }}
+        run: python "${{ env.TEMP_SCRIPTS_DIR }}/update_merged_pr_feed.py"
 
       - name: Commit and push feed update
         run: |
