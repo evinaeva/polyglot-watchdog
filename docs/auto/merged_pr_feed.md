@@ -386,3 +386,38 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69b40066a248832c92e92cd39e1093a4)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #94 — 2026-03-13T12:33:22Z
+
+- Title: Support locating docs auto-update scripts directory, use config_loader, and ignore bytecode files
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/94
+- Author: evinaeva
+- Base branch: main
+- Head branch: qo5y1b-codex/investigate-actions-failure-after-script-relocation
+- Merge commit: 0cbd20d1965e7e1ace1ed288e5e4234e0ba1a969
+- Changed files:
+  - .github/scripts/check_schedule_sync.py
+  - .github/scripts/validate_docs_diff.py
+  - .github/workflows/docs-ai-sync.yml
+  - .github/workflows/docs-pr-feed.yml
+- Description:
+  ### Motivation
+  
+  - Centralize config loading and make the docs auto-update scripts relocatable so workflows can run the scripts from multiple possible paths. 
+  - Prevent runtime noise from Python bytecode artifacts during allowed/ignored path checks. 
+  - Ensure workflows avoid writing .pyc files by setting `PYTHONDONTWRITEBYTECODE` in runners.
+  
+  ### Description
+  
+  - Replaced direct JSON parsing with `load_config` from `config_loader` in `check_schedule_sync.py` to reuse the shared config loader. 
+  - Enhanced `validate_docs_diff.py` to treat `__pycache__` directories and `.pyc/.pyo` filenames as ignored runtime artifacts by adding `IGNORED_RUNTIME_SUFFIXES` and updating `is_ignored_runtime_path`. 
+  - Updated `docs-ai-sync.yml` and `docs-pr-feed.yml` to discover the docs auto-update scripts directory at runtime, export `DOCS_AUTOUPDATE_SCRIPT_DIR` and `DOCS_AUTOUPDATE_CONFIG`, set `PYTHONDONTWRITEBYTECODE: "1"`, and invoke scripts via the discovered directory (e.g. `python "$DOCS_AUTOUPDATE_SCRIPT_DIR/docs_ai_sync.py"`). 
+  - In `docs-pr-feed.yml` preserved the feed writer scripts by copying them from the discovered directory into a temporary scripts directory and added that directory to `PYTHONPATH` for execution.
+  
+  ### Testing
+  
+  - No repository automated tests were modified and no automated test runs are included in this change.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69b40066a248832c92e92cd39e1093a4)
+- Notes: Auto-generated from merged PR metadata.
