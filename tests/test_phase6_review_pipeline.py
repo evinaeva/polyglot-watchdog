@@ -126,3 +126,37 @@ def test_confidence_and_ordering_are_deterministic():
     assert first == second
     assert first[0]["confidence"] == 0.7
     assert first[0]["evidence"]["signals"] == {"identical_text": 0.2, "untranslated_indicator": 0.1}
+
+
+def test_missing_target_evidence_prefers_collected_page_id_for_storage_lookup():
+    artifacts = _base_artifacts()
+    # Remove target so EN item becomes missing-target case.
+    artifacts[1] = []
+    artifacts[2] = [{"item_id": "item-1", "page_id": "en-page-collected", "bbox": {"x": 1, "y": 2, "width": 3, "height": 4}}]
+    artifacts[4] = [{"page_id": "en-page-collected", "storage_uri": "gs://b/en-collected.png"}]
+    artifacts[0][0]["page_id"] = "en-page-ignored"
+
+    with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+    ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
+        issues = run("example.com", "run-en", "run-fr")
+
+    assert len(issues) == 1
+    issue = issues[0]
+    assert issue["category"] == "MISSING_TRANSLATION"
+    assert issue["evidence"]["page_id"] == "en-page-collected"
+    assert issue["evidence"]["storage_uri"] == "gs://b/en-collected.png"
+
+
+def test_provider_notes_are_not_mixed_into_signals():
+    artifacts = _base_artifacts({"text": "teh translation"})
+
+    with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+    ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
+        issues = run("example.com", "run-en", "run-fr")
+
+    assert len(issues) >= 1
+    spelling_issue = next(issue for issue in issues if issue["message"] == "Potential spelling issue in target text")
+    assert "notes" not in spelling_issue["evidence"]["signals"]
+    assert spelling_issue["evidence"]["provider_notes"] == ["spelling_marker_detected"]

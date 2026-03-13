@@ -148,6 +148,57 @@ class Phase6SchemaComplianceTests(unittest.TestCase):
 
         assert [issue["category"] for issue in issues] == []
 
+    def test_phase6_skips_untranslated_issue_when_dynamic_classes_are_split_across_en_and_target(self):
+        en_eligible = [
+            {
+                "item_id": "item-dyn-split",
+                "page_id": "en-page-dyn",
+                "url": "https://example.com/p",
+                "language": "en",
+                "viewport_kind": "desktop",
+                "state": "baseline",
+                "user_tier": "guest",
+                "element_type": "div",
+                "css_selector": ".header_online.bc_flex",
+                "bbox": {"x": 1, "y": 2, "width": 3, "height": 4},
+                "text": "Online 123",
+                "visible": True,
+                "tag": "div",
+                "attributes": {"class": "header_online bc_flex"},
+            }
+        ]
+        target_eligible = [
+            {
+                "item_id": "item-dyn-split",
+                "page_id": "fr-page-dyn",
+                "url": "https://example.com/fr/p",
+                "language": "fr",
+                "viewport_kind": "desktop",
+                "state": "baseline",
+                "user_tier": "guest",
+                "element_type": "div",
+                "css_selector": ".bc_flex_items_center",
+                "bbox": {"x": 1, "y": 2, "width": 3, "height": 4},
+                "text": "Online 456",
+                "visible": True,
+                "tag": "div",
+                "attributes": {"class": "bc_flex_items_center"},
+            }
+        ]
+        en_collected = [{"item_id": "item-dyn-split", "page_id": "en-page-dyn", "bbox": {"x": 1, "y": 2, "width": 3, "height": 4}}]
+        target_collected = [{"item_id": "item-dyn-split", "page_id": "fr-page-dyn", "bbox": {"x": 1, "y": 2, "width": 3, "height": 4}}]
+        en_screens = [{"page_id": "en-page-dyn", "storage_uri": "gs://b/en-dyn.png"}]
+        target_screens = [{"page_id": "fr-page-dyn", "storage_uri": "gs://b/fr-dyn.png"}]
+
+        artifacts = [en_eligible, target_eligible, en_collected, target_collected, en_screens, target_screens]
+        with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+            "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+        ), patch("pipeline.run_phase6.write_json_artifact"
+        ), patch("pipeline.run_phase6.write_phase_manifest"):
+            issues = run("example.com", "run-en", "run-fr")
+
+        assert [issue["category"] for issue in issues] == []
+
 
 if __name__ == "__main__":
     unittest.main()
