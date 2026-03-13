@@ -354,3 +354,35 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69b3fba3ec80832c82595026cb8a574e)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #93 — 2026-03-13T12:24:35Z
+
+- Title: fix(actions): restore docs auto-update workflows after script relocation
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/93
+- Author: evinaeva
+- Base branch: main
+- Head branch: kcs5ey-codex/investigate-actions-failure-after-script-relocation
+- Merge commit: 986e1826a4cfd015b2cea044351fbdaeb20006a8
+- Changed files:
+  - .github/scripts/check_schedule_sync.py
+  - .github/workflows/docs-ai-sync.yml
+  - .github/workflows/docs-pr-feed.yml
+- Description:
+  ### Motivation
+  - Workflows failed after the docs auto-update scripts/config were moved because the YAMLs used hardcoded paths like `.github/scripts/...` and could not find `config.json` or the Python scripts. 
+  - The intent is to make the workflows resilient to relocating the auxiliary scripts/config without requiring manual edits to each workflow. 
+  
+  ### Description
+  - Added a script-discovery step to both workflows that searches candidate dirs (`.github/scripts`, `.github/docs_autoupdate/scripts`, `scripts/docs_autoupdate`) and exports `DOCS_AUTOUPDATE_SCRIPT_DIR` and `DOCS_AUTOUPDATE_CONFIG` when found. 
+  - Replaced hardcoded references to `.github/scripts/...` in `docs-ai-sync.yml` with dynamic invocations using `DOCS_AUTOUPDATE_SCRIPT_DIR` for config loading, `check_schedule_sync.py`, `docs_ai_sync.py`, and `validate_docs_diff.py`. 
+  - Updated `docs-pr-feed.yml` to use the discovered script dir and `DOCS_AUTOUPDATE_CONFIG` when copying feed-writer scripts into the runner temp directory and when loading config values. 
+  - Modified `check_schedule_sync.py` to call `load_config()` from `config_loader` (so it respects `DOCS_AUTOUPDATE_CONFIG` / relocated config) instead of reading a fixed path. 
+  
+  ### Testing
+  - Ran `python -m py_compile .github/scripts/check_schedule_sync.py` and it succeeded. 
+  - Executed `python .github/scripts/check_schedule_sync.py` to verify config loading and cron check and it succeeded. 
+  - Parsed both workflow YAMLs with `ruby -e 'require "yaml"; YAML.load_file(...)'` to ensure valid syntax and the changes passed validation.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69b40066a248832c92e92cd39e1093a4)
+- Notes: Auto-generated from merged PR metadata.
