@@ -190,3 +190,18 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   - tests/test_phase6_review_pipeline.py
   - tests/test_phase6_schema_compliance.py
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #78 — 2026-03-13T06:54:10Z
+
+- Title: Fix Phase 6 dynamic counter normalization, missing-target evidence sourcing, and evidence signals
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/78
+- Author: evinaeva
+- Base branch: main
+- Head branch: i6tccp-codex/fix-phase-6-review-pipeline-issues
+- Merge commit: 4fa2d695e9f14bd781e97f164d528d5311c212e7
+- Changed files:
+  - pipeline/phase6_review.py
+  - pipeline/run_phase6.py
+  - tests/test_phase6_review_pipeline.py
+  - tests/test_phase6_schema_compliance.py
+- Notes: Auto-generated from merged PR metadata.
