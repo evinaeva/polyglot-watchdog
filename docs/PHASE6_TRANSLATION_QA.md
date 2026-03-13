@@ -30,8 +30,6 @@ Phase 6 operates on curated inputs only:
 - **OCR text** only for approved image-based items;
 - screenshots and bounding boxes needed for evidence.
 
-Phase 6 must not run over a raw unfiltered site dump.
-
 ## 3. Comparison model
 
 The primary comparison is:
@@ -42,6 +40,16 @@ This is true for both DOM-backed text and image-backed text.
 
 OCR is **not** the main comparison target.  
 OCR is only a way to supply text for image-based content so that those items can also participate in the EN ↔ target comparison flow.
+
+Phase 6 operates on **curated inputs only**:
+
+- EN reference created after manual annotation/cleanup;
+- target-language items captured for the same URLs, states, viewports, and tiers;
+- pairing metadata that aligns EN and target items deterministically;
+- OCR text only for approved image-based items;
+- screenshots and bounding boxes needed for evidence.
+
+Phase 6 must not run over a raw unfiltered site dump.
 
 ## 3.1 Two-layer classification model (canonical)
 

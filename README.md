@@ -99,6 +99,7 @@ Use these statements consistently:
 - "OCR is deferred from v1.0."
 - "Manual seed URL workflow is valid for v1.0."
 - "Phase 6 uses a two-layer taxonomy: persisted `issue.category` (coarse contract) and evidence-level `review_class` (detailed QA)."
+- "Phase 6 compares curated EN reference content against curated target-language content; OCR text is consumed only for approved `<img>` elements and participates in the same EN ↔ target comparison flow."
 
 Avoid these outdated statements:
 

@@ -17,7 +17,7 @@
 - Phase 3: `eligible_dataset` (EN reference build)
 - Phase 4: OCR extraction for approved `<img>` elements only; Phase 6 currently expects OCR.Space `engine 3` when OCR text is present
 - Phase 5: normalization (deterministic; no double-space normalization)
-- Phase 6: `issues` (AI-assisted translation QA findings + evidence for suspicious EN ↔ target pairs). `category` stays the stable persisted contract enum; detailed QA classes are carried in evidence (for example `review_class`).
+- Phase 6: `issues` (AI-assisted translation QA findings + evidence for suspicious EN ↔ target pairs). Compares curated EN reference against curated target-language content; OCR text is consumed only for approved `<img>` elements and participates in the same EN ↔ target comparison flow. `category` stays the stable persisted contract enum; detailed QA classes are carried in evidence (for example `review_class`).
 
 ## Universal sections (header/footer)
 After EN pull, repeating identical sections across many URLs (e.g., header/footer) can be collapsed into `universal_sections` to reduce redundancy and annotation load.
