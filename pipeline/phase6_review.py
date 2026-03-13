@@ -181,6 +181,19 @@ def _build_evidence(evidence_base: dict, en_text: str, target_text: str, review_
     return evidence
 
 
+def _select_target_comparison_text(
+    en_item: dict,
+    target_item: dict,
+    dom_target_text: str,
+    ocr_text: str,
+    ocr_quality: dict | None,
+) -> tuple[str, str]:
+    normalized_ocr_text = _normalize_dynamic_counter_text(en_item, target_item, normalize_text(ocr_text))
+    if ocr_quality and ocr_quality.get("trust_bucket") == "good" and normalized_ocr_text:
+        return normalized_ocr_text, "ocr"
+    return dom_target_text, "dom"
+
+
 def _assemble_issue(category: str, confidence: float, message: str, evidence: dict, en_item_id: str, target_url: str) -> dict:
     return {
         "id": _issue_id(category, en_item_id, target_url, message),
@@ -237,7 +250,8 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
     target_url = str(target_item.get("url", ""))
 
     # OCR evidence is limited to approved image-backed items only. For these
-    # items, Phase 6 compares EN text against OCR handoff text when present.
+    # items, Phase 6 prefers OCR as canonical comparison input only when OCR
+    # quality is usable; otherwise it falls back to normalized DOM text.
     is_image = _is_image_item(target_item) or _is_image_item(en_item)
     ocr_text = _extract_ocr_text(target_item) if is_image else ""
     ocr_engine = str(target_item.get("ocr_engine", "")).strip() if is_image else ""
@@ -246,7 +260,13 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
     ocr_notes = list(target_item.get("ocr_notes", [])) if is_image and isinstance(target_item.get("ocr_notes"), list) else []
     has_ocr_handoff = is_image and any(key in target_item for key in ("ocr_text", "ocr_notes", "ocr_engine"))
     ocr_quality = _assess_ocr_quality(en_text, ocr_text, ocr_notes) if has_ocr_handoff else None
-    target_text = _normalize_dynamic_counter_text(en_item, target_item, normalize_text(ocr_text)) if has_ocr_handoff else dom_target_text
+    target_text, comparison_text_source = _select_target_comparison_text(
+        en_item=en_item,
+        target_item=target_item,
+        dom_target_text=dom_target_text,
+        ocr_text=ocr_text,
+        ocr_quality=ocr_quality if is_image else None,
+    )
 
     en_placeholders = sorted(_PLACEHOLDER_RE.findall(en_text))
     target_placeholders = sorted(_PLACEHOLDER_RE.findall(target_text))
@@ -278,6 +298,7 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             ocr_text=ocr_text,
             ocr_engine=ocr_engine,
         )
+        evidence["comparison_text_source"] = comparison_text_source
         msg = "Placeholder tokens differ between EN and target text"
         issues.append(
             _assemble_issue(
@@ -304,6 +325,7 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             ocr_text=ocr_text,
             ocr_engine=ocr_engine,
         )
+        evidence["comparison_text_source"] = comparison_text_source
         msg = "Target text appears untranslated (identical to EN)"
         issues.append(
             _assemble_issue(
@@ -333,6 +355,7 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             ocr_text=ocr_text,
             ocr_engine=ocr_engine,
         )
+        evidence["comparison_text_source"] = comparison_text_source
         issues.append(
             _assemble_issue(
                 category=REVIEW_TO_CATEGORY["SPELLING"],
@@ -359,6 +382,7 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             ocr_text=ocr_text,
             ocr_engine=ocr_engine,
         )
+        evidence["comparison_text_source"] = comparison_text_source
         issues.append(
             _assemble_issue(
                 category=REVIEW_TO_CATEGORY["GRAMMAR"],
@@ -387,6 +411,7 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             ocr_text=ocr_text,
             ocr_engine=ocr_engine,
         )
+        evidence["comparison_text_source"] = comparison_text_source
         issues.append(
             _assemble_issue(
                 category=REVIEW_TO_CATEGORY["MEANING"],
@@ -415,6 +440,7 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             ocr_engine=ocr_engine,
             provider_notes=[f"ocr_quality_flags:{','.join(ocr_quality['flags'])}"] if ocr_quality["flags"] else None,
         )
+        evidence["comparison_text_source"] = comparison_text_source
         evidence["ocr_quality"] = {
             "trust_bucket": ocr_quality["trust_bucket"],
             "trust_score": ocr_quality["trust_score"],
