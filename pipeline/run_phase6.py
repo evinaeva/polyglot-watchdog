@@ -31,6 +31,28 @@ from pipeline.interactive_capture import CaptureContext, build_capture_context_i
 from pipeline.schema_validator import SchemaValidationError, validate
 from pipeline.storage import BUCKET_NAME, read_json_artifact, write_json_artifact, write_phase_manifest
 
+_IMAGE_TAGS = {"img", "image"}
+
+
+def _is_image_item(item: dict) -> bool:
+    tag = str(item.get("tag", "")).strip().lower()
+    element_type = str(item.get("element_type", "")).strip().lower()
+    return tag in _IMAGE_TAGS or element_type in _IMAGE_TAGS
+
+
+def _load_phase4_ocr_by_item(domain: str, run_id: str) -> dict[str, dict]:
+    try:
+        rows = read_json_artifact(domain, run_id, "phase4_ocr.json")
+    except Exception:
+        return {}
+    out: dict[str, dict] = {}
+    for row in rows if isinstance(rows, list) else []:
+        item_id = str(row.get("item_id", ""))
+        if not item_id:
+            continue
+        out[item_id] = row
+    return out
+
 
 def _index_collected(items: list[dict]) -> dict[str, dict]:
     return {i["item_id"]: i for i in items}
@@ -113,7 +135,14 @@ def run(domain: str, en_run_id: str, target_run_id: str) -> list[dict]:
     target_screens = read_json_artifact(domain, target_run_id, "page_screenshots.json")
 
     en_by_item = {i["item_id"]: i for i in en_eligible if i.get("language") == "en"}
-    target_by_item = {i["item_id"]: i for i in target_eligible if i.get("language") != "en"}
+    target_by_item = {i["item_id"]: dict(i) for i in target_eligible if i.get("language") != "en"}
+    ocr_by_item = _load_phase4_ocr_by_item(domain, target_run_id)
+    for item_id, item in target_by_item.items():
+        ocr_row = ocr_by_item.get(item_id, {})
+        if not _is_image_item(item):
+            continue
+        if ocr_row.get("status") == "ok" and str(ocr_row.get("ocr_text", "")).strip():
+            item["ocr_text"] = str(ocr_row.get("ocr_text", "")).strip()
     en_collected_by_item = _index_collected(en_collected)
     en_screens_by_page = _index_screenshots(en_screens)
     target_collected_by_item = _index_collected(target_collected)
