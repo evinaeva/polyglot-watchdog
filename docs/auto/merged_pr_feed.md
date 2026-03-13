@@ -267,3 +267,18 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   - .github/scripts/validate_docs_diff.py
   - .github/workflows/docs-ai-sync.yml
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #85 — 2026-03-13T10:33:47Z
+
+- Title: Implement Phase 4 OCR (OCR.Space engine 3) and Phase 6 integration
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/85
+- Author: evinaeva
+- Base branch: main
+- Head branch: ixj2os-codex/implement-phase-4-ocr-using-ocr.space-logic
+- Merge commit: 49f7b7ff3d5f46c285a8c7cd59ff0de28fd0d718
+- Changed files:
+  - pipeline/phase4_ocr.py
+  - pipeline/phase4_ocr_provider.py
+  - pipeline/run_phase6.py
+  - tests/test_phase4_ocr.py
+- Notes: Auto-generated from merged PR metadata.
