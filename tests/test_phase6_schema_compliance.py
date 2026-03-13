@@ -95,7 +95,41 @@ class Phase6SchemaComplianceTests(unittest.TestCase):
 
         categories = {issue["category"] for issue in issues}
         self.assertIn("OVERLAY_BLOCKED_CAPTURE", categories)
+        overlay_issue = next(issue for issue in issues if issue["category"] == "OVERLAY_BLOCKED_CAPTURE")
+        self.assertEqual(overlay_issue["evidence"]["review_class"], "OTHER")
 
+    def test_phase6_preserves_contract_category_when_review_class_is_detailed(self):
+        en_eligible, target_eligible, en_collected, target_collected, en_screens, target_screens = self._artifacts()
+        target_eligible = [
+            {
+                "item_id": "item-1",
+                "page_id": "fr-page-1",
+                "url": "https://fr.example.com/p",
+                "language": "fr",
+                "viewport_kind": "desktop",
+                "state": "baseline",
+                "user_tier": "guest",
+                "element_type": "p",
+                "css_selector": "main > p",
+                "bbox": {"x": 1, "y": 2, "width": 3, "height": 4},
+                "text": "Buy now",
+                "visible": True,
+                "tag": "p",
+                "attributes": None,
+            }
+        ]
+        target_collected = [{"item_id": "item-1", "page_id": "fr-page-1", "bbox": {"x": 1, "y": 2, "width": 3, "height": 4}}]
+        target_screens = [{"page_id": "fr-page-1", "url": "https://fr.example.com/p", "viewport_kind": "desktop", "state": "baseline", "user_tier": "guest", "storage_uri": "gs://b/fr.png"}]
+
+        artifacts = [en_eligible, target_eligible, en_collected, target_collected, en_screens, target_screens]
+        with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+            "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+        ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
+            issues = run("example.com", "run-en", "run-fr")
+
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0]["category"], "TRANSLATION_MISMATCH")
+        self.assertEqual(issues[0]["evidence"]["review_class"], "MEANING")
 
     def test_phase6_skips_untranslated_issue_for_header_online_dynamic_numbers(self):
         en_eligible = [
