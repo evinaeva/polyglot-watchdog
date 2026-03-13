@@ -48,6 +48,8 @@ class Phase6SchemaComplianceTests(unittest.TestCase):
 
         self.assertEqual(len(issues), 1)
         self.assertEqual(issues[0]["category"], "MISSING_TRANSLATION")
+        self.assertEqual(issues[0]["evidence"]["review_class"], "OTHER")
+        self.assertIn("signals", issues[0]["evidence"])
         write_mock.assert_called_once()
         manifest_mock.assert_called_once()
 
