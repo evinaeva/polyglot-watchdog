@@ -320,3 +320,37 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69b3fc3e79e0832c99e4364f18b1c288)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #91 — 2026-03-13T12:13:06Z
+
+- Title: Calibrate OCR trust in Phase 6 image-backed review
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/91
+- Author: evinaeva
+- Base branch: main
+- Head branch: sf2yfd-codex/implement-ocr-quality-calibration-in-phase-6
+- Merge commit: a71d15d1f9de227939413b61a765dc859e082da1
+- Changed files:
+  - pipeline/phase6_review.py
+  - pipeline/run_phase6.py
+  - tests/test_phase6_review_pipeline.py
+- Description:
+  ### Motivation
+  - Phase 6 was treating OCR-backed text like normal text and could emit overconfident meaning claims when OCR was weak, noisy, or ambiguous.
+  - Introduce a compact, deterministic way to surface OCR quality signals so Phase 6 makes more conservative, explainable decisions for image-backed items without changing Phase 4, Phase 6 contracts, or top-level issue semantics.
+  
+  ### Description
+  - Added a small OCR quality helper `_assess_ocr_quality` in `pipeline/phase6_review.py` that computes simple signals/flags (e.g. `ocr_missing_text`, `ocr_too_short_absolute`, `ocr_symbol_heavy`, `ocr_low_alnum`, `ocr_fragmented_tokens`, `ocr_repeated_chars`, `ocr_provider_uncertainty`) and buckets trust into `good`/`borderline`/`weak` with a deterministic `trust_score` and `confidence_adjustment`.
+  - Adjusted Phase 6 review logic so OCR-backed image items use these signals: `weak` OCR suppresses strong `MEANING` mismatch claims, `borderline` OCR reduces confidence, and `OCR_NOISE` issues are emitted with enriched uncertainty evidence when appropriate.
+  - Enriched evidence backward-compatibly: `evidence.signals` may include `ocr_confidence_adjustment` and metric signals, and `evidence.ocr_quality` (optional) contains `trust_bucket`, `trust_score`, and `flags`; existing evidence fields and external `issues.json` contract remain unchanged.
+  - Propagated minimal Phase 4 handoff metadata in `pipeline/run_phase6.py` to Phase 6 items when present (`ocr_engine`, `ocr_notes`) while keeping OCR scope limited to approved image-backed items.
+  - Added focused unit tests in `tests/test_phase6_review_pipeline.py` to cover good vs weak OCR behavior, suppression of meaning claims for noisy OCR, nearly-empty OCR handling, OCR evidence presence, and to ensure non-image items are unaffected.
+  
+  ### Testing
+  - Added/updated tests covering: good OCR path still allows normal meaning review (`test_good_ocr_allows_normal_meaning_review_for_image_items`), noisy OCR suppresses meaning claims and emits `OCR_NOISE` with `ocr_quality` (`test_weak_ocr_suppresses_strong_meaning_claims_and_adds_quality_evidence`), nearly-empty OCR treated as weak (`test_nearly_empty_ocr_text_is_treated_as_weak_quality_noise`), and other existing Phase 4/6 behaviors.
+  - Test command run: `PYTHONPATH=. pytest -q tests/test_phase6_review_pipeline.py tests/test_phase4_ocr.py`.
+  - Test results: all tests passed (`26 passed`).
+  - Confirmations: no changes to `issues.json` schema or top-level category semantics, no OCR scope expansion beyond approved image-backed handoff, and no Phase 4 or provider architecture redesign were introduced.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69b3fba3ec80832c82595026cb8a574e)
+- Notes: Auto-generated from merged PR metadata.
