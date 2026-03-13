@@ -3,11 +3,11 @@
 This subsystem records merged-PR context and performs scheduled AI-driven docs synchronization with strict patch-only safety checks.
 
 ## Workflows
-- `.github/workflows/docs-pr-feed.yml` calls `scripts/update_merged_pr_feed.py` after PR merges to append feed entries.
-- `.github/workflows/docs-ai-sync.yml` calls `scripts/docs_ai_sync.py` and `scripts/validate_docs_diff.py` for scheduled/manual sync.
+- `.github/workflows/docs-pr-feed.yml` calls `.github/scripts/update_merged_pr_feed.py` after PR merges to append feed entries.
+- `.github/workflows/docs-ai-sync.yml` calls `.github/scripts/docs_ai_sync.py` and `.github/scripts/validate_docs_diff.py` for scheduled/manual sync.
 
 ## Canonical config
-- Single source of truth: `.github/docs_autoupdate/config.json`
+- Single source of truth: `.github/scripts/config.json`
 - Workflow YAML files should stay thin wrappers; repo/operator settings should be changed in `config.json`.
 
 ## What to customize when copying to another repo

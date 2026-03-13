@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 CONFIG_ENV_VAR = "DOCS_AUTOUPDATE_CONFIG"
-DEFAULT_CONFIG_RELATIVE = Path(".github/docs_autoupdate/config.json")
+DEFAULT_CONFIG_RELATIVE = Path(".github/scripts/config.json")
 
 
 def config_root() -> Path:
