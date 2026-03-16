@@ -11,7 +11,7 @@
   {{header}}
   <main>
     <h1>CHECK LANGUAGES</h1>
-    <p>Run phase six against a selected target run using an English reference run.</p>
+    <p>Create and run a target-language capture from an English reference run, then compare automatically.</p>
 
     <section>
       <h2>Operator messages</h2>
@@ -28,15 +28,15 @@
             <input id="checkLanguagesDomain" name="domain" type="text" value="{{domain}}" />
           </div>
           <div>
-            <label for="checkLanguagesRunId">Target run</label>
-            <select id="checkLanguagesRunId" name="run_id">
-              {{target_options}}
-            </select>
-          </div>
-          <div>
             <label for="checkLanguagesEnRunId">English reference run</label>
             <select id="checkLanguagesEnRunId" name="en_run_id">
               {{en_options}}
+            </select>
+          </div>
+          <div>
+            <label for="checkLanguagesTargetLanguage">Target language</label>
+            <select id="checkLanguagesTargetLanguage" name="target_language">
+              {{target_language_options}}
             </select>
           </div>
         </div>
@@ -49,21 +49,15 @@
     <section>
       <h2>State</h2>
       <p>Current state: <strong id="checkLanguagesState">{{page_state}}</strong></p>
-      <p>Target run: <code>{{selected_run_id}}</code></p>
       <p>English run: <code>{{selected_en_run_id}}</code></p>
+      <p>Target language: <code>{{target_language}}</code></p>
+      <p>Generated target run: <code>{{target_run_id}}</code></p>
       <p>issues.json artifact: <strong>{{issues_exists}}</strong></p>
     </section>
 
+
     <section>
-      <h2>Readiness</h2>
-      <h3>Target run prerequisites</h3>
-      <ul>
-        <li>Required artifacts: {{target_required}}</li>
-        <li>Missing artifacts: {{target_missing}}</li>
-        <li>Read error: {{target_read_error}}</li>
-        <li>Status: <strong>{{target_ready}}</strong></li>
-      </ul>
-      <h3>English run prerequisites</h3>
+      <h2>Reference run readiness</h2>
       <ul>
         <li>Required artifacts: {{en_required}}</li>
         <li>Missing artifacts: {{en_missing}}</li>
