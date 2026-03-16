@@ -29,8 +29,19 @@ jobs:
           git fetch origin DOCS_AUTOUPDATE || true
           git checkout main
 
+      - name: Check for new merged PRs (schedule guard)
+        id: pr_guard
+        if: github.event_name == 'schedule'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python .github/docs_autoupdate/scripts/check_new_merged_prs.py
+
       - name: AI docs sync (apply docs updates to main working tree)
         id: sync
+        if: |
+          github.event_name == 'workflow_dispatch' ||
+          (github.event_name == 'schedule' && steps.pr_guard.outputs.should_run == 'true')
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
