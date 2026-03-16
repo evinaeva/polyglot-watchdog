@@ -421,3 +421,38 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69b40066a248832c92e92cd39e1093a4)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #98 — 2026-03-16T08:33:12Z
+
+- Title: Add Check Languages UI and backend handlers (phase-6 readiness and job start)
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/98
+- Author: evinaeva
+- Base branch: main
+- Head branch: 23bjsl-codex/add-/check-languages-workflow-implementation
+- Merge commit: 37ed04bd7bb1c5d71b70e14201a2b326e0558288
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+  - web/templates/check-languages.html
+- Description:
+  ### Motivation
+  
+  - Provide an interactive "Check Languages" page to run phase-six language checks comparing a target run against an English reference and to surface readiness, job status, and issue summaries.
+  - Validate prerequisites (artifacts like `page_screenshots.json`, `collected_items.json`, `eligible_dataset.json`) before queuing phase-6 work and prevent duplicate concurrent jobs.
+  
+  ### Description
+  
+  - Added server-side support for a new `/check-languages` route with GET and POST handling and CSRF-aware redirects via `_serve_check_languages_page`, `_start_check_languages`, and `_redirect_check_languages`.
+  - Implemented helpers for artifact readiness and run language detection: `_phase6_artifact_readiness`, `_run_languages`, `_load_check_language_runs`, `_latest_phase6_job`, `_summarize_issues_payload`, `_format_summary_pairs`, and an HTML-escaping helper `_h` (and imported `html`).
+  - Started jobs by upserting job status via `_upsert_job_status` and launching `_run_phase6_async` in a background thread, and prevented starting when prerequisites are missing or when a phase-6 job is already `running`/`queued`.
+  - Added a new template `web/templates/check-languages.html` to present notices, selection controls, readiness details, job status, and issue summaries, and wired it into the main page routing.
+  - Introduced comprehensive functional tests in `tests/test_check_languages_page.py` that exercise rendering, validation, readiness checks, starting the async job, and summary/stale-summary behavior using a fake storage client.
+  
+  ### Testing
+  
+  - Ran `pytest tests/test_check_languages_page.py` which starts a `ThreadingHTTPServer` against `SkeletonHandler` and uses a fake GCS client; all tests in the file passed.
+  - The new tests cover GET rendering, input validation, refusal to start when prerequisites are missing, successful POST start behavior that queues a phase-6 job, and issue-summary/stale-summary states; these cases succeeded.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69b7b79f98b0832cb2a950b10f7527fb)
+- Notes: Auto-generated from merged PR metadata.
