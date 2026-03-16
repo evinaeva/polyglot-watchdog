@@ -262,7 +262,13 @@ def main() -> int:
         print("No feed content found; exiting no-op.")
         return 0
     state_text = git_show(f"{args.state_ref}:docs/auto/docs_sync_state.json")
-    state = {"last_processed_merge_commit": "", "last_processed_pr_number": 0, "last_sync_at_utc": ""}
+    state: dict[str, Any] = {
+        "last_processed_merge_commit": "",
+        "last_processed_pr_number": 0,
+        "last_processed_merged_pr_number": 0,
+        "last_processed_merged_pr_merged_at": "",
+        "last_sync_at_utc": "",
+    }
     if state_text.strip():
         try:
             state.update(json.loads(state_text))
@@ -371,8 +377,12 @@ def main() -> int:
         docs_changed = True
     newest = new_entries[-1]
     new_state = {
+        # Legacy keys — kept for backward compat with compute_new_entries
         "last_processed_merge_commit": newest.get("merge_commit", ""),
         "last_processed_pr_number": newest.get("pr_number", 0),
+        # Canonical keys used by check_new_merged_prs.py guard
+        "last_processed_merged_pr_number": newest.get("pr_number", 0),
+        "last_processed_merged_pr_merged_at": newest.get("merged_at", ""),
         "last_sync_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     out_path = Path(args.state_output)
