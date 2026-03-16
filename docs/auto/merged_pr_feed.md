@@ -456,3 +456,37 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69b7b79f98b0832cb2a950b10f7527fb)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #99 — 2026-03-16T09:48:51Z
+
+- Title: Orchestrate composed "check languages" workflow and update UI/tests
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/99
+- Author: evinaeva
+- Base branch: main
+- Head branch: cwj2jd-codex/refactor-/check-languages-for-operator-workflow
+- Merge commit: a1f3d52c3a044200eef33686b397edd5b035eecd
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+  - web/templates/check-languages.html
+- Description:
+  ### Motivation
+  - Replace the previous approach of selecting an existing target run with a composed workflow that generates a target-language capture from an English reference and then runs comparison phases automatically.
+  - Provide safer guards and clearer status reporting for in-progress composed checks and avoid re-running duplicate checks.
+  - Surface the new orchestration status and generated target run in the UI and make the page input model simpler (choose English reference + target language).
+  
+  ### Description
+  - Added helpers to determine available non-English `target` languages (`_load_target_languages`), to detect English-only runs (`_run_is_english_only`), to generate a unique target run id (`_generate_target_run_id`), to find in-progress composed jobs (`_find_in_progress_check_languages_job`), and to fetch the latest check-languages job for a run (`_latest_check_languages_job`).
+  - Implemented `_replay_scope_from_reference_run` which builds a list of exact-context jobs from an English reference run using `pipeline.run_phase1.build_exact_context_job`.
+  - Added `_run_check_languages_async` orchestration that (1) prepares the target run, (2) runs the target capture via `pipeline.run_phase1.main` (using `asyncio.run`), and (3) runs comparison phases (`phase3` and `phase6`) while updating job status and error handling through `_upsert_job_status`.
+  - Updated request handlers to accept `target_language` instead of an existing target `run_id`, to validate inputs (English-only requirement for reference, non-English requirement for target), to prevent duplicate in-progress checks, to queue a new `check_languages` job record, and to redirect with the generated `target_run_id`.
+  - Modified the check-languages template to remove target-run selection, add a `target_language` select, and show `target_language` and the generated `target_run_id` in the state block.
+  - Updated and extended `tests/test_check_languages_page.py` to reflect the new input model and orchestrator behavior, and added unit tests for the replay helper and orchestration failure/success paths.
+  
+  ### Testing
+  - Ran the test module `tests/test_check_languages_page.py` which was updated to exercise the new flows, including input validation, duplicate-guarding, queued/completed states, replay-scope generation, and orchestrator error handling; all tests in the file passed locally.
+  - Existing storage fakes and monkeypatches are used in tests to simulate artifacts and to stub `pipeline.run_phase1/main`, `pipeline.run_phase3.run`, and `pipeline.run_phase6.run` during orchestration unit tests, and those scenarios succeeded.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69b7ca6bff7c832cb8f30fd792cd5f50)
+- Notes: Auto-generated from merged PR metadata.
