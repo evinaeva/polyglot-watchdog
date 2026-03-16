@@ -9,6 +9,7 @@ AUTH_MODE = "ON"
 from __future__ import annotations
 
 import csv
+import html
 import io
 import json
 import os
@@ -188,6 +189,122 @@ def _structured_not_ready(action: str, error: str, *, previous_state: str = "not
         "next_expected_state": next_expected_state,
         "remediation": ["complete prerequisite workflow step", "refresh workflow status", "resolve capture runner prerequisites"],
     }
+
+
+def _is_english_language(value: str) -> bool:
+    normalized = str(value or "").strip().lower()
+    return normalized in {"en", "en-us", "en-gb", "english"}
+
+
+def _phase6_artifact_readiness(domain: str, run_id: str) -> dict:
+    required = ["eligible_dataset.json", "collected_items.json", "page_screenshots.json"]
+    missing: list[str] = []
+    read_error: str = ""
+    for filename in required:
+        try:
+            if not _artifact_exists_strict(domain, run_id, filename):
+                missing.append(filename)
+        except ValueError as exc:
+            read_error = str(exc)
+            break
+    return {
+        "required": required,
+        "missing": missing,
+        "read_error": read_error,
+        "ready": (not missing and not read_error),
+    }
+
+
+def _run_languages(domain: str, run_id: str) -> set[str]:
+    languages: set[str] = set()
+    pages = _read_json_safe(domain, run_id, "page_screenshots.json", None)
+    if isinstance(pages, list):
+        for row in pages:
+            if isinstance(row, dict):
+                language = str(row.get("language", "")).strip().lower()
+                if language:
+                    languages.add(language)
+    if languages:
+        return languages
+    dataset = _read_json_safe(domain, run_id, "eligible_dataset.json", None)
+    if isinstance(dataset, list):
+        for row in dataset:
+            if isinstance(row, dict):
+                language = str(row.get("language", "")).strip().lower()
+                if language:
+                    languages.add(language)
+    return languages
+
+
+def _load_check_language_runs(domain: str) -> list[dict]:
+    runs_payload = _load_runs(domain)
+    runs = runs_payload.get("runs", []) if isinstance(runs_payload, dict) else []
+    out: list[dict] = []
+    for row in runs:
+        if not isinstance(row, dict):
+            continue
+        run_id = str(row.get("run_id", "")).strip()
+        if not run_id:
+            continue
+        languages = sorted(_run_languages(domain, run_id))
+        has_english = any(_is_english_language(lang) for lang in languages)
+        has_non_english = any(not _is_english_language(lang) for lang in languages)
+        out.append({
+            "run_id": run_id,
+            "created_at": str(row.get("created_at", "")).strip(),
+            "languages": languages,
+            "has_english": has_english,
+            "has_non_english": has_non_english,
+        })
+    out.sort(key=lambda run: (run.get("created_at", ""), run.get("run_id", "")), reverse=True)
+    return out
+
+
+def _latest_phase6_job(domain: str, run_id: str) -> dict | None:
+    runs_payload = _load_runs(domain)
+    runs = runs_payload.get("runs", []) if isinstance(runs_payload, dict) else []
+    run = next((r for r in runs if isinstance(r, dict) and str(r.get("run_id", "")) == run_id), None)
+    if not isinstance(run, dict):
+        return None
+    jobs = run.get("jobs", []) if isinstance(run.get("jobs", []), list) else []
+    phase6_jobs: list[dict] = []
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        if str(job.get("phase", "")).strip() == "6" or str(job.get("type", "")).strip() == "issues" or str(job.get("job_id", "")).startswith("phase6-"):
+            phase6_jobs.append(_as_stale_failed_job(job) if _is_stale_running_job(job) else dict(job))
+    if not phase6_jobs:
+        return None
+    phase6_jobs.sort(key=lambda row: (str(row.get("updated_at", "")), str(row.get("created_at", "")), str(row.get("job_id", ""))))
+    return phase6_jobs[-1]
+
+
+def _summarize_issues_payload(issues: list[dict]) -> dict:
+    summary = {
+        "total": len(issues),
+        "by_category": {},
+        "by_severity": {},
+        "by_language": {},
+        "by_state": {},
+    }
+    for row in issues:
+        if not isinstance(row, dict):
+            continue
+        for key, issue_field in (("by_category", "category"), ("by_language", "language"), ("by_state", "state")):
+            value = str(row.get(issue_field, "")).strip() or "unknown"
+            summary[key][value] = summary[key].get(value, 0) + 1
+        severity = _estimate_severity(row)
+        summary["by_severity"][severity] = summary["by_severity"].get(severity, 0) + 1
+    return summary
+
+
+def _format_summary_pairs(summary_map: dict) -> str:
+    pairs = [f"{key}: {summary_map[key]}" for key in sorted(summary_map.keys())]
+    return ", ".join(pairs) if pairs else "—"
+
+
+def _h(value: object) -> str:
+    return html.escape(str(value or ""), quote=True)
 
 def _capture_context_id_from_page(domain: str, page: dict) -> str:
     from pipeline.interactive_capture import CaptureContext, build_capture_context_id
@@ -1179,6 +1296,12 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             self._serve_template("login.html", replacements={"{{error_block}}": "", "{{csrf_token}}": csrf_token}, extra_set_cookies=[self._build_cookie_header(CSRF_COOKIE, csrf_token, max_age=SESSION_MAX_AGE_SECONDS, http_only=False)])
             return
 
+        if parsed.path == "/check-languages":
+            if not self._require_auth(api=False):
+                return
+            self._serve_check_languages_page(parse_qs(parsed.query))
+            return
+
         page_templates = {
             "/": "index.html",
             "/crawler": "crawler.html",
@@ -1190,7 +1313,6 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             "/workflow": "workflow.html",
             "/contexts": "contexts.html",
             "/pulls": "pulls.html",
-            "/check-languages": "check-languages.html",
             "/issues/detail": "issues/detail.html",
         }
         if parsed.path in page_templates:
@@ -1780,6 +1902,16 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
 
+        if self.path == "/check-languages":
+            if not self._require_auth(api=False):
+                return
+            form = self._read_form_payload()
+            if not self._validate_csrf(str(form.get("csrf_token", "")).strip()):
+                self._redirect_check_languages(form, message="Security error (CSRF). Please refresh and try again.", level="error")
+                return
+            self._start_check_languages(form)
+            return
+
         if not self._require_auth(api=True):
             return
         csrf_header = self.headers.get("X-CSRF-Token", "")
@@ -2333,6 +2465,223 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             return
 
         self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
+
+    def _redirect_check_languages(self, payload: dict[str, str], *, message: str = "", level: str = "") -> None:
+        query = {
+            "domain": str(payload.get("domain", "")).strip(),
+            "run_id": str(payload.get("run_id", "")).strip(),
+            "en_run_id": str(payload.get("en_run_id", "")).strip(),
+        }
+        if message:
+            query["message"] = message
+        if level:
+            query["level"] = level
+        location = f"/check-languages?{urlencode({k: v for k, v in query.items() if v})}"
+        self.send_response(HTTPStatus.FOUND)
+        self.send_header("Location", location)
+        self.end_headers()
+
+    def _start_check_languages(self, payload: dict[str, str]) -> None:
+        domain = str(payload.get("domain", "")).strip()
+        run_id = str(payload.get("run_id", "")).strip()
+        en_run_id = str(payload.get("en_run_id", "")).strip()
+
+        if not domain:
+            self._redirect_check_languages(payload, message="Domain is required.", level="error")
+            return
+        if not run_id:
+            self._redirect_check_languages(payload, message="Target run is required.", level="error")
+            return
+        if not en_run_id:
+            self._redirect_check_languages(payload, message="English reference run is required.", level="error")
+            return
+        if run_id == en_run_id:
+            self._redirect_check_languages(payload, message="Target run and English reference run must be different.", level="error")
+            return
+
+        try:
+            validate_domain(domain)
+        except ValueError as exc:
+            self._redirect_check_languages(payload, message=str(exc), level="error")
+            return
+
+        available_run_ids = {str(row.get("run_id", "")) for row in _load_check_language_runs(domain)}
+        if run_id not in available_run_ids:
+            self._redirect_check_languages(payload, message="Selected target run is invalid for this domain.", level="error")
+            return
+        if en_run_id not in available_run_ids:
+            self._redirect_check_languages(payload, message="Selected English reference run is invalid for this domain.", level="error")
+            return
+
+        target_readiness = _phase6_artifact_readiness(domain, run_id)
+        en_readiness = _phase6_artifact_readiness(domain, en_run_id)
+        if not target_readiness["ready"] or not en_readiness["ready"]:
+            self._redirect_check_languages(payload, message="Prerequisites are missing. Phase 6 cannot start yet.", level="error")
+            return
+
+        latest = _latest_phase6_job(domain, run_id)
+        latest_status = str((latest or {}).get("status", "")).strip().lower()
+        if latest_status in {"running", "queued"}:
+            self._redirect_check_languages(payload, message="Phase 6 is already running for this target run.", level="warning")
+            return
+
+        job_id = f"phase6-{run_id}-{int(time.time())}"
+        _upsert_job_status(domain, run_id, {"job_id": job_id, "status": "queued", "phase": "6", "type": "issues", "en_run_id": en_run_id})
+        t = threading.Thread(target=_run_phase6_async, args=(job_id, domain, run_id, en_run_id), daemon=True)
+        t.start()
+        self._redirect_check_languages(payload, message="Language check started.", level="ok")
+
+    def _serve_check_languages_page(self, query: dict[str, list[str]]) -> None:
+        domain = str(query.get("domain", [""])[0]).strip()
+        selected_run_id = str(query.get("run_id", [""])[0]).strip()
+        selected_en_run_id = str(query.get("en_run_id", [""])[0]).strip()
+        message = str(query.get("message", [""])[0]).strip()
+        level = str(query.get("level", [""])[0]).strip().lower()
+        csrf_token = self._ensure_csrf_cookie()
+
+        errors: list[str] = []
+        runs: list[dict] = []
+        issues_summary = None
+        page_state = "not_started"
+        readiness_target = {"required": [], "missing": [], "read_error": "", "ready": False}
+        readiness_en = {"required": [], "missing": [], "read_error": "", "ready": False}
+        issues_exists = False
+        issues_missing_after_completion = False
+        latest_job = None
+
+        if not domain:
+            errors.append("Domain is required.")
+        else:
+            try:
+                validate_domain(domain)
+                runs = _load_check_language_runs(domain)
+            except ValueError as exc:
+                errors.append(str(exc))
+
+        run_ids = {str(row.get("run_id", "")) for row in runs}
+        if selected_run_id and selected_run_id not in run_ids:
+            errors.append("Selected target run is invalid for this domain.")
+        if selected_en_run_id and selected_en_run_id not in run_ids:
+            errors.append("Selected English reference run is invalid for this domain.")
+        if selected_run_id and selected_en_run_id and selected_run_id == selected_en_run_id:
+            errors.append("Target run and English reference run must be different.")
+
+        if domain and selected_run_id and selected_en_run_id and not errors:
+            readiness_target = _phase6_artifact_readiness(domain, selected_run_id)
+            readiness_en = _phase6_artifact_readiness(domain, selected_en_run_id)
+            latest_job = _latest_phase6_job(domain, selected_run_id)
+            issues_exists = _artifact_exists(domain, selected_run_id, "issues.json")
+            if issues_exists:
+                issues_payload = _read_json_safe(domain, selected_run_id, "issues.json", None)
+                if isinstance(issues_payload, list):
+                    issues_summary = _summarize_issues_payload(issues_payload)
+                else:
+                    errors.append("issues.json is malformed.")
+
+            latest_status = str((latest_job or {}).get("status", "")).strip().lower()
+            if latest_status in {"running", "queued"}:
+                page_state = "running"
+            elif latest_status in {"failed", "error"}:
+                page_state = "failed"
+            elif issues_summary is not None:
+                page_state = "completed_with_zero_issues" if issues_summary["total"] == 0 else "completed_with_issues"
+            elif latest_status == "succeeded":
+                page_state = "completed"
+                issues_missing_after_completion = True
+            elif readiness_target["ready"] and readiness_en["ready"]:
+                page_state = "ready"
+            else:
+                page_state = "not_ready"
+        elif domain and (selected_run_id or selected_en_run_id):
+            page_state = "not_ready"
+
+        if selected_run_id and not selected_en_run_id:
+            errors.append("English reference run is required.")
+        if selected_en_run_id and not selected_run_id:
+            errors.append("Target run is required.")
+
+        def _option(run: dict, selected: bool) -> str:
+            languages = ", ".join(run.get("languages", [])) or "unknown"
+            label = f"{run.get('run_id')} ({languages})"
+            selected_attr = ' selected="selected"' if selected else ""
+            return f'<option value="{_h(run.get("run_id", ""))}"{selected_attr}>{_h(label)}</option>'
+
+        runs_by_newest = sorted(runs, key=lambda row: (row.get("created_at", ""), row.get("run_id", "")), reverse=True)
+        target_candidates = sorted(runs_by_newest, key=lambda row: not bool(row.get("has_non_english")))
+        en_candidates = sorted(runs_by_newest, key=lambda row: not bool(row.get("has_english")))
+        target_options = ['<option value="">Select target run</option>'] + [_option(run, run.get("run_id") == selected_run_id) for run in target_candidates]
+        en_options = ['<option value="">Select English reference run</option>'] + [_option(run, run.get("run_id") == selected_en_run_id) for run in en_candidates]
+
+        issue_summary_block = "<p>Issues output: missing.</p>"
+        latest_status = str((latest_job or {}).get("status", "")).strip().lower()
+        stale_summary = bool(issues_summary is not None and latest_status in {"failed", "error"})
+        if issues_summary is not None:
+            issue_summary_block = (
+                f"<p>Issues output: present.</p>"
+                f"<ul>"
+                f"<li>Total: <strong>{issues_summary['total']}</strong></li>"
+                f"<li>By category: {_h(_format_summary_pairs(issues_summary['by_category']))}</li>"
+                f"<li>By severity: {_h(_format_summary_pairs(issues_summary['by_severity']))}</li>"
+                f"<li>By language: {_h(_format_summary_pairs(issues_summary['by_language']))}</li>"
+                f"<li>By state: {_h(_format_summary_pairs(issues_summary['by_state']))}</li>"
+                f"</ul>"
+            )
+            if stale_summary:
+                issue_summary_block += '<p class="warning">Summary shown from existing issues.json and may be stale from a previous successful run.</p>'
+        if issues_missing_after_completion:
+            issue_summary_block += '<p class="error">Job completed but issues.json is missing.</p>'
+
+        latest_job_block = "<p>No phase-six job has been started for this target run.</p>"
+        if isinstance(latest_job, dict):
+            latest_job_block = (
+                f"<p>Latest job: {_h(latest_job.get('job_id', ''))}</p>"
+                f"<p>Status: <strong>{_h(latest_job.get('status', ''))}</strong></p>"
+                f"<p>English run: {_h(latest_job.get('en_run_id', ''))}</p>"
+                f"<p>Error: {_h(latest_job.get('error', '')) or '—'}</p>"
+            )
+
+        run_query = urlencode({"domain": domain, "run_id": selected_run_id}) if domain and selected_run_id else ""
+        issues_link = f"/?{run_query}" if run_query else "#"
+        issues_api_link = f"/api/issues?{run_query}" if run_query else "#"
+
+        notices: list[str] = []
+        if message:
+            css = "ok" if level == "ok" else "warning" if level == "warning" else "error"
+            notices.append(f'<li class="{css}">{_h(message)}</li>')
+        notices.extend([f'<li class="error">{_h(err)}</li>' for err in errors])
+        notices_html = f"<ul>{''.join(notices)}</ul>" if notices else "<p>—</p>"
+
+        start_enabled = bool(domain and selected_run_id and selected_en_run_id and not errors and readiness_target["ready"] and readiness_en["ready"] and str((latest_job or {}).get("status", "")).lower() not in {"running", "queued"})
+        disabled_attr = "" if start_enabled else ' disabled="disabled"'
+
+        self._serve_template(
+            "check-languages.html",
+            replacements={
+                "{{csrf_token}}": _h(csrf_token),
+                "{{domain}}": _h(domain),
+                "{{selected_run_id}}": _h(selected_run_id),
+                "{{selected_en_run_id}}": _h(selected_en_run_id),
+                "{{notices}}": notices_html,
+                "{{target_options}}": "".join(target_options),
+                "{{en_options}}": "".join(en_options),
+                "{{page_state}}": _h(page_state),
+                "{{target_required}}": _h(", ".join(readiness_target.get("required", [])) or "—"),
+                "{{target_missing}}": _h(", ".join(readiness_target.get("missing", [])) or "—"),
+                "{{target_read_error}}": _h(readiness_target.get("read_error", "") or "—"),
+                "{{target_ready}}": _h("ready" if readiness_target.get("ready") else "not_ready"),
+                "{{en_required}}": _h(", ".join(readiness_en.get("required", [])) or "—"),
+                "{{en_missing}}": _h(", ".join(readiness_en.get("missing", [])) or "—"),
+                "{{en_read_error}}": _h(readiness_en.get("read_error", "") or "—"),
+                "{{en_ready}}": _h("ready" if readiness_en.get("ready") else "not_ready"),
+                "{{issues_exists}}": _h("present" if issues_exists else "missing"),
+                "{{issues_summary}}": issue_summary_block,
+                "{{latest_job}}": latest_job_block,
+                "{{issues_link}}": _h(issues_link),
+                "{{issues_api_link}}": _h(issues_api_link),
+                "{{start_disabled}}": disabled_attr,
+            },
+            extra_set_cookies=[self._build_cookie_header(CSRF_COOKIE, csrf_token, max_age=SESSION_MAX_AGE_SECONDS, http_only=False)],
+        )
 
     def _serve_template(
         self,
