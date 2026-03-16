@@ -91,178 +91,257 @@ def _write(domain: str, run_id: str, filename: str, payload):
     storage.write_json_artifact(domain, run_id, filename, payload)
 
 
-def _seed_runs(domain: str, target_run: str = "run-fr", en_run: str = "run-en"):
+def _seed_runs(domain: str):
     _write("_system", "manual", "domains.json", {"domains": [domain]})
     _write(domain, "manual", "capture_runs.json", {
         "runs": [
-            {"run_id": target_run, "created_at": "2026-03-10T00:00:00Z", "jobs": []},
-            {"run_id": en_run, "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+            {"run_id": "run-fr-old", "created_at": "2026-03-10T00:00:00Z", "jobs": []},
+            {"run_id": "run-ja", "created_at": "2026-03-09T00:00:00Z", "jobs": []},
         ]
     })
 
 
-def _seed_phase6_prereqs(domain: str, run_id: str, language: str):
-    _write(domain, run_id, "page_screenshots.json", [{"page_id": "p1", "language": language, "url": "https://example.com"}])
+def _seed_pages(domain: str, run_id: str, language: str, rows: list[dict] | None = None):
+    if rows is None:
+        rows = [{"page_id": "p1", "language": language, "url": "https://example.com", "viewport_kind": "desktop", "state": "baseline", "user_tier": "guest"}]
+    _write(domain, run_id, "page_screenshots.json", rows)
+
+
+
+
+def _seed_phase6_prereqs(domain: str, run_id: str, language: str = "en"):
+    _seed_pages(domain, run_id, language)
     _write(domain, run_id, "collected_items.json", [{"item_id": "i1", "page_id": "p1", "language": language}])
     _write(domain, run_id, "eligible_dataset.json", [{"item_id": "i1", "language": language, "url": "https://example.com"}])
 
 
-def test_get_check_languages_renders_and_shows_readiness(api_env):
+def test_get_check_languages_renders_new_inputs(api_env):
     domain = "example.com"
     _seed_runs(domain)
-    _seed_phase6_prereqs(domain, "run-fr", "fr")
-    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_pages(domain, "run-en", "en")
+    _seed_pages(domain, "run-fr-old", "fr")
 
-    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&run_id=run-fr&en_run_id=run-en")
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}")
     assert status == HTTPStatus.OK
-    assert 'Current state: <strong id="checkLanguagesState">ready</strong>' in body
-    assert "Start language check" in body
-    assert "Target run prerequisites" in body
-    assert "English run prerequisites" in body
+    assert 'name="en_run_id"' in body
+    assert 'name="target_language"' in body
+    assert 'name="run_id"' not in body
 
 
 @pytest.mark.parametrize(
     ("path", "expected"),
     [
         ("/check-languages", "Domain is required."),
-        ("/check-languages?domain=example.com&en_run_id=run-en", "Target run is required."),
-        ("/check-languages?domain=example.com&run_id=run-fr", "English reference run is required."),
+        ("/check-languages?domain=example.com&target_language=fr", "English reference run is required."),
+        ("/check-languages?domain=example.com&en_run_id=run-en", "Target language is required."),
     ],
 )
 def test_get_check_languages_missing_input_validation(api_env, path, expected):
     _seed_runs("example.com")
-
+    _seed_pages("example.com", "run-en", "en")
     status, body, _ = _request("GET", api_env, path)
     assert status == HTTPStatus.OK
     assert expected in body
 
 
-def test_check_languages_not_ready_and_post_refuses_start(api_env):
+def test_post_rejects_non_english_reference(api_env):
     domain = "example.com"
     _seed_runs(domain)
-    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_pages(domain, "run-en", "en")
+    _seed_pages(domain, "run-fr-old", "fr")
 
-    status_get, body_get, _ = _request("GET", api_env, f"/check-languages?domain={domain}&run_id=run-fr&en_run_id=run-en")
-    assert status_get == HTTPStatus.OK
-    assert 'Current state: <strong id="checkLanguagesState">not_ready</strong>' in body_get
-
-    form = "domain=example.com&run_id=run-fr&en_run_id=run-en"
+    form = "domain=example.com&en_run_id=run-fr-old&target_language=ja"
     status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
     assert status_post == HTTPStatus.FOUND
-    assert "Prerequisites+are+missing" in location
+    assert "not+English-only" in location
 
 
-def test_check_languages_post_starts_async_phase6_job(api_env, monkeypatch):
+def test_post_starts_composed_async_workflow(api_env, monkeypatch):
     domain = "example.com"
     _seed_runs(domain)
-    _seed_phase6_prereqs(domain, "run-fr", "fr")
     _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_pages(domain, "run-fr-old", "fr")
 
     started = {}
 
-    def _fake_run_phase6_async(job_id, domain, run_id, en_run_id):
-        started["job_id"] = job_id
-        started["args"] = (domain, run_id, en_run_id)
+    def _fake_run(job_id, domain, en_run_id, target_language, target_run_id):
+        started["args"] = (job_id, domain, en_run_id, target_language, target_run_id)
 
-    monkeypatch.setattr("app.skeleton_server._run_phase6_async", _fake_run_phase6_async)
+    monkeypatch.setattr("app.skeleton_server._run_check_languages_async", _fake_run)
 
-    form = "domain=example.com&run_id=run-fr&en_run_id=run-en"
-    status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
-    assert status_post == HTTPStatus.FOUND
-    assert "Language+check+started" in location
-    assert started["args"] == ("example.com", "run-fr", "run-en")
-
-    runs = storage.read_json_artifact(domain, "manual", "capture_runs.json")
-    run = next(row for row in runs["runs"] if row["run_id"] == "run-fr")
-    assert any(str(job.get("phase")) == "6" and str(job.get("status")) == "queued" for job in run["jobs"])
-
-
-def test_check_languages_completed_summary_and_missing_output_states(api_env):
-    domain = "example.com"
-    _seed_runs(domain)
-    _seed_phase6_prereqs(domain, "run-fr", "fr")
-    _seed_phase6_prereqs(domain, "run-en", "en")
-    _write(domain, "run-fr", "issues.json", [{"id": "1", "category": "TRANSLATION_MISMATCH", "severity": "high", "language": "fr", "state": "baseline"}])
-    _write(domain, "manual", "capture_runs.json", {
-        "runs": [
-            {"run_id": "run-fr", "created_at": "2026-03-10T00:00:00Z", "jobs": [{"job_id": "phase6-run-fr", "phase": "6", "status": "succeeded", "en_run_id": "run-en"}]},
-            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
-        ]
-    })
-
-    status_issues, body_issues, _ = _request("GET", api_env, f"/check-languages?domain={domain}&run_id=run-fr&en_run_id=run-en")
-    assert status_issues == HTTPStatus.OK
-    assert 'Current state: <strong id="checkLanguagesState">completed_with_issues</strong>' in body_issues
-    assert "Total: <strong>1</strong>" in body_issues
-
-    _write(domain, "run-fr", "issues.json", [])
-    status_zero, body_zero, _ = _request("GET", api_env, f"/check-languages?domain={domain}&run_id=run-fr&en_run_id=run-en")
-    assert status_zero == HTTPStatus.OK
-    assert 'Current state: <strong id="checkLanguagesState">completed_with_zero_issues</strong>' in body_zero
-
-    from pipeline.storage import artifact_path, _gcs_client
-
-    bucket = _gcs_client().bucket(storage.BUCKET_NAME)
-    missing_path = artifact_path(domain, "run-fr", "issues.json")
-    bucket._objects.pop((storage.BUCKET_NAME, missing_path), None)
-    status_missing, body_missing, _ = _request("GET", api_env, f"/check-languages?domain={domain}&run_id=run-fr&en_run_id=run-en")
-    assert status_missing == HTTPStatus.OK
-    assert 'Current state: <strong id="checkLanguagesState">completed</strong>' in body_missing
-    assert "Job completed but issues.json is missing." in body_missing
-
-
-def test_check_languages_run_selection_prefers_english_reference(api_env):
-    domain = "example.com"
-    _write("_system", "manual", "domains.json", {"domains": [domain]})
-    _write(domain, "manual", "capture_runs.json", {
-        "runs": [
-            {"run_id": "run-mixed", "created_at": "2026-03-13T00:00:00Z", "jobs": []},
-            {"run_id": "run-ja", "created_at": "2026-03-12T00:00:00Z", "jobs": []},
-            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
-            {"run_id": "run-unknown", "created_at": "2026-03-10T00:00:00Z", "jobs": []},
-        ]
-    })
-    _seed_phase6_prereqs(domain, "run-ja", "ja")
-    _seed_phase6_prereqs(domain, "run-en", "en")
-    _seed_phase6_prereqs(domain, "run-mixed", "ja")
-
-    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}")
-    assert status == HTTPStatus.OK
-    target_start = body.index('<select id="checkLanguagesRunId" name="run_id">')
-    target_end = body.index("</select>", target_start)
-    target_html = body[target_start:target_end]
-    en_start = body.index('<select id="checkLanguagesEnRunId" name="en_run_id">')
-    en_end = body.index("</select>", en_start)
-    en_html = body[en_start:en_end]
-
-    assert target_html.index("run-mixed (ja)") < target_html.index("run-en (en)")
-    assert target_html.index("run-ja (ja)") < target_html.index("run-unknown (unknown)")
-    assert en_html.index("run-en (en)") < en_html.index("run-mixed (ja)")
-    assert en_html.index("run-en (en)") < en_html.index("run-unknown (unknown)")
-
-    form = "domain=example.com&run_id=run-en&en_run_id=run-en"
+    form = "domain=example.com&en_run_id=run-en&target_language=fr"
     status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
     assert status_post == HTTPStatus.FOUND
     parsed = parse_qs(urlparse(location).query)
-    assert parsed["message"][0].startswith("Target run and English reference run must be different")
+    assert parsed["message"][0] == "Language check started."
+    assert parsed["target_run_id"][0].startswith("run-en-check-fr")
+    assert started["args"][1:] == ("example.com", "run-en", "fr", parsed["target_run_id"][0])
+
+    runs = storage.read_json_artifact(domain, "manual", "capture_runs.json")
+    run = next(row for row in runs["runs"] if row["run_id"] == parsed["target_run_id"][0])
+    assert any(job.get("type") == "check_languages" and job.get("status") == "queued" for job in run["jobs"])
 
 
-def test_check_languages_failed_latest_job_marks_existing_summary_as_stale(api_env):
+def test_duplicate_in_progress_guard(api_env):
     domain = "example.com"
     _seed_runs(domain)
-    _seed_phase6_prereqs(domain, "run-fr", "fr")
     _seed_phase6_prereqs(domain, "run-en", "en")
-    _write(domain, "run-fr", "issues.json", [{"id": "1", "category": "TRANSLATION_MISMATCH", "confidence": 0.95, "language": "fr", "state": "baseline"}])
+    _seed_pages(domain, "run-fr-old", "fr")
+    _seed_pages(domain, "run-en-check-fr", "fr")
     _write(domain, "manual", "capture_runs.json", {
         "runs": [
-            {"run_id": "run-fr", "created_at": "2026-03-10T00:00:00Z", "jobs": [{"job_id": "phase6-run-fr-old", "phase": "6", "status": "succeeded", "en_run_id": "run-en"}, {"job_id": "phase6-run-fr-new", "phase": "6", "status": "failed", "en_run_id": "run-en", "updated_at": "2026-03-11T01:00:00Z"}]},
+            {"run_id": "run-en-check-fr", "created_at": "2026-03-12T00:00:00Z", "jobs": [{"job_id": "check-languages-run-en-check-fr-1", "status": "running", "type": "check_languages", "en_run_id": "run-en", "target_language": "fr"}]},
             {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
         ]
     })
 
-    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&run_id=run-fr&en_run_id=run-en")
+    form = "domain=example.com&en_run_id=run-en&target_language=fr"
+    status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
+    assert status_post == HTTPStatus.FOUND
+    assert "already+in+progress" in location
+
+
+def test_completed_state_shows_target_run_and_summary(api_env):
+    domain = "example.com"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    target_run_id = "run-en-check-fr"
+    _seed_pages(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "issues.json", [{"id": "1", "category": "TRANSLATION_MISMATCH", "severity": "high", "language": "fr", "state": "baseline"}])
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {"run_id": target_run_id, "created_at": "2026-03-12T00:00:00Z", "jobs": [{"job_id": "check-languages-1", "status": "succeeded", "type": "check_languages", "stage": "completed", "en_run_id": "run-en", "target_language": "fr"}]},
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
     assert status == HTTPStatus.OK
-    assert 'Current state: <strong id="checkLanguagesState">failed</strong>' in body
+    assert 'Current state: <strong id="checkLanguagesState">completed_with_issues</strong>' in body
+    assert f"Generated target run: <code>{target_run_id}</code>" in body
     assert "Total: <strong>1</strong>" in body
-    assert "By severity: high: 1" in body
-    assert "may be stale from a previous successful run" in body
+    assert "Open issue explorer" in body
+
+
+
+def test_target_language_options_allow_first_non_english_run(api_env):
+    domain = "example.com"
+    _seed_runs(domain)
+    _seed_pages(domain, "run-en", "en")
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}")
+    assert status == HTTPStatus.OK
+    assert '<option value="fr"' in body
+
+
+def test_post_rejects_when_english_reference_not_phase6_ready(api_env):
+    domain = "example.com"
+    _seed_runs(domain)
+    _seed_pages(domain, "run-en", "en")
+
+    form = "domain=example.com&en_run_id=run-en&target_language=fr"
+    status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
+    assert status_post == HTTPStatus.FOUND
+    assert "not+ready+for+comparison+prerequisites" in location
+
+
+def test_queued_state_is_rendered_as_queued(api_env):
+    domain = "example.com"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_pages(domain, "run-en-check-fr", "fr")
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {"run_id": "run-en-check-fr", "created_at": "2026-03-12T00:00:00Z", "jobs": [{"job_id": "check-languages-1", "status": "queued", "type": "check_languages", "stage": "queued", "en_run_id": "run-en", "target_language": "fr"}]},
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id=run-en-check-fr")
+    assert status == HTTPStatus.OK
+    assert 'Current state: <strong id="checkLanguagesState">queued</strong>' in body
+
+
+def test_replay_scope_helper_uses_reference_contexts(monkeypatch):
+    pages = [
+        {"url": "https://example.com/a", "language": "en", "viewport_kind": "desktop", "state": "baseline", "user_tier": "guest"},
+        {"url": "https://example.com/a", "language": "en", "viewport_kind": "desktop", "state": "checkout", "user_tier": "pro"},
+        {"url": "https://example.com/a", "language": "fr", "viewport_kind": "desktop", "state": "baseline", "user_tier": "guest"},
+    ]
+
+    monkeypatch.setattr("app.skeleton_server._read_list_artifact_required", lambda domain, run_id, filename: pages)
+
+    calls = []
+
+    def _fake_build(domain, url, language, viewport_kind, state, user_tier):
+        calls.append((domain, url, language, viewport_kind, state, user_tier))
+        return {"ctx": (url, viewport_kind, state, user_tier)}
+
+    monkeypatch.setattr("pipeline.run_phase1.build_exact_context_job", _fake_build)
+
+    from app.skeleton_server import _replay_scope_from_reference_run
+
+    jobs = _replay_scope_from_reference_run("example.com", "run-en", "ja")
+    assert len(jobs) == 2
+    assert calls == [
+        ("example.com", "https://example.com/a", "ja", "desktop", "baseline", "guest"),
+        ("example.com", "https://example.com/a", "ja", "desktop", "checkout", "pro"),
+    ]
+
+
+def test_orchestrator_runs_capture_then_comparison(monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.skeleton_server._replay_scope_from_reference_run", lambda d, e, t: ["j1", "j2"])
+
+    async def _fake_main(*args, **kwargs):
+        calls.append("phase1")
+
+    monkeypatch.setattr("pipeline.run_phase1.main", _fake_main)
+    monkeypatch.setattr("pipeline.run_phase3.run", lambda **kwargs: calls.append("phase3"))
+    monkeypatch.setattr("pipeline.run_phase6.run", lambda **kwargs: calls.append("phase6"))
+    monkeypatch.setattr("app.skeleton_server._upsert_job_status", lambda *args, **kwargs: None)
+
+    from app.skeleton_server import _run_check_languages_async
+
+    _run_check_languages_async("job1", "example.com", "run-en", "fr", "run-en-check-fr")
+    assert calls == ["phase1", "phase3", "phase6"]
+
+
+def test_orchestrator_stops_before_comparison_on_capture_failure(monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.skeleton_server._replay_scope_from_reference_run", lambda d, e, t: ["j1"])
+
+    async def _fake_main(*args, **kwargs):
+        calls.append("phase1")
+        raise RuntimeError("capture failed")
+
+    monkeypatch.setattr("pipeline.run_phase1.main", _fake_main)
+    monkeypatch.setattr("pipeline.run_phase3.run", lambda **kwargs: calls.append("phase3"))
+    monkeypatch.setattr("pipeline.run_phase6.run", lambda **kwargs: calls.append("phase6"))
+    updates = []
+    monkeypatch.setattr("app.skeleton_server._upsert_job_status", lambda d, r, rec: updates.append(rec))
+
+    from app.skeleton_server import _run_check_languages_async
+
+    _run_check_languages_async("job1", "example.com", "run-en", "fr", "run-en-check-fr")
+    assert calls == ["phase1"]
+    assert any(str(rec.get("stage")) == "running_target_capture_failed" for rec in updates)
+
+
+def test_orchestrator_surfaces_comparison_failure(monkeypatch):
+    monkeypatch.setattr("app.skeleton_server._replay_scope_from_reference_run", lambda d, e, t: ["j1"])
+
+    async def _fake_main(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr("pipeline.run_phase1.main", _fake_main)
+    monkeypatch.setattr("pipeline.run_phase3.run", lambda **kwargs: None)
+    monkeypatch.setattr("pipeline.run_phase6.run", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("phase6 failed")))
+    updates = []
+    monkeypatch.setattr("app.skeleton_server._upsert_job_status", lambda d, r, rec: updates.append(rec))
+
+    from app.skeleton_server import _run_check_languages_async
+
+    _run_check_languages_async("job1", "example.com", "run-en", "fr", "run-en-check-fr")
+    assert any(str(rec.get("stage")) == "running_comparison_failed" for rec in updates)

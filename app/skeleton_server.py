@@ -14,6 +14,7 @@ import io
 import json
 import os
 import re
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -258,6 +259,102 @@ def _load_check_language_runs(domain: str) -> list[dict]:
         })
     out.sort(key=lambda run: (run.get("created_at", ""), run.get("run_id", "")), reverse=True)
     return out
+
+
+def _load_target_languages(runs: list[dict]) -> list[str]:
+    configured = [
+        str(value).strip().lower()
+        for value in str(os.environ.get("CHECK_LANGUAGES_TARGET_LANGUAGES", "fr,es,de,it,pt,ja,ko,zh,ar,nl,pl,tr,sv")).split(",")
+        if str(value).strip()
+    ]
+    languages: set[str] = {language for language in configured if not _is_english_language(language)}
+    for run in runs:
+        for language in run.get("languages", []):
+            normalized = str(language).strip().lower()
+            if normalized and not _is_english_language(normalized):
+                languages.add(normalized)
+    return sorted(languages)
+
+
+def _run_is_english_only(run: dict) -> bool:
+    languages = [str(language).strip().lower() for language in run.get("languages", []) if str(language).strip()]
+    return bool(languages) and all(_is_english_language(language) for language in languages)
+
+
+def _replay_scope_from_reference_run(domain: str, en_run_id: str, target_language: str) -> list[dict]:
+    from pipeline.run_phase1 import build_exact_context_job
+
+    pages = _read_list_artifact_required(domain, en_run_id, "page_screenshots.json")
+    unique_contexts: dict[tuple[str, str, str, str | None], dict] = {}
+    for row in pages:
+        if not isinstance(row, dict):
+            continue
+        language = str(row.get("language", "")).strip()
+        if not _is_english_language(language):
+            continue
+        url = str(row.get("url", "")).strip()
+        viewport_kind = str(row.get("viewport_kind", "")).strip()
+        state = str(row.get("state", "")).strip()
+        user_tier_raw = row.get("user_tier")
+        user_tier = str(user_tier_raw).strip() if user_tier_raw not in (None, "") else None
+        if not url or not viewport_kind or not state:
+            raise ValueError("reference run scope is incomplete in page_screenshots.json")
+        key = (url, viewport_kind, state, user_tier)
+        unique_contexts[key] = {"url": url, "viewport_kind": viewport_kind, "state": state, "user_tier": user_tier}
+
+    if not unique_contexts:
+        raise ValueError("reference run has no English capture scope to replay")
+
+    jobs: list[dict] = []
+    for key in sorted(unique_contexts.keys()):
+        context = unique_contexts[key]
+        jobs.append(build_exact_context_job(domain, context["url"], target_language, context["viewport_kind"], context["state"], context["user_tier"]))
+    return jobs
+
+
+def _generate_target_run_id(domain: str, en_run_id: str, target_language: str) -> str:
+    runs = _load_runs(domain).get("runs", [])
+    existing = {str(row.get("run_id", "")).strip() for row in runs if isinstance(row, dict)}
+    base = f"{en_run_id}-check-{target_language}"
+    candidate = base
+    suffix = 1
+    while candidate in existing:
+        candidate = f"{base}-{suffix}"
+        suffix += 1
+    return candidate
+
+
+def _find_in_progress_check_languages_job(domain: str, en_run_id: str, target_language: str) -> dict | None:
+    runs = _load_runs(domain).get("runs", [])
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        for job in run.get("jobs", []):
+            if not isinstance(job, dict):
+                continue
+            status = str(job.get("status", "")).strip().lower()
+            if status not in {"running", "queued"}:
+                continue
+            if str(job.get("type", "")).strip() != "check_languages":
+                continue
+            if str(job.get("en_run_id", "")).strip() != en_run_id:
+                continue
+            if str(job.get("target_language", "")).strip().lower() != target_language:
+                continue
+            return dict(job)
+    return None
+
+
+def _latest_check_languages_job(domain: str, run_id: str) -> dict | None:
+    runs = _load_runs(domain).get("runs", [])
+    run = next((row for row in runs if isinstance(row, dict) and str(row.get("run_id", "")).strip() == run_id), None)
+    if not isinstance(run, dict):
+        return None
+    jobs = [dict(job) for job in run.get("jobs", []) if isinstance(job, dict) and str(job.get("type", "")).strip() == "check_languages"]
+    if not jobs:
+        return None
+    jobs.sort(key=lambda row: (str(row.get("updated_at", "")), str(row.get("created_at", "")), str(row.get("job_id", ""))))
+    return jobs[-1]
 
 
 def _latest_phase6_job(domain: str, run_id: str) -> dict | None:
@@ -1033,6 +1130,96 @@ def _run_phase6_async(job_id: str, domain: str, run_id: str, en_run_id: str) -> 
         _jobs[job_id]["error"] = str(exc)
         _upsert_job_status(domain, run_id, {"job_id": job_id, "status": "failed", "phase": "6", "en_run_id": en_run_id, "error": str(exc)})
 
+
+
+
+def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_language: str, target_run_id: str) -> None:
+    _jobs[job_id] = {"status": "running", "phase": "check_languages", "domain": domain, "run_id": target_run_id, "en_run_id": en_run_id, "target_language": target_language}
+    from pipeline.run_phase1 import main as phase1_main
+    from pipeline.run_phase3 import run as phase3_run
+    from pipeline.run_phase6 import run as phase6_run
+
+    try:
+        _upsert_job_status(domain, target_run_id, {
+            "job_id": job_id,
+            "status": "running",
+            "type": "check_languages",
+            "stage": "preparing_target_run",
+            "en_run_id": en_run_id,
+            "target_language": target_language,
+        })
+        replay_jobs = _replay_scope_from_reference_run(domain, en_run_id, target_language)
+    except Exception as exc:
+        _jobs[job_id]["status"] = "error"
+        _jobs[job_id]["error"] = str(exc)
+        _upsert_job_status(domain, target_run_id, {
+            "job_id": job_id,
+            "status": "failed",
+            "type": "check_languages",
+            "stage": "preparing_target_run_failed",
+            "en_run_id": en_run_id,
+            "target_language": target_language,
+            "error": str(exc),
+        })
+        return
+
+    try:
+        _upsert_job_status(domain, target_run_id, {
+            "job_id": job_id,
+            "status": "running",
+            "type": "check_languages",
+            "stage": "running_target_capture",
+            "en_run_id": en_run_id,
+            "target_language": target_language,
+            "contexts": len(replay_jobs),
+        })
+        asyncio.run(phase1_main(domain, target_run_id, target_language, "desktop", "baseline", None, jobs_override=replay_jobs))
+    except Exception as exc:
+        _jobs[job_id]["status"] = "error"
+        _jobs[job_id]["error"] = str(exc)
+        _upsert_job_status(domain, target_run_id, {
+            "job_id": job_id,
+            "status": "failed",
+            "type": "check_languages",
+            "stage": "running_target_capture_failed",
+            "en_run_id": en_run_id,
+            "target_language": target_language,
+            "error": str(exc),
+        })
+        return
+
+    try:
+        _upsert_job_status(domain, target_run_id, {
+            "job_id": job_id,
+            "status": "running",
+            "type": "check_languages",
+            "stage": "running_comparison",
+            "en_run_id": en_run_id,
+            "target_language": target_language,
+        })
+        phase3_run(domain=domain, run_id=target_run_id)
+        phase6_run(domain=domain, en_run_id=en_run_id, target_run_id=target_run_id)
+        _jobs[job_id]["status"] = "done"
+        _upsert_job_status(domain, target_run_id, {
+            "job_id": job_id,
+            "status": "succeeded",
+            "type": "check_languages",
+            "stage": "completed",
+            "en_run_id": en_run_id,
+            "target_language": target_language,
+        })
+    except Exception as exc:
+        _jobs[job_id]["status"] = "error"
+        _jobs[job_id]["error"] = str(exc)
+        _upsert_job_status(domain, target_run_id, {
+            "job_id": job_id,
+            "status": "failed",
+            "type": "check_languages",
+            "stage": "running_comparison_failed",
+            "en_run_id": en_run_id,
+            "target_language": target_language,
+            "error": str(exc),
+        })
 
 def _workflow_section_status(*, has_artifact: bool, count: int | None = None, pending_on: bool = False) -> str:
     if has_artifact:
@@ -2469,8 +2656,9 @@ class SkeletonHandler(BaseHTTPRequestHandler):
     def _redirect_check_languages(self, payload: dict[str, str], *, message: str = "", level: str = "") -> None:
         query = {
             "domain": str(payload.get("domain", "")).strip(),
-            "run_id": str(payload.get("run_id", "")).strip(),
             "en_run_id": str(payload.get("en_run_id", "")).strip(),
+            "target_language": str(payload.get("target_language", "")).strip().lower(),
+            "target_run_id": str(payload.get("target_run_id", "")).strip(),
         }
         if message:
             query["message"] = message
@@ -2483,20 +2671,20 @@ class SkeletonHandler(BaseHTTPRequestHandler):
 
     def _start_check_languages(self, payload: dict[str, str]) -> None:
         domain = str(payload.get("domain", "")).strip()
-        run_id = str(payload.get("run_id", "")).strip()
         en_run_id = str(payload.get("en_run_id", "")).strip()
+        target_language = str(payload.get("target_language", "")).strip().lower()
 
         if not domain:
             self._redirect_check_languages(payload, message="Domain is required.", level="error")
             return
-        if not run_id:
-            self._redirect_check_languages(payload, message="Target run is required.", level="error")
-            return
         if not en_run_id:
             self._redirect_check_languages(payload, message="English reference run is required.", level="error")
             return
-        if run_id == en_run_id:
-            self._redirect_check_languages(payload, message="Target run and English reference run must be different.", level="error")
+        if not target_language:
+            self._redirect_check_languages(payload, message="Target language is required.", level="error")
+            return
+        if _is_english_language(target_language):
+            self._redirect_check_languages(payload, message="Target language must be non-English.", level="error")
             return
 
         try:
@@ -2505,49 +2693,69 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             self._redirect_check_languages(payload, message=str(exc), level="error")
             return
 
-        available_run_ids = {str(row.get("run_id", "")) for row in _load_check_language_runs(domain)}
-        if run_id not in available_run_ids:
-            self._redirect_check_languages(payload, message="Selected target run is invalid for this domain.", level="error")
-            return
-        if en_run_id not in available_run_ids:
+        runs = _load_check_language_runs(domain)
+        run_map = {str(row.get("run_id", "")): row for row in runs}
+        en_run = run_map.get(en_run_id)
+        if en_run is None:
             self._redirect_check_languages(payload, message="Selected English reference run is invalid for this domain.", level="error")
             return
+        if not _run_is_english_only(en_run):
+            self._redirect_check_languages(payload, message="Selected reference run is not English-only.", level="error")
+            return
 
-        target_readiness = _phase6_artifact_readiness(domain, run_id)
         en_readiness = _phase6_artifact_readiness(domain, en_run_id)
-        if not target_readiness["ready"] or not en_readiness["ready"]:
-            self._redirect_check_languages(payload, message="Prerequisites are missing. Phase 6 cannot start yet.", level="error")
+        if not en_readiness.get("ready"):
+            self._redirect_check_languages(payload, message="English reference run is not ready for comparison prerequisites.", level="error")
             return
 
-        latest = _latest_phase6_job(domain, run_id)
-        latest_status = str((latest or {}).get("status", "")).strip().lower()
-        if latest_status in {"running", "queued"}:
-            self._redirect_check_languages(payload, message="Phase 6 is already running for this target run.", level="warning")
+        available_languages = set(_load_target_languages(runs))
+        if target_language not in available_languages:
+            self._redirect_check_languages(payload, message="Selected target language is invalid for this domain.", level="error")
             return
 
-        job_id = f"phase6-{run_id}-{int(time.time())}"
-        _upsert_job_status(domain, run_id, {"job_id": job_id, "status": "queued", "phase": "6", "type": "issues", "en_run_id": en_run_id})
-        t = threading.Thread(target=_run_phase6_async, args=(job_id, domain, run_id, en_run_id), daemon=True)
+        in_progress = _find_in_progress_check_languages_job(domain, en_run_id, target_language)
+        if in_progress:
+            existing_payload = dict(payload)
+            existing_payload["target_run_id"] = str(in_progress.get("run_id", ""))
+            self._redirect_check_languages(existing_payload, message="Language check is already in progress for this selection.", level="warning")
+            return
+
+        target_run_id = _generate_target_run_id(domain, en_run_id, target_language)
+        job_id = f"check-languages-{target_run_id}-{int(time.time())}"
+        _upsert_job_status(domain, target_run_id, {
+            "job_id": job_id,
+            "status": "queued",
+            "type": "check_languages",
+            "stage": "queued",
+            "en_run_id": en_run_id,
+            "target_language": target_language,
+        })
+        t = threading.Thread(target=_run_check_languages_async, args=(job_id, domain, en_run_id, target_language, target_run_id), daemon=True)
         t.start()
-        self._redirect_check_languages(payload, message="Language check started.", level="ok")
+
+        redirect_payload = dict(payload)
+        redirect_payload["target_run_id"] = target_run_id
+        self._redirect_check_languages(redirect_payload, message="Language check started.", level="ok")
 
     def _serve_check_languages_page(self, query: dict[str, list[str]]) -> None:
         domain = str(query.get("domain", [""])[0]).strip()
-        selected_run_id = str(query.get("run_id", [""])[0]).strip()
         selected_en_run_id = str(query.get("en_run_id", [""])[0]).strip()
+        target_language = str(query.get("target_language", [""])[0]).strip().lower()
+        target_run_id = str(query.get("target_run_id", [""])[0]).strip()
         message = str(query.get("message", [""])[0]).strip()
         level = str(query.get("level", [""])[0]).strip().lower()
         csrf_token = self._ensure_csrf_cookie()
 
         errors: list[str] = []
         runs: list[dict] = []
+        en_candidates: list[dict] = []
+        target_languages: list[str] = []
         issues_summary = None
-        page_state = "not_started"
-        readiness_target = {"required": [], "missing": [], "read_error": "", "ready": False}
-        readiness_en = {"required": [], "missing": [], "read_error": "", "ready": False}
         issues_exists = False
         issues_missing_after_completion = False
         latest_job = None
+        page_state = "input_incomplete"
+        en_readiness = {"required": [], "missing": [], "read_error": "", "ready": False}
 
         if not domain:
             errors.append("Domain is required.")
@@ -2558,29 +2766,56 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             except ValueError as exc:
                 errors.append(str(exc))
 
-        run_ids = {str(row.get("run_id", "")) for row in runs}
-        if selected_run_id and selected_run_id not in run_ids:
-            errors.append("Selected target run is invalid for this domain.")
-        if selected_en_run_id and selected_en_run_id not in run_ids:
-            errors.append("Selected English reference run is invalid for this domain.")
-        if selected_run_id and selected_en_run_id and selected_run_id == selected_en_run_id:
-            errors.append("Target run and English reference run must be different.")
+        run_map = {str(row.get("run_id", "")): row for row in runs}
+        en_candidates = [row for row in runs if _run_is_english_only(row)]
+        target_languages = _load_target_languages(runs)
 
-        if domain and selected_run_id and selected_en_run_id and not errors:
-            readiness_target = _phase6_artifact_readiness(domain, selected_run_id)
-            readiness_en = _phase6_artifact_readiness(domain, selected_en_run_id)
-            latest_job = _latest_phase6_job(domain, selected_run_id)
-            issues_exists = _artifact_exists(domain, selected_run_id, "issues.json")
+        if selected_en_run_id and selected_en_run_id not in run_map:
+            errors.append("Selected English reference run is invalid for this domain.")
+        elif selected_en_run_id and selected_en_run_id in run_map and not _run_is_english_only(run_map[selected_en_run_id]):
+            errors.append("Selected reference run is not English-only.")
+        elif selected_en_run_id and selected_en_run_id in run_map:
+            en_readiness = _phase6_artifact_readiness(domain, selected_en_run_id)
+
+        if target_language:
+            if _is_english_language(target_language):
+                errors.append("Target language must be non-English.")
+            elif target_language not in target_languages:
+                errors.append("Selected target language is invalid for this domain.")
+
+        if selected_en_run_id and not en_readiness.get("ready") and not any("Selected English reference run is invalid" in e or "not English-only" in e for e in errors):
+            errors.append("English reference run is not ready for comparison prerequisites.")
+
+        if selected_en_run_id and target_language and not target_run_id:
+            for run in runs:
+                run_id = str(run.get("run_id", ""))
+                job = _latest_check_languages_job(domain, run_id)
+                if not isinstance(job, dict):
+                    continue
+                if str(job.get("en_run_id", "")) == selected_en_run_id and str(job.get("target_language", "")).lower() == target_language:
+                    target_run_id = run_id
+                    break
+
+        if selected_en_run_id and target_language and target_run_id and not errors:
+            latest_job = _latest_check_languages_job(domain, target_run_id)
+            issues_exists = _artifact_exists(domain, target_run_id, "issues.json")
             if issues_exists:
-                issues_payload = _read_json_safe(domain, selected_run_id, "issues.json", None)
+                issues_payload = _read_json_safe(domain, target_run_id, "issues.json", None)
                 if isinstance(issues_payload, list):
                     issues_summary = _summarize_issues_payload(issues_payload)
                 else:
                     errors.append("issues.json is malformed.")
 
             latest_status = str((latest_job or {}).get("status", "")).strip().lower()
-            if latest_status in {"running", "queued"}:
-                page_state = "running"
+            stage = str((latest_job or {}).get("stage", "")).strip().lower()
+            if latest_status in {"queued"} or stage == "queued":
+                page_state = "queued"
+            elif stage == "preparing_target_run":
+                page_state = "preparing_target_run"
+            elif stage == "running_target_capture":
+                page_state = "running_target_capture"
+            elif stage == "running_comparison":
+                page_state = "running_comparison"
             elif latest_status in {"failed", "error"}:
                 page_state = "failed"
             elif issues_summary is not None:
@@ -2588,33 +2823,30 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             elif latest_status == "succeeded":
                 page_state = "completed"
                 issues_missing_after_completion = True
-            elif readiness_target["ready"] and readiness_en["ready"]:
-                page_state = "ready"
             else:
-                page_state = "not_ready"
-        elif domain and (selected_run_id or selected_en_run_id):
-            page_state = "not_ready"
+                page_state = "ready_to_start"
+        elif selected_en_run_id and target_language:
+            page_state = "ready_to_start"
 
-        if selected_run_id and not selected_en_run_id:
+        if selected_en_run_id and not target_language:
+            errors.append("Target language is required.")
+        if target_language and not selected_en_run_id:
             errors.append("English reference run is required.")
-        if selected_en_run_id and not selected_run_id:
-            errors.append("Target run is required.")
 
-        def _option(run: dict, selected: bool) -> str:
-            languages = ", ".join(run.get("languages", [])) or "unknown"
-            label = f"{run.get('run_id')} ({languages})"
+        def _run_option(run: dict, selected: bool) -> str:
+            label = f"{run.get('run_id')}"
             selected_attr = ' selected="selected"' if selected else ""
             return f'<option value="{_h(run.get("run_id", ""))}"{selected_attr}>{_h(label)}</option>'
 
-        runs_by_newest = sorted(runs, key=lambda row: (row.get("created_at", ""), row.get("run_id", "")), reverse=True)
-        target_candidates = sorted(runs_by_newest, key=lambda row: not bool(row.get("has_non_english")))
-        en_candidates = sorted(runs_by_newest, key=lambda row: not bool(row.get("has_english")))
-        target_options = ['<option value="">Select target run</option>'] + [_option(run, run.get("run_id") == selected_run_id) for run in target_candidates]
-        en_options = ['<option value="">Select English reference run</option>'] + [_option(run, run.get("run_id") == selected_en_run_id) for run in en_candidates]
+        def _language_option(language: str, selected: bool) -> str:
+            selected_attr = ' selected="selected"' if selected else ""
+            return f'<option value="{_h(language)}"{selected_attr}>{_h(language)}</option>'
+
+        en_options = ['<option value="">Select English reference run</option>'] + [_run_option(run, str(run.get("run_id", "")) == selected_en_run_id) for run in sorted(en_candidates, key=lambda row: (row.get("created_at", ""), row.get("run_id", "")), reverse=True)]
+        language_options = ['<option value="">Select target language</option>'] + [_language_option(language, language == target_language) for language in target_languages]
 
         issue_summary_block = "<p>Issues output: missing.</p>"
-        latest_status = str((latest_job or {}).get("status", "")).strip().lower()
-        stale_summary = bool(issues_summary is not None and latest_status in {"failed", "error"})
+        stale_summary = bool(issues_summary is not None and str((latest_job or {}).get("status", "")).strip().lower() in {"failed", "error"})
         if issues_summary is not None:
             issue_summary_block = (
                 f"<p>Issues output: present.</p>"
@@ -2631,16 +2863,18 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         if issues_missing_after_completion:
             issue_summary_block += '<p class="error">Job completed but issues.json is missing.</p>'
 
-        latest_job_block = "<p>No phase-six job has been started for this target run.</p>"
+        latest_job_block = "<p>No composed language-check job has been started yet.</p>"
         if isinstance(latest_job, dict):
             latest_job_block = (
                 f"<p>Latest job: {_h(latest_job.get('job_id', ''))}</p>"
                 f"<p>Status: <strong>{_h(latest_job.get('status', ''))}</strong></p>"
+                f"<p>Stage: <strong>{_h(latest_job.get('stage', ''))}</strong></p>"
                 f"<p>English run: {_h(latest_job.get('en_run_id', ''))}</p>"
+                f"<p>Target language: {_h(latest_job.get('target_language', ''))}</p>"
                 f"<p>Error: {_h(latest_job.get('error', '')) or '—'}</p>"
             )
 
-        run_query = urlencode({"domain": domain, "run_id": selected_run_id}) if domain and selected_run_id else ""
+        run_query = urlencode({"domain": domain, "run_id": target_run_id}) if domain and target_run_id else ""
         issues_link = f"/?{run_query}" if run_query else "#"
         issues_api_link = f"/api/issues?{run_query}" if run_query else "#"
 
@@ -2651,7 +2885,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         notices.extend([f'<li class="error">{_h(err)}</li>' for err in errors])
         notices_html = f"<ul>{''.join(notices)}</ul>" if notices else "<p>—</p>"
 
-        start_enabled = bool(domain and selected_run_id and selected_en_run_id and not errors and readiness_target["ready"] and readiness_en["ready"] and str((latest_job or {}).get("status", "")).lower() not in {"running", "queued"})
+        start_enabled = bool(domain and selected_en_run_id and target_language and not errors and str((latest_job or {}).get("status", "")).lower() not in {"running", "queued"})
         disabled_attr = "" if start_enabled else ' disabled="disabled"'
 
         self._serve_template(
@@ -2659,21 +2893,18 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             replacements={
                 "{{csrf_token}}": _h(csrf_token),
                 "{{domain}}": _h(domain),
-                "{{selected_run_id}}": _h(selected_run_id),
                 "{{selected_en_run_id}}": _h(selected_en_run_id),
+                "{{target_language}}": _h(target_language),
+                "{{target_run_id}}": _h(target_run_id),
                 "{{notices}}": notices_html,
-                "{{target_options}}": "".join(target_options),
                 "{{en_options}}": "".join(en_options),
+                "{{target_language_options}}": "".join(language_options),
                 "{{page_state}}": _h(page_state),
-                "{{target_required}}": _h(", ".join(readiness_target.get("required", [])) or "—"),
-                "{{target_missing}}": _h(", ".join(readiness_target.get("missing", [])) or "—"),
-                "{{target_read_error}}": _h(readiness_target.get("read_error", "") or "—"),
-                "{{target_ready}}": _h("ready" if readiness_target.get("ready") else "not_ready"),
-                "{{en_required}}": _h(", ".join(readiness_en.get("required", [])) or "—"),
-                "{{en_missing}}": _h(", ".join(readiness_en.get("missing", [])) or "—"),
-                "{{en_read_error}}": _h(readiness_en.get("read_error", "") or "—"),
-                "{{en_ready}}": _h("ready" if readiness_en.get("ready") else "not_ready"),
                 "{{issues_exists}}": _h("present" if issues_exists else "missing"),
+                "{{en_required}}": _h(", ".join(en_readiness.get("required", [])) or "—"),
+                "{{en_missing}}": _h(", ".join(en_readiness.get("missing", [])) or "—"),
+                "{{en_read_error}}": _h(en_readiness.get("read_error", "") or "—"),
+                "{{en_ready}}": _h("ready" if en_readiness.get("ready") else "not_ready"),
                 "{{issues_summary}}": issue_summary_block,
                 "{{latest_job}}": latest_job_block,
                 "{{issues_link}}": _h(issues_link),
