@@ -10,80 +10,82 @@
   {{header}}
   <main>
     <h1>CHECK LANGUAGES</h1>
-    <p>Use this checkpoint after CHOOSE NEEDED and before SEE ERRORS to confirm language-related run metadata before moving forward to issue review.</p>
-    <p>This step is intentionally deferred and read-only placeholder content for now; interactive review controls will be added in the next iteration.</p>
+    <p>Run phase six against a selected target run using an English reference run.</p>
 
     <section>
-      <h2>Block A · Current run</h2>
-      <div class="controls">
-        <div>
-          <label for="checkLanguagesDomain">Domain</label>
-          <input id="checkLanguagesDomain" type="text" value="" readonly placeholder="—" />
-        </div>
-        <div>
-          <label for="checkLanguagesRunId">Run ID</label>
-          <input id="checkLanguagesRunId" type="text" value="" readonly placeholder="—" />
-        </div>
-      </div>
+      <h2>Operator messages</h2>
+      {{notices}}
     </section>
 
     <section>
-      <h2>Block B · Next action</h2>
-      <div class="controls">
-        <a id="checkLanguagesNextStepLink" class="ui-action-button" href="#" aria-disabled="true" tabindex="-1">Continue to SEE ERRORS</a>
-      </div>
-      <p id="checkLanguagesNextStepHint">Complete previous steps first (opens SEE ERRORS).</p>
+      <h2>Selection</h2>
+      <form method="post" action="/check-languages">
+        <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+        <div class="controls">
+          <div>
+            <label for="checkLanguagesDomain">Domain</label>
+            <input id="checkLanguagesDomain" name="domain" type="text" value="{{domain}}" />
+          </div>
+          <div>
+            <label for="checkLanguagesRunId">Target run</label>
+            <select id="checkLanguagesRunId" name="run_id">
+              {{target_options}}
+            </select>
+          </div>
+          <div>
+            <label for="checkLanguagesEnRunId">English reference run</label>
+            <select id="checkLanguagesEnRunId" name="en_run_id">
+              {{en_options}}
+            </select>
+          </div>
+        </div>
+        <p>
+          <button type="submit"{{start_disabled}}>Start language check</button>
+        </p>
+      </form>
     </section>
 
-    <details class="page-help">
-      <summary>Technical/manual paths</summary>
-      <div class="page-help-content">
-        <ul>
-          <li><a href="/workflow">Back to FIRST RUN</a></li>
-          <li><a id="checkLanguagesContextsLink" href="#">Open Contexts for this run</a></li>
-          <li><a id="checkLanguagesPullsLink" href="#">Back to previous step (CHOOSE NEEDED)</a></li>
-        </ul>
-      </div>
-    </details>
+    <section>
+      <h2>State</h2>
+      <p>Current state: <strong id="checkLanguagesState">{{page_state}}</strong></p>
+      <p>Target run: <code>{{selected_run_id}}</code></p>
+      <p>English run: <code>{{selected_en_run_id}}</code></p>
+      <p>issues.json artifact: <strong>{{issues_exists}}</strong></p>
+    </section>
+
+    <section>
+      <h2>Readiness</h2>
+      <h3>Target run prerequisites</h3>
+      <ul>
+        <li>Required artifacts: {{target_required}}</li>
+        <li>Missing artifacts: {{target_missing}}</li>
+        <li>Read error: {{target_read_error}}</li>
+        <li>Status: <strong>{{target_ready}}</strong></li>
+      </ul>
+      <h3>English run prerequisites</h3>
+      <ul>
+        <li>Required artifacts: {{en_required}}</li>
+        <li>Missing artifacts: {{en_missing}}</li>
+        <li>Read error: {{en_read_error}}</li>
+        <li>Status: <strong>{{en_ready}}</strong></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Job status</h2>
+      {{latest_job}}
+    </section>
+
+    <section>
+      <h2>Issue summary</h2>
+      {{issues_summary}}
+      <p>
+        <a href="{{issues_link}}">Open issue explorer</a>
+        ·
+        <a href="{{issues_api_link}}">Open issues API</a>
+      </p>
+    </section>
   </main>
-  <script>
-    (function initCheckLanguagesPage() {
-      const params = new URLSearchParams(window.location.search);
-      const domain = (params.get('domain') || '').trim();
-      const runId = (params.get('run_id') || '').trim();
-
-      const domainInput = document.getElementById('checkLanguagesDomain');
-      const runIdInput = document.getElementById('checkLanguagesRunId');
-      const nextStepLink = document.getElementById('checkLanguagesNextStepLink');
-      const nextStepHint = document.getElementById('checkLanguagesNextStepHint');
-
-      domainInput.value = domain;
-      runIdInput.value = runId;
-
-
-      nextStepLink.addEventListener('click', (event) => {
-        if (nextStepLink.getAttribute('aria-disabled') === 'true') {
-          event.preventDefault();
-        }
-      });
-
-      if (domain && runId) {
-        const query = `?domain=${encodeURIComponent(domain)}&run_id=${encodeURIComponent(runId)}`;
-        const seeErrorsDestination = `/${query}`;
-        nextStepLink.href = seeErrorsDestination;
-        nextStepLink.removeAttribute('aria-disabled');
-        nextStepLink.removeAttribute('tabindex');
-        nextStepHint.hidden = true;
-        document.getElementById('checkLanguagesContextsLink').href = `/contexts${query}`;
-        document.getElementById('checkLanguagesPullsLink').href = `/pulls${query}`;
-      } else {
-        nextStepLink.href = '#';
-        nextStepLink.setAttribute('aria-disabled', 'true');
-        nextStepLink.setAttribute('tabindex', '-1');
-        nextStepHint.hidden = false;
-      }
-    }());
-  </script>
   <script src="/static/i18n.js"></script>
   <script src="/static/nav-active.js"></script>
   <script src="/static/auth.js"></script>
