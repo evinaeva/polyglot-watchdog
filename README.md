@@ -28,6 +28,7 @@ What is already real in the repository:
 - deterministic pipeline/storage conventions for run-level artifacts;
 - implemented phase runners for key contract-aligned flows, including Phase 1, Phase 3, and Phase 6;
 - a `/urls` operator surface for managing seed URLs;
+- a `/check-languages` operator surface for running phase-six language checks with target-language selection and job orchestration;
 - operator-facing issue exploration backed by persisted issue artifacts;
 - operator workflow pages are now visibly linked via global navigation.
 

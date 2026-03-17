@@ -64,6 +64,7 @@ The following statements are allowed and should be treated as true:
 - the repository is not just a UI mock scaffold;
 - some operator routes are backed by persisted artifacts;
 - the operator workflow is intentionally distributed across multiple pages/tabs;
+- the product includes a new `/check-languages` page for running phase-six language checks comparing a target run against an English reference;
 - the product is not yet production-ready.
 
 ## What is no longer allowed
@@ -85,7 +86,8 @@ For messaging and planning, v1.0 includes:
 - persisted artifacts for capture output;
 - review and annotation support;
 - eligible dataset generation;
-- target-language issue generation and exploration.
+- target-language issue generation and exploration;
+- interactive check-languages page for running phase-six language checks with target-language selection and job orchestration.
 
 Deferred and still acceptable for v1.0:
 
