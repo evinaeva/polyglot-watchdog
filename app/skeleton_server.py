@@ -415,6 +415,25 @@ def _latest_phase6_job(domain: str, run_id: str) -> dict | None:
     return phase6_jobs[-1]
 
 
+def _latest_phase3_job(domain: str, run_id: str) -> dict | None:
+    runs_payload = _load_runs(domain)
+    runs = runs_payload.get("runs", []) if isinstance(runs_payload, dict) else []
+    run = next((r for r in runs if isinstance(r, dict) and str(r.get("run_id", "")) == run_id), None)
+    if not isinstance(run, dict):
+        return None
+    jobs = run.get("jobs", []) if isinstance(run.get("jobs", []), list) else []
+    phase3_jobs: list[dict] = []
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        if str(job.get("phase", "")).strip() == "3" or str(job.get("type", "")).strip() == "eligible_dataset" or str(job.get("job_id", "")).startswith("phase3-"):
+            phase3_jobs.append(_as_stale_failed_job(job) if _is_stale_running_job(job) else dict(job))
+    if not phase3_jobs:
+        return None
+    phase3_jobs.sort(key=lambda row: (str(row.get("updated_at", "")), str(row.get("created_at", "")), str(row.get("job_id", ""))))
+    return phase3_jobs[-1]
+
+
 def _summarize_issues_payload(issues: list[dict]) -> dict:
     summary = {
         "total": len(issues),
@@ -492,8 +511,24 @@ def _save_runs(domain: str, payload: dict) -> None:
     write_json_artifact(domain, "manual", "capture_runs.json", payload)
 
 
-def _default_run_display_name() -> str:
-    return time.strftime("First_run_%H:%M|%d.%m.%Y", time.localtime())
+def _en_standard_display_name_today() -> str:
+    return f"EN_standard_{time.strftime('%d.%m.%Y', time.gmtime())}"
+
+
+def _upsert_run_metadata(domain: str, run_id: str, metadata: dict) -> None:
+    normalized = {str(key).strip(): value for key, value in (metadata or {}).items() if str(key).strip()}
+    if not normalized:
+        return
+    runs_payload = _load_runs(domain)
+    runs = runs_payload["runs"]
+    run = next((r for r in runs if r.get("run_id") == run_id), None)
+    if run is None:
+        run = {"run_id": run_id, "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "jobs": []}
+        runs.append(run)
+    for key, value in normalized.items():
+        run[key] = value
+    runs.sort(key=lambda r: r.get("run_id", ""), reverse=True)
+    _save_runs(domain, {"runs": runs})
 
 
 def _upsert_job_status(domain: str, run_id: str, job_record: dict) -> None:
@@ -1159,11 +1194,15 @@ def _run_phase3_async(job_id: str, domain: str, run_id: str) -> None:
     try:
         from pipeline.run_phase3 import run as phase3_run
         phase3_run(domain=domain, run_id=run_id)
+        _require_artifact_exists(domain, run_id, "eligible_dataset.json")
+        en_standard_display_name = _en_standard_display_name_today()
         _jobs[job_id]["status"] = "done"
         _upsert_job_status(domain, run_id, {"job_id": job_id, "status": "succeeded", "phase": "3"})
+        _upsert_run_metadata(domain, run_id, {"en_standard_display_name": en_standard_display_name})
     except Exception as exc:
         _jobs[job_id]["status"] = "error"
         _jobs[job_id]["error"] = str(exc)
+        _upsert_job_status(domain, run_id, {"job_id": job_id, "status": "failed", "phase": "3", "error": str(exc)})
 
 
 def _run_phase6_async(job_id: str, domain: str, run_id: str, en_run_id: str) -> None:
@@ -1373,6 +1412,13 @@ def _workflow_status_payload(domain: str, run_id: str) -> dict:
     if isinstance(issues, list) and issues:
         first_issue_id = str(sorted([row for row in issues if isinstance(row, dict)], key=_issue_sort_key)[0].get("id", ""))
 
+    run_en_standard_display_name = str((run_meta or {}).get("en_standard_display_name", "")).strip()
+    eligible_has_artifact = isinstance(dataset, list)
+    eligible_status = _workflow_section_status(has_artifact=eligible_has_artifact, count=dataset_count, pending_on=isinstance(rules, list))
+    phase3_job = _latest_phase3_job(domain, run_id)
+    phase3_generation_status = str((phase3_job or {}).get("status", "")).strip().lower()
+    phase3_generation_error = str((phase3_job or {}).get("error", "")).strip()
+
     return {
         "state_enum": ["not_started", "in_progress", "ready", "empty", "not_ready", "partial", "failed", "out_of_scope"],
         "seed_urls": {"status": "ready" if seed_count else "empty", "configured": bool(seed_count), "count": seed_count},
@@ -1384,6 +1430,7 @@ def _workflow_status_payload(domain: str, run_id: str) -> dict:
             "jobs_total": len(jobs),
             "jobs_running": len(running),
             "jobs_failed": len(failed),
+            "en_standard_display_name": run_en_standard_display_name,
         },
         "capture": {
             "status": capture_status,
@@ -1399,7 +1446,14 @@ def _workflow_status_payload(domain: str, run_id: str) -> dict:
         },
         "review": {"status": review_status, "total": pages_count, "reviewed": reviewed_count},
         "annotation": {"status": annotation_status, "rules_count": rules_count},
-        "eligible_dataset": {"status": _workflow_section_status(has_artifact=isinstance(dataset, list), count=dataset_count, pending_on=isinstance(rules, list)), "record_count": dataset_count},
+        "eligible_dataset": {
+            "status": eligible_status,
+            "ready": eligible_has_artifact,
+            "record_count": dataset_count,
+            "en_standard_display_name": run_en_standard_display_name,
+            "generation_status": phase3_generation_status,
+            "generation_error": phase3_generation_error,
+        },
         "issues": {"status": _workflow_section_status(has_artifact=isinstance(issues, list), count=issues_count, pending_on=isinstance(dataset, list)), "count": issues_count, "first_issue_id": first_issue_id},
         "next_recommended_action": next_action,
     }
