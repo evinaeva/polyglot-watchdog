@@ -31,8 +31,8 @@ function normalizeDisplayName(value) {
 function formatRunLabel(runId, displayName) {
   const safeRunId = String(runId || '').trim();
   const safeDisplayName = normalizeDisplayName(displayName);
-  if (!safeDisplayName) return safeRunId || '—';
-  return safeDisplayName === safeRunId ? safeRunId : `${safeDisplayName} (${safeRunId})`;
+  if (safeDisplayName) return safeDisplayName;
+  return safeRunId || '—';
 }
 
 function q() {
@@ -127,7 +127,8 @@ function renderContextsRows(domain, runId, contexts) {
   wfContextsBody.innerHTML = '';
   for (const row of contexts) {
     const tr = document.createElement('tr');
-    const screenshot = row.storage_uri ? `<a href="${row.storage_uri}" target="_blank" rel="noopener">open</a>` : '';
+    const screenshotHref = String(row.screenshot_view_url || '').trim();
+    const screenshot = screenshotHref ? `<a href="${screenshotHref}" target="_blank" rel="noopener">open</a>` : '';
     const reviewStatus = (row.review_status || {}).status || '';
     tr.innerHTML = `<td>${row.url || ''}</td><td>${row.language || ''}</td><td>${row.state || ''}</td><td>${row.viewport_kind || ''}</td><td>${row.user_tier || ''}</td><td>${row.elements_count || 0}</td><td>${screenshot}</td><td></td>`;
 

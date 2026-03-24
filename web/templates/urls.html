@@ -14,9 +14,10 @@
     <p>Choose a domain, load existing URLs, and update your working URL list.</p>
     <div class="controls">
       <label>Domain
-        <select id="domainInput">
-          <option value="bongacams.com">bongacams.com</option>
-        </select>
+        <input id="domainInput" list="domainSuggestions" value="bongacams.com" autocomplete="off" />
+        <datalist id="domainSuggestions">
+          <option value="bongacams.com"></option>
+        </datalist>
       </label>
       <button id="loadButton">Load existing</button>
     </div>
@@ -28,7 +29,7 @@
       <button id="replaceButton">Replace list</button>
       <button id="addButton">Add to list</button>
       <button id="clearButton">Clear list</button>
-      <a id="continueFirstRun" class="ui-action-button" href="/workflow?domain=bongacams.com">Continue to First Run</a>
+      <a id="continueFirstRun" class="ui-action-button" href="#">Continue to First Run</a>
     </div>
 
     <h2>Domain URL config</h2>
