@@ -49,6 +49,7 @@ class CaptureContext:
 @dataclass(frozen=True)
 class CapturePoint:
     state: str
+    capture_point_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -71,6 +72,7 @@ class CaptureJob:
     context: CaptureContext
     mode: str
     recipe_id: str | None = None
+    capture_point_id: str | None = None
 
 
 class ConfigStore(Protocol):
@@ -111,6 +113,21 @@ def compute_page_id(context: CaptureContext) -> str:
     # (url, viewport_kind, state, user_tier). language must stay excluded.
     payload = "|".join([context.url, context.viewport_kind, context.state, context.user_tier or ""])
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+
+def derive_capture_point_id(recipe_id: str, capture_point_order: int, state: str) -> str:
+    canonical = json.dumps(
+        [str(recipe_id).strip(), int(capture_point_order), str(state).strip()],
+        ensure_ascii=False,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    digest = hashlib.sha1(canonical.encode("utf-8")).hexdigest()
+    return f"cp-{digest[:16]}"
+
+
+def compute_interaction_trace_hash(trace_steps: list[dict[str, Any]]) -> str:
+    return hashlib.sha1(canonical_json_bytes(trace_steps)).hexdigest()
 
 
 def _canonical_bbox_payload(bbox: dict[str, Any]) -> str:
@@ -186,7 +203,14 @@ class DeterministicPlanner:
                                 raise DeterminismError(f"Recipe {recipe.recipe_id} has no explicit capture_points")
                             for point in recipe.capture_points:
                                 validate_state_name(point.state)
-                                jobs.append(CaptureJob(CaptureContext(seed_urls["domain"], url, language, viewport, point.state, user_tier), "recipe", recipe_id))
+                                jobs.append(
+                                    CaptureJob(
+                                        CaptureContext(seed_urls["domain"], url, language, viewport, point.state, user_tier),
+                                        "recipe",
+                                        recipe_id,
+                                        point.capture_point_id,
+                                    )
+                                )
         jobs.sort(key=lambda j: (j.context.domain, j.context.language, j.context.url, j.context.viewport_kind, j.context.user_tier or "", j.context.state, j.recipe_id or ""))
         return jobs
 
@@ -290,6 +314,9 @@ def capture_state(
     page_payload: tuple[dict[str, Any], list[dict[str, Any]]],
     writer: ArtifactWriter,
     run_context: RunContext,
+    recipe_id: str | None = None,
+    capture_point_id: str | None = None,
+    interaction_trace_hash: str | None = None,
 ) -> dict[str, Any]:
     validate_state_name(context.state)
     assert_language_not_in_contract_identity(context)
@@ -333,6 +360,9 @@ def capture_state(
         "storage_uri": "",
         "captured_at": run_context.run_started_at,
         "viewport": page_content.get("viewport"),
+        "recipe_id": recipe_id,
+        "capture_point_id": capture_point_id,
+        "interaction_trace_hash": interaction_trace_hash,
     }
     validate("collected_items", elements)
 
