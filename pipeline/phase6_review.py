@@ -48,6 +48,17 @@ class ReviewContext:
     language: str
 
 
+@dataclass(frozen=True)
+class PreparedReviewInputs:
+    en_text: str
+    target_text: str
+    is_dynamic_counter: bool
+    ocr_text: str
+    ocr_engine: str
+    ocr_quality: dict | None
+    comparison_text_source: str
+
+
 def _issue_id(category: str, en_item_id: str, target_url: str, message: str) -> str:
     raw = f"{category}|{en_item_id}|{target_url}|{message}"
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
@@ -212,12 +223,54 @@ def _confidence(base: float, signals: dict[str, float]) -> float:
     return _clamp(base + sum(signals.values()))
 
 
+def prepare_review_inputs(en_item: dict, target_item: dict | None) -> PreparedReviewInputs:
+    is_dynamic_counter = _is_header_online_dynamic_counter(en_item, target_item or {})
+    en_text = _normalize_dynamic_counter_text(en_item, target_item or {}, normalize_text(en_item.get("text", "")))
+    if not target_item:
+        return PreparedReviewInputs(
+            en_text=en_text,
+            target_text="",
+            is_dynamic_counter=is_dynamic_counter,
+            ocr_text="",
+            ocr_engine="",
+            ocr_quality=None,
+            comparison_text_source="dom",
+        )
+
+    dom_target_text = _normalize_dynamic_counter_text(en_item, target_item, normalize_text(target_item.get("text", "")))
+    is_image = _is_image_item(target_item) or _is_image_item(en_item)
+    ocr_text = _extract_ocr_text(target_item) if is_image else ""
+    ocr_engine = str(target_item.get("ocr_engine", "")).strip() if is_image else ""
+    if is_image and ocr_text and not ocr_engine:
+        ocr_engine = "OCR.Space:engine3"
+    ocr_notes = list(target_item.get("ocr_notes", [])) if is_image and isinstance(target_item.get("ocr_notes"), list) else []
+    has_ocr_handoff = is_image and any(key in target_item for key in ("ocr_text", "ocr_notes", "ocr_engine"))
+    ocr_quality = _assess_ocr_quality(en_text, ocr_text, ocr_notes) if has_ocr_handoff else None
+    target_text, comparison_text_source = _select_target_comparison_text(
+        en_item=en_item,
+        target_item=target_item,
+        dom_target_text=dom_target_text,
+        ocr_text=ocr_text,
+        ocr_quality=ocr_quality if is_image else None,
+    )
+    return PreparedReviewInputs(
+        en_text=en_text,
+        target_text=target_text,
+        is_dynamic_counter=is_dynamic_counter,
+        ocr_text=ocr_text,
+        ocr_engine=ocr_engine,
+        ocr_quality=ocr_quality,
+        comparison_text_source=comparison_text_source,
+    )
+
+
 def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[dict]:
     en_item = context.en_item
     target_item = context.target_item
 
-    is_dynamic_counter = _is_header_online_dynamic_counter(en_item, target_item or {})
-    en_text = _normalize_dynamic_counter_text(en_item, target_item or {}, normalize_text(en_item.get("text", "")))
+    prepared = prepare_review_inputs(en_item, target_item)
+    is_dynamic_counter = prepared.is_dynamic_counter
+    en_text = prepared.en_text
 
     if not target_item:
         signals = {"missing_target": 0.15}
@@ -243,8 +296,6 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             )
         ]
 
-    dom_target_text = _normalize_dynamic_counter_text(en_item, target_item, normalize_text(target_item.get("text", "")))
-
     issues: list[dict] = []
     item_id = str(en_item.get("item_id", ""))
     target_url = str(target_item.get("url", ""))
@@ -252,21 +303,11 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
     # OCR evidence is limited to approved image-backed items only. For these
     # items, Phase 6 prefers OCR as canonical comparison input only when OCR
     # quality is usable; otherwise it falls back to normalized DOM text.
-    is_image = _is_image_item(target_item) or _is_image_item(en_item)
-    ocr_text = _extract_ocr_text(target_item) if is_image else ""
-    ocr_engine = str(target_item.get("ocr_engine", "")).strip() if is_image else ""
-    if is_image and ocr_text and not ocr_engine:
-        ocr_engine = "OCR.Space:engine3"
-    ocr_notes = list(target_item.get("ocr_notes", [])) if is_image and isinstance(target_item.get("ocr_notes"), list) else []
-    has_ocr_handoff = is_image and any(key in target_item for key in ("ocr_text", "ocr_notes", "ocr_engine"))
-    ocr_quality = _assess_ocr_quality(en_text, ocr_text, ocr_notes) if has_ocr_handoff else None
-    target_text, comparison_text_source = _select_target_comparison_text(
-        en_item=en_item,
-        target_item=target_item,
-        dom_target_text=dom_target_text,
-        ocr_text=ocr_text,
-        ocr_quality=ocr_quality if is_image else None,
-    )
+    ocr_text = prepared.ocr_text
+    ocr_engine = prepared.ocr_engine
+    ocr_quality = prepared.ocr_quality
+    target_text = prepared.target_text
+    comparison_text_source = prepared.comparison_text_source
 
     en_placeholders = sorted(_PLACEHOLDER_RE.findall(en_text))
     target_placeholders = sorted(_PLACEHOLDER_RE.findall(target_text))

@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 from pipeline.run_phase6 import run
+from pipeline.phase6_review import prepare_review_inputs
 
 
 def _base_artifacts(target_item_overrides=None):
@@ -218,6 +219,93 @@ def test_missing_target_evidence_prefers_collected_page_id_for_storage_lookup():
     assert issue["evidence"]["storage_uri"] == "gs://b/en-collected.png"
 
 
+def test_prepare_review_inputs_matches_dom_text_pair():
+    artifacts = _base_artifacts({"text": "Acheter maintenant"})
+    prepared = prepare_review_inputs(artifacts[0][0], artifacts[1][0])
+
+    assert prepared.en_text == "Buy now"
+    assert prepared.target_text == "Acheter maintenant"
+    assert prepared.comparison_text_source == "dom"
+
+
+def test_prepare_review_inputs_prefers_ocr_for_image_items_when_quality_good():
+    artifacts = _base_artifacts(
+        {
+            "tag": "img",
+            "element_type": "img",
+            "text": "Texte DOM",
+            "ocr_text": "Acheter maintenant",
+            "ocr_notes": [],
+        }
+    )
+    prepared = prepare_review_inputs(artifacts[0][0], artifacts[1][0])
+
+    assert prepared.target_text == "Acheter maintenant"
+    assert prepared.comparison_text_source == "ocr"
+
+
+def test_prepare_review_inputs_applies_dynamic_counter_normalization():
+    artifacts = _base_artifacts(
+        {
+            "text": "12 en ligne",
+            "attributes": {"class": "header_online bc_flex bc_flex_items_center"},
+        }
+    )
+    artifacts[0][0]["text"] = "11 online"
+    artifacts[0][0]["attributes"] = {"class": "header_online bc_flex bc_flex_items_center"}
+    prepared = prepare_review_inputs(artifacts[0][0], artifacts[1][0])
+
+    assert prepared.en_text == "<NUM> online"
+    assert prepared.target_text == "<NUM> en ligne"
+
+
+class _PrefetchAwareProvider:
+    def __init__(self):
+        self.prefetched = set()
+        self.misses = []
+
+    def prefetch_reviews(self, pairs, language):
+        self.prefetched.update((text_en, text_target, language) for text_en, text_target in pairs)
+
+    def review_spelling_grammar(self, text_en, text_target, language):
+        from pipeline.phase6_providers import SpellingGrammarSignals
+
+        key = (text_en, text_target, language)
+        if key not in self.prefetched:
+            self.misses.append(key)
+        return SpellingGrammarSignals(spelling_score=0.0, grammar_score=0.0, notes=[])
+
+    def review_meaning(self, text_en, text_target, language):
+        from pipeline.phase6_providers import MeaningSignals
+
+        key = (text_en, text_target, language)
+        if key not in self.prefetched:
+            self.misses.append(key)
+        return MeaningSignals(meaning_mismatch_score=0.0, notes=[])
+
+
+def test_run_prefetch_warms_exact_finalized_pair_keys_for_reviews():
+    artifacts = _base_artifacts(
+        {
+            "tag": "img",
+            "element_type": "img",
+            "text": "Texte DOM",
+            "ocr_text": "OCR final text",
+            "ocr_notes": [],
+        }
+    )
+    provider = _PrefetchAwareProvider()
+
+    with patch("pipeline.run_phase6.build_provider", return_value=provider), patch(
+        "pipeline.run_phase6.read_json_artifact", side_effect=artifacts
+    ), patch("pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]), patch(
+        "pipeline.run_phase6.write_json_artifact"
+    ), patch("pipeline.run_phase6.write_phase_manifest"):
+        run("example.com", "run-en", "run-fr")
+
+    assert provider.misses == []
+
+
 def test_provider_notes_are_not_mixed_into_signals():
     artifacts = _base_artifacts({"text": "teh translation"})
 
@@ -259,7 +347,7 @@ def test_ai_mode_enriches_evidence_metadata_when_response_valid(monkeypatch):
             "choices": [
                 {
                     "message": {
-                        "content": '{"spelling_score": 0.82, "grammar_score": 0.1, "meaning_mismatch_score": 0.2, "notes": ["possible typo", "uncertain due to short text"]}'
+                        "content": '{"results": [{"item_id": "item_0", "spelling_score": 0.82, "grammar_score": 0.1, "meaning_mismatch_score": 0.2, "notes": ["possible typo", "uncertain due to short text"]}]}'
                     }
                 }
             ]
@@ -277,7 +365,7 @@ def test_ai_mode_enriches_evidence_metadata_when_response_valid(monkeypatch):
 
     spelling_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "SPELLING")
     assert spelling_issue["category"] == "TRANSLATION_MISMATCH"
-    assert spelling_issue["evidence"]["provider_meta"]["model"] == "gpt-4o-mini"
+    assert spelling_issue["evidence"]["provider_meta"]["model"] == "openrouter/free"
     assert spelling_issue["evidence"]["provider_meta"]["fallback_used"] is False
     assert spelling_issue["evidence"]["provider_meta"]["provider_score_summary"] == {
         "spelling_score": 0.82,
