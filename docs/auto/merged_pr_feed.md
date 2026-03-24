@@ -935,3 +935,35 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c297288a50832c82a05c3af5575bb0)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #110 — 2026-03-24T14:27:52Z
+
+- Title: Add Google Vision fallback for ocr.space failures
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/110
+- Author: evinaeva
+- Base branch: main
+- Head branch: zj5hiu-codex/locate-google-vision-ocr-implementation
+- Merge commit: a43176b695cf2c16a88d949d52679f4f4c34c0c0
+- Changed files:
+  - pipeline/phase4_ocr_provider.py
+  - tests/test_phase4_ocr.py
+- Description:
+  ### Motivation
+  
+  - Reduce failed OCR outcomes when `ocr.space` is unavailable, returns malformed responses, or produces empty text by attempting a fallback to Google Vision.
+  
+  ### Description
+  
+  - Added a lightweight Google Vision integration with `_google_client`, `_parse_google_text`, and `_googlevision_extract_text` to request and parse text from Google Vision.
+  - Introduced `_fallback_to_google_if_needed` and wired fallback logic into `ocrspace_extract_text` for missing API key, request failures, malformed responses, processing errors, and empty text outcomes so that a successful Google result can replace an unusable `ocr.space` result while preserving provider metadata.
+  - Added a cached global `_GOOGLE_VISION_CLIENT` and a `_sanitize_ocr_text` normalization step is reused for Google responses.
+  - Updated tests in `tests/test_phase4_ocr.py` to cover successful fallback and preservation of original failure metadata when the Google fallback also fails.
+  
+  ### Testing
+  
+  - Ran the `tests/test_phase4_ocr.py` unit tests including the new `test_ocrspace_falls_back_to_google_on_non_usable_outcome` and `test_ocrspace_preserves_original_failure_when_google_fallback_fails` tests, and they passed.
+  - Existing OCR request-path test `test_ocrspace_request_path_with_engine3_and_base64` and `test_ocrspace_missing_key_and_malformed_response_are_non_fatal` were executed and remained green.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c297164b2c832cb8328360059c80a3)
+- Notes: Auto-generated from merged PR metadata.
