@@ -453,6 +453,10 @@ def _save_runs(domain: str, payload: dict) -> None:
     write_json_artifact(domain, "manual", "capture_runs.json", payload)
 
 
+def _default_run_display_name() -> str:
+    return time.strftime("First_run_%H:%M|%d.%m.%Y", time.localtime())
+
+
 def _upsert_job_status(domain: str, run_id: str, job_record: dict) -> None:
     runs_payload = _load_runs(domain)
     runs = runs_payload["runs"]
@@ -460,8 +464,14 @@ def _upsert_job_status(domain: str, run_id: str, job_record: dict) -> None:
     if run is None:
         run = {"run_id": run_id, "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "jobs": []}
         runs.append(run)
+    display_name = _normalize_optional_string(job_record.get("display_name"))
+    if display_name is not None:
+        run["display_name"] = display_name
+    elif "display_name" not in run and "display_name" in job_record:
+        run["display_name"] = None
     prior_job = next((j for j in run.get("jobs", []) if j.get("job_id") == job_record.get("job_id")), None)
     normalized_job = dict(job_record)
+    normalized_job.pop("display_name", None)
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     normalized_job["updated_at"] = now
     normalized_job["created_at"] = str((prior_job or {}).get("created_at") or now)
@@ -1330,6 +1340,7 @@ def _workflow_status_payload(domain: str, run_id: str) -> dict:
         "run": {
             "status": run_status,
             "run_id": run_id,
+            "display_name": _normalize_optional_string((run_meta or {}).get("display_name")),
             "domain": domain,
             "jobs_total": len(jobs),
             "jobs_running": len(running),
@@ -1869,7 +1880,16 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 return
             domain = parse_qs(parsed.query).get("domain", [""])[0]
             try:
-                self._json_response(_load_runs(validate_domain(domain)))
+                runs_payload = _load_runs(validate_domain(domain))
+                runs = runs_payload.get("runs", []) if isinstance(runs_payload, dict) else []
+                normalized_runs = []
+                for run in runs:
+                    if not isinstance(run, dict):
+                        continue
+                    normalized_run = dict(run)
+                    normalized_run["display_name"] = _normalize_optional_string(run.get("display_name"))
+                    normalized_runs.append(normalized_run)
+                self._json_response({"runs": normalized_runs})
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -2528,6 +2548,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             payload = self._read_json_payload()
             domain = str(payload.get("domain", "")).strip()
             run_id = str(payload.get("run_id", "")).strip() or str(uuid.uuid4())
+            requested_display_name = _normalize_optional_string(payload.get("display_name"))
             language = str(payload.get("language", "en")).strip() or "en"
             viewport_kind = str(payload.get("viewport_kind", "desktop")).strip() or "desktop"
             state = str(payload.get("state", "guest")).strip() or "guest"
@@ -2535,12 +2556,32 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             runtime_payload = {"domain": domain, "run_id": run_id, "language": language, "viewport_kind": viewport_kind, "state": state, "user_tier": user_tier}
             try:
                 load_phase1_runtime_config(runtime_payload)
-                _register_domain(validate_domain(domain))
+                valid_domain = validate_domain(domain)
+                _register_domain(valid_domain)
+                existing_run = next((row for row in _load_runs(valid_domain).get("runs", []) if str(row.get("run_id", "")).strip() == run_id), None)
+                existing_display_name = _normalize_optional_string((existing_run or {}).get("display_name"))
+                is_new_run = existing_run is None
+                display_name = requested_display_name or existing_display_name
+                if display_name is None and is_new_run:
+                    display_name = _default_run_display_name()
                 job_id = f"phase1-{run_id}-{language}-{viewport_kind}-{state}"
-                _upsert_job_status(domain, run_id, {"job_id": job_id, "status": "queued", "context": runtime_payload, "type": "capture"})
+                _upsert_job_status(
+                    valid_domain,
+                    run_id,
+                    {"job_id": job_id, "status": "queued", "context": runtime_payload, "type": "capture", "display_name": display_name},
+                )
                 t = threading.Thread(target=_run_phase1_async, args=(job_id, runtime_payload), daemon=True)
                 t.start()
-                self._json_response({"status": "started", "job_id": job_id, "run_id": run_id, "action": "start_capture", "previous_state": "run_not_started", "resulting_state": "phase_in_progress", "next_expected_state": "phase_completed"})
+                self._json_response({
+                    "status": "started",
+                    "job_id": job_id,
+                    "run_id": run_id,
+                    "display_name": display_name,
+                    "action": "start_capture",
+                    "previous_state": "run_not_started",
+                    "resulting_state": "phase_in_progress",
+                    "next_expected_state": "phase_completed",
+                })
             except ValueError as exc:
                 self._json_response(
                     {

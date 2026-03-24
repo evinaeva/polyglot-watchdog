@@ -18,6 +18,20 @@ let activeRunId = '';
 let pollTimer = null;
 let availableRuns = [];
 
+function normalizeDisplayName(value) {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const lowered = raw.toLowerCase();
+  return (lowered === 'none' || lowered === 'null') ? '' : raw;
+}
+
+function formatRunLabel(runId, displayName) {
+  const safeRunId = String(runId || '').trim();
+  const safeDisplayName = normalizeDisplayName(displayName);
+  if (!safeDisplayName) return safeRunId || '—';
+  return safeDisplayName === safeRunId ? safeRunId : `${safeDisplayName} (${safeRunId})`;
+}
+
 function q() {
   const p = new URLSearchParams(window.location.search);
   return { domain: (p.get('domain') || '').trim(), runId: (p.get('run_id') || '').trim() };
@@ -53,6 +67,8 @@ function humanCaptureStatus(status) {
 function renderStatus(payload) {
   const capture = payload.capture || {};
   const run = payload.run || {};
+  const runId = activeRunId || run.run_id || '';
+  const runLabel = formatRunLabel(runId, run.display_name);
   const status = readCaptureStatus(payload);
   const human = humanCaptureStatus(status);
   const cls = status === 'failed' ? 'error' : status === 'in_progress' ? 'warning' : status === 'ready' || status === 'empty' ? 'ok' : '';
@@ -60,7 +76,7 @@ function renderStatus(payload) {
 
   const rows = [
     ['Domain', wfDomain.value || run.domain || '—'],
-    ['Capture run', activeRunId || run.run_id || '—'],
+    ['Capture run', runLabel],
     ['Contexts processed', capture.contexts ?? '—'],
     ['Items processed', capture.items ?? '—'],
     ['Worker jobs running', run.jobs_running ?? '—'],
@@ -144,9 +160,10 @@ function renderExistingRuns() {
     if (!runId) continue;
     const option = document.createElement('option');
     option.value = runId;
+    const runLabel = formatRunLabel(runId, (run || {}).display_name);
     const createdAt = String((run || {}).created_at || '').trim() || 'created time unknown';
     const jobsCount = Array.isArray((run || {}).jobs) ? run.jobs.length : 0;
-    option.textContent = `${runId} (${deriveRunState(run)} · jobs: ${jobsCount} · ${createdAt})`;
+    option.textContent = `${runLabel} (${deriveRunState(run)} · jobs: ${jobsCount} · ${createdAt})`;
     wfExistingRuns.appendChild(option);
   }
 
