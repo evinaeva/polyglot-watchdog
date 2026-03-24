@@ -637,3 +637,35 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c28fd2ab84832cb70795bb251be43b)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #104 — 2026-03-24T13:41:00Z
+
+- Title: Auto-select latest successful English standard run and surface run metadata in check-languages UI
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/104
+- Author: evinaeva
+- Base branch: main
+- Head branch: bnxbqi-codex/add-helper-for-latest-successful-en-run
+- Merge commit: d4ebb85d6c3e9feb737c7322114e2e716708226b
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  
+  - Improve the check-languages page by automatically choosing a sensible English reference run when the user does not pick one and by showing human-friendly labels from run metadata.
+  
+  ### Description
+  
+  - Include run `metadata` in the output of `_load_check_language_runs` to surface fields like `display_label` and `en_standard_status`.
+  - Add `_run_display_label` to prefer `metadata.display_label` or `metadata.display_name` when rendering English run options in the dropdown, falling back to `run_id` when absent.
+  - Add `_run_has_en_standard_success_marker` and `_latest_successful_en_standard_run_id` to detect an English run that is either phase6-ready or marked successful via metadata (e.g. `en_standard_status: "succeeded"`) and auto-select the latest such run when none is provided by the query.
+  - Change page logic to distinguish between an explicitly provided `en_run_id` and an auto-selected one, so the UI does not mistakably require a target language when the English run was auto-selected.
+  
+  ### Testing
+  
+  - Added tests `test_get_check_languages_auto_selects_latest_successful_english_standard`, `test_get_check_languages_auto_selects_en_standard_success_marker_when_not_ready`, `test_get_check_languages_en_option_uses_metadata_display_label`, and `test_get_check_languages_en_option_uses_metadata_display_name` to verify auto-selection and label behavior.
+  - Ran `pytest tests/test_check_languages_page.py` and the test suite for the modified behavior succeeded.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c28fd50698832c9f938afcb080d1c4)
+- Notes: Auto-generated from merged PR metadata.
