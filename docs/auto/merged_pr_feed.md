@@ -907,3 +907,31 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c297151d34832c9aa9e1ee8334fb5b)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #113 — 2026-03-24T14:27:06Z
+
+- Title: Consolidate eligible dataset generation to template button
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/113
+- Author: evinaeva
+- Base branch: main
+- Head branch: 9kfe1z-codex/remove-one-control-path-in-pulls.js
+- Merge commit: 7f34c47c252996101b9d1bb05e71cf3f5c48447e
+- Changed files:
+  - web/static/pulls.js
+- Description:
+  ### Motivation
+  - Remove a duplicated UX path and duplicated trigger code so there is a single, predictable way to start eligible-dataset generation and observe status. 
+  - Reuse the existing readiness-polling and status messaging utilities so generation state is centralized and not repeated in two places.
+  
+  ### Description
+  - Replaced the injected dynamic controls with references to the template elements `#pullsPrepareCapturedData` and `#pullsPrepareCapturedDataStatus` and removed the created nodes. 
+  - Deleted `ensureEligibleDatasetControls()` and its invocation so the page no longer inserts a second "Generate eligible dataset" control. 
+  - Removed the duplicate bottom-of-file `pullsPrepareCapturedData` click handler that independently POSTed to `/api/workflow/generate-eligible-dataset`. 
+  - Wired the template button into the existing `triggerEligibleDatasetGeneration()` + `waitForEligibleDatasetReady()` flow so polling and status messages are shared. 
+  
+  ### Testing
+  - Ran `node --check web/static/pulls.js` which completed without errors.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c297288a50832c82a05c3af5575bb0)
+- Notes: Auto-generated from merged PR metadata.
