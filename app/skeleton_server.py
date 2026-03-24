@@ -270,6 +270,7 @@ def _load_check_language_runs(domain: str) -> list[dict]:
         out.append({
             "run_id": run_id,
             "created_at": str(row.get("created_at", "")).strip(),
+            "metadata": row.get("metadata") if isinstance(row.get("metadata"), dict) else {},
             "languages": languages,
             "has_english": has_english,
             "has_non_english": has_non_english,
@@ -286,6 +287,37 @@ def _load_target_languages(runs: list[dict]) -> list[str]:
 def _run_is_english_only(run: dict) -> bool:
     languages = [str(language).strip().lower() for language in run.get("languages", []) if str(language).strip()]
     return bool(languages) and all(_is_english_language(language) for language in languages)
+
+
+def _run_display_label(run: dict) -> str:
+    metadata = run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
+    display = ""
+    if isinstance(metadata, dict):
+        display = str(metadata.get("display_label", "")).strip() or str(metadata.get("display_name", "")).strip()
+    return display or str(run.get("run_id", "")).strip()
+
+
+def _run_has_en_standard_success_marker(run: dict) -> bool:
+    if bool(run.get("en_standard_success", False)):
+        return True
+    metadata = run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
+    if not isinstance(metadata, dict):
+        return False
+    if bool(metadata.get("en_standard_success", False)):
+        return True
+    status = str(metadata.get("en_standard_status", "")).strip().lower()
+    return status in {"success", "succeeded", "ready"}
+
+
+def _latest_successful_en_standard_run_id(domain: str, en_candidates: list[dict]) -> str:
+    for run in sorted(en_candidates, key=lambda row: (row.get("created_at", ""), row.get("run_id", "")), reverse=True):
+        run_id = str(run.get("run_id", "")).strip()
+        if not run_id:
+            continue
+        readiness = _phase6_artifact_readiness(domain, run_id)
+        if readiness.get("ready") or _run_has_en_standard_success_marker(run):
+            return run_id
+    return ""
 
 
 def _replay_scope_from_reference_run(domain: str, en_run_id: str, target_language: str) -> list[dict]:
@@ -2788,7 +2820,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
     def _serve_check_languages_page(self, query: dict[str, list[str]]) -> None:
         domain = str(query.get("domain", [""])[0]).strip()
         selected_en_run_id = str(query.get("en_run_id", [""])[0]).strip()
-        target_language = _normalize_target_language(str(query.get("target_language", [""])[0]))
+        en_run_id_from_query = bool(selected_en_run_id)
+        target_language = str(query.get("target_language", [""])[0]).strip().lower()
         target_run_id = str(query.get("target_run_id", [""])[0]).strip()
         message = str(query.get("message", [""])[0]).strip()
         level = str(query.get("level", [""])[0]).strip().lower()
@@ -2817,6 +2850,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         run_map = {str(row.get("run_id", "")): row for row in runs}
         en_candidates = [row for row in runs if _run_is_english_only(row)]
         target_languages = _load_target_languages(runs)
+        if not selected_en_run_id:
+            selected_en_run_id = _latest_successful_en_standard_run_id(domain, en_candidates)
 
         if selected_en_run_id and selected_en_run_id not in run_map:
             errors.append("Selected English reference run is invalid for this domain.")
@@ -2876,13 +2911,13 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         elif selected_en_run_id and target_language:
             page_state = "ready_to_start"
 
-        if selected_en_run_id and not target_language:
+        if selected_en_run_id and not target_language and en_run_id_from_query:
             errors.append("Target language is required.")
         if target_language and not selected_en_run_id:
             errors.append("English reference run is required.")
 
         def _run_option(run: dict, selected: bool) -> str:
-            label = f"{run.get('run_id')}"
+            label = _run_display_label(run)
             selected_attr = ' selected="selected"' if selected else ""
             return f'<option value="{_h(run.get("run_id", ""))}"{selected_attr}>{_h(label)}</option>'
 
