@@ -12,6 +12,9 @@ const wfExistingRuns = document.getElementById('wfExistingRuns');
 const wfUseExistingRun = document.getElementById('wfUseExistingRun');
 const wfRefreshRuns = document.getElementById('wfRefreshRuns');
 const wfRunsStatus = document.getElementById('wfRunsStatus');
+const wfContextsStatus = document.getElementById('wfContextsStatus');
+const wfContextsTable = document.getElementById('wfContextsTable');
+const wfContextsBody = document.getElementById('wfContextsBody');
 
 let lastPayload = null;
 let activeRunId = '';
@@ -97,6 +100,81 @@ function setActionAvailability(payload) {
 
 function setRunsStatus(message) {
   wfRunsStatus.textContent = message || '';
+}
+
+function setContextsStatus(message, cls = '') {
+  wfContextsStatus.className = cls;
+  wfContextsStatus.textContent = message || '';
+}
+
+function renderContextsRows(domain, runId, contexts) {
+  wfContextsBody.innerHTML = '';
+  for (const row of contexts) {
+    const tr = document.createElement('tr');
+    const screenshot = row.storage_uri ? `<a href="${row.storage_uri}" target="_blank" rel="noopener">open</a>` : '';
+    const reviewStatus = (row.review_status || {}).status || '';
+    tr.innerHTML = `<td>${row.url || ''}</td><td>${row.language || ''}</td><td>${row.state || ''}</td><td>${row.viewport_kind || ''}</td><td>${row.user_tier || ''}</td><td>${row.elements_count || 0}</td><td>${screenshot}</td><td></td>`;
+
+    const controls = document.createElement('div');
+    controls.innerHTML = '<select><option value="valid">valid</option><option value="blocked_by_overlay">blocked_by_overlay</option><option value="not_found">not_found</option></select> <button type="button">Save</button> <span></span>';
+    const select = controls.querySelector('select');
+    const button = controls.querySelector('button');
+    const current = controls.querySelector('span');
+    current.textContent = reviewStatus;
+    if (reviewStatus) select.value = reviewStatus;
+
+    button.addEventListener('click', async () => {
+      try {
+        await postCaptureReview(domain, runId, row, select.value);
+        setContextsStatus(`Saved review for ${row.capture_context_id}`, 'ok');
+        await loadContexts();
+      } catch (error) {
+        setContextsStatus(error.message || 'Failed to save review', 'error');
+      }
+    });
+
+    tr.lastElementChild.appendChild(controls);
+    wfContextsBody.appendChild(tr);
+  }
+}
+
+async function loadContexts() {
+  const domain = wfDomain.value.trim();
+  const runId = activeRunId.trim();
+
+  if (!domain || !runId) {
+    wfContextsBody.innerHTML = '';
+    wfContextsTable.classList.add('hidden');
+    setContextsStatus('Select or start a run to review contexts.', 'warning');
+    return;
+  }
+
+  const response = await fetch(`/api/capture/contexts?${new URLSearchParams({ domain, run_id: runId }).toString()}`);
+  const payload = await safeReadPayload(response);
+  if (response.status === 404 && payload.status === 'not_ready') {
+    wfContextsBody.innerHTML = '';
+    wfContextsTable.classList.add('hidden');
+    setContextsStatus('Not ready: page_screenshots artifact is missing. Run capture or wait for pipeline artifacts.', 'warning');
+    return;
+  }
+  if (!response.ok) {
+    wfContextsBody.innerHTML = '';
+    wfContextsTable.classList.add('hidden');
+    setContextsStatus(payload.error || `Failed to load contexts (${response.status})`, 'error');
+    return;
+  }
+
+  const contexts = Array.isArray(payload.contexts) ? payload.contexts : [];
+  if (!contexts.length) {
+    wfContextsBody.innerHTML = '';
+    wfContextsTable.classList.add('hidden');
+    setContextsStatus('No contexts found for this run.', 'empty');
+    return;
+  }
+
+  renderContextsRows(domain, runId, contexts);
+  wfContextsTable.classList.remove('hidden');
+  setContextsStatus(`Loaded ${contexts.length} contexts.`, 'ok');
 }
 
 function parseCreatedAt(value) {
@@ -243,6 +321,7 @@ async function loadWorkflowStatus() {
     wfStatusSummary.innerHTML = '';
     renderTechnicalDetails({});
     setActionAvailability({});
+    await loadContexts();
     return;
   }
 
@@ -254,6 +333,7 @@ async function loadWorkflowStatus() {
   renderStatus(payload);
   renderTechnicalDetails(payload);
   setActionAvailability(payload);
+  await loadContexts();
 }
 
 async function postAction(path, payload) {
