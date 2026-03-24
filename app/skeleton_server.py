@@ -124,6 +124,19 @@ def _missing_required_query_params(*missing: str) -> dict:
 
 
 
+
+
+def _validate_run_id(run_id: str) -> str:
+    normalized = str(run_id or "").strip()
+    if not normalized:
+        raise ValueError("run_id required")
+    if "/" in normalized or "\\" in normalized or ".." in normalized:
+        raise ValueError("run_id contains invalid path-like segments")
+    if any(ord(char) < 32 or ord(char) == 127 for char in normalized):
+        raise ValueError("run_id contains control characters")
+    return normalized
+
+
 def _not_ready_payload(artifact_base: str) -> dict:
     return {"error": f"{artifact_base} artifact missing", "status": "not_ready"}
 
@@ -1080,7 +1093,7 @@ def _parse_rerun_payload(payload: dict) -> dict:
         raise ValueError(f"missing required fields: {', '.join(missing)}")
     runtime_payload = {
         "domain": str(payload.get("domain", "")).strip(),
-        "run_id": str(payload.get("run_id", "")).strip(),
+        "run_id": _validate_run_id(str(payload.get("run_id", "")).strip()),
         "language": str(payload.get("language", "")).strip(),
         "viewport_kind": str(payload.get("viewport_kind", "")).strip(),
         "state": str(payload.get("state", "")).strip(),
@@ -1647,7 +1660,11 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self._json_response(_missing_required_query_params(*missing), status=HTTPStatus.BAD_REQUEST)
                 return
             domain = required["domain"]
-            run_id = required["run_id"]
+            try:
+                run_id = _validate_run_id(required["run_id"])
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
             page_id = required["page_id"]
             try:
                 pages = _read_list_artifact_required(domain, run_id, "page_screenshots.json")
@@ -1725,7 +1742,11 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self._json_response(_missing_required_query_params(*missing), status=HTTPStatus.BAD_REQUEST)
                 return
             domain = required["domain"]
-            run_id = required["run_id"]
+            try:
+                run_id = _validate_run_id(required["run_id"])
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
             try:
                 _require_artifact_exists(domain, run_id, "collected_items.json")
                 _require_artifact_exists(domain, run_id, "page_screenshots.json")
@@ -1832,9 +1853,13 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self._json_response(_missing_required_query_params(*missing), status=HTTPStatus.BAD_REQUEST)
                 return
             try:
-                rules = _load_phase2_decisions(required["domain"], required["run_id"])
+                run_id = _validate_run_id(required["run_id"])
+                rules = _load_phase2_decisions(required["domain"], run_id)
             except ValueError as exc:
-                self._json_response({"error": str(exc), "status": "artifact_invalid"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                if str(exc).startswith("run_id"):
+                    self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                else:
+                    self._json_response({"error": str(exc), "status": "artifact_invalid"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
                 return
             self._json_response({"rules": rules})
             return
@@ -1847,7 +1872,11 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self._json_response(_missing_required_query_params(*missing), status=HTTPStatus.BAD_REQUEST)
                 return
             domain = required["domain"]
-            run_id = required["run_id"]
+            try:
+                run_id = _validate_run_id(required["run_id"])
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
             try:
                 _require_artifact_exists(domain, run_id, "issues.json")
                 issues = _read_list_artifact_required(domain, run_id, "issues.json")
@@ -1878,7 +1907,11 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self._json_response(_missing_required_query_params(*missing), status=HTTPStatus.BAD_REQUEST)
                 return
             domain = required["domain"]
-            run_id = required["run_id"]
+            try:
+                run_id = _validate_run_id(required["run_id"])
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
             issue_id = required["id"]
             try:
                 _require_artifact_exists(domain, run_id, "issues.json")
@@ -1995,7 +2028,11 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self._json_response(_missing_required_query_params(*missing), status=HTTPStatus.BAD_REQUEST)
                 return
             domain = required["domain"]
-            run_id = required["run_id"]
+            try:
+                run_id = _validate_run_id(required["run_id"])
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
             language_filter = str(query.get("language", [""])[0]).strip()
             try:
                 _require_artifact_exists(domain, run_id, "page_screenshots.json")
@@ -2047,7 +2084,11 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self._json_response(_missing_required_query_params(*missing), status=HTTPStatus.BAD_REQUEST)
                 return
             domain = required["domain"]
-            run_id = required["run_id"]
+            try:
+                run_id = _validate_run_id(required["run_id"])
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
             language_filter = str(query.get("language", [""])[0]).strip()
             if not _artifact_exists_strict(domain, run_id, "page_screenshots.json"):
                 self._json_response({"status": "not_ready", "error": "page_screenshots artifact missing"}, status=HTTPStatus.NOT_FOUND)
@@ -2078,7 +2119,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self._json_response(_missing_required_query_params(*missing), status=HTTPStatus.BAD_REQUEST)
                 return
             try:
-                payload = _workflow_status_payload(required["domain"], required["run_id"])
+                payload = _workflow_status_payload(required["domain"], _validate_run_id(required["run_id"]))
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                 return
@@ -2441,7 +2482,12 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         if self.path == "/api/capture/start":
             payload = self._read_json_payload()
             domain = str(payload.get("domain", "")).strip()
-            run_id = str(payload.get("run_id", "")).strip() or str(uuid.uuid4())
+            try:
+                run_id = str(payload.get("run_id", "")).strip() or str(uuid.uuid4())
+                run_id = _validate_run_id(run_id)
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
             language = str(payload.get("language", "en")).strip() or "en"
             viewport_kind = str(payload.get("viewport_kind", "desktop")).strip() or "desktop"
             state = str(payload.get("state", "guest")).strip() or "guest"
@@ -2531,6 +2577,12 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             payload = self._read_json_payload()
             domain = str(payload.get("domain", "")).strip()
             run_id = str(payload.get("run_id", "")).strip()
+            try:
+                if run_id:
+                    run_id = _validate_run_id(run_id)
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
             item_id = str(payload.get("item_id", "")).strip()
             url = str(payload.get("url", "")).strip()
             requested_decision = str(payload.get("decision", payload.get("rule_type", ""))).strip()
@@ -2561,7 +2613,11 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             if not domain:
                 self._json_response({"status": "error", "message": "domain required"}, status=HTTPStatus.BAD_REQUEST)
                 return
-            run_id = payload.get("run_id") or str(uuid.uuid4())
+            try:
+                run_id = _validate_run_id(payload.get("run_id") or str(uuid.uuid4()))
+            except ValueError as exc:
+                self._json_response({"status": "error", "message": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
             job_id = f"phase0-{run_id}"
             t = threading.Thread(
                 target=_run_phase0_async, args=(job_id, domain, run_id), daemon=True
@@ -2575,6 +2631,12 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             payload = self._read_json_payload()
             domain = payload.get("domain", "").strip()
             run_id = payload.get("run_id", "").strip()
+            try:
+                if run_id:
+                    run_id = _validate_run_id(run_id)
+            except ValueError as exc:
+                self._json_response({"status": "error", "message": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
             if not domain or not run_id:
                 self._json_response({"status": "error", "message": "domain and run_id required"}, status=HTTPStatus.BAD_REQUEST)
                 return
@@ -2608,6 +2670,12 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             payload = self._read_json_payload()
             domain = payload.get("domain", "").strip()
             run_id = payload.get("run_id", "").strip()
+            try:
+                if run_id:
+                    run_id = _validate_run_id(run_id)
+            except ValueError as exc:
+                self._json_response({"status": "error", "message": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
             item_id = payload.get("item_id", "").strip()
             url = payload.get("url", "").strip()
             rule_type = payload.get("rule_type", "").strip()
@@ -2640,7 +2708,12 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         if self.path == "/api/workflow/start-capture":
             payload = self._read_json_payload()
             domain = str(payload.get("domain", "")).strip()
-            run_id = str(payload.get("run_id", "")).strip() or str(uuid.uuid4())
+            try:
+                run_id = str(payload.get("run_id", "")).strip() or str(uuid.uuid4())
+                run_id = _validate_run_id(run_id)
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
             requested_display_name = _normalize_optional_string(payload.get("display_name"))
             language = str(payload.get("language", "en")).strip() or "en"
             viewport_kind = str(payload.get("viewport_kind", "desktop")).strip() or "desktop"
@@ -2722,6 +2795,12 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             payload = self._read_json_payload()
             domain = payload.get("domain", "").strip()
             run_id = payload.get("run_id", "").strip()
+            try:
+                if run_id:
+                    run_id = _validate_run_id(run_id)
+            except ValueError as exc:
+                self._json_response({"status": "error", "message": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
             if not domain or not run_id:
                 self._json_response({"status": "error", "message": "domain and run_id required"}, status=HTTPStatus.BAD_REQUEST)
                 return
@@ -2746,8 +2825,13 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         if self.path == "/api/workflow/generate-issues":
             payload = self._read_json_payload()
             domain = str(payload.get("domain", "")).strip()
-            run_id = str(payload.get("run_id", "")).strip()
-            en_run_id = str(payload.get("en_run_id", "")).strip() or run_id
+            try:
+                run_id = _validate_run_id(str(payload.get("run_id", "")).strip())
+                en_run_id = str(payload.get("en_run_id", "")).strip() or run_id
+                en_run_id = _validate_run_id(en_run_id)
+            except ValueError as exc:
+                self._json_response({"status": "error", "message": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
             if not domain or not run_id:
                 self._json_response({"status": "error", "message": "domain and run_id required"}, status=HTTPStatus.BAD_REQUEST)
                 return
@@ -2774,6 +2858,12 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             payload = self._read_json_payload()
             domain = payload.get("domain", "").strip()
             run_id = payload.get("run_id", "").strip()
+            try:
+                if run_id:
+                    run_id = _validate_run_id(run_id)
+            except ValueError as exc:
+                self._json_response({"status": "error", "message": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
             if not domain or not run_id:
                 self._json_response({"status": "error", "message": "domain and run_id required"}, status=HTTPStatus.BAD_REQUEST)
                 return
@@ -2813,6 +2903,11 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             return
         if not en_run_id:
             self._redirect_check_languages(payload, message="English reference run is required.", level="error")
+            return
+        try:
+            en_run_id = _validate_run_id(en_run_id)
+        except ValueError as exc:
+            self._redirect_check_languages(payload, message=str(exc), level="error")
             return
         if not target_language:
             self._redirect_check_languages(payload, message="Target language is required.", level="error")
