@@ -9,6 +9,9 @@ const pullsWhitelistInput = document.getElementById('pullsWhitelistInput');
 const pullsWhitelistAdd = document.getElementById('pullsWhitelistAdd');
 const pullsWhitelistStatus = document.getElementById('pullsWhitelistStatus');
 const pullsWhitelistChips = document.getElementById('pullsWhitelistChips');
+const pullsEligibleControl = document.createElement('section');
+const pullsEligibleGenerateButton = document.createElement('button');
+const pullsEligibleGenerateMessage = document.createElement('p');
 
 const pullsPreviewModal = document.getElementById('pullsPreviewModal');
 const pullsPreviewOverlay = document.getElementById('pullsPreviewOverlay');
@@ -30,6 +33,7 @@ const pullsImageAssetMeta = document.getElementById('pullsImageAssetMeta');
 let allPullRows = [];
 let whitelistEntries = [];
 let previewResizeObserver = null;
+let eligiblePollingTimer = null;
 let previewState = {
   isOpen: false,
   row: null,
@@ -57,6 +61,105 @@ function pullsQuery() {
 function setPullsStatus(message, cls = '') {
   pullsStatus.className = cls;
   pullsStatus.textContent = message;
+}
+
+function setEligibleGenerateMessage(message, cls = '') {
+  pullsEligibleGenerateMessage.className = ['muted', cls].filter(Boolean).join(' ');
+  pullsEligibleGenerateMessage.textContent = message;
+}
+
+function formatEnStandardDisplayName(runOrEligibleSection) {
+  const value = String((runOrEligibleSection || {}).en_standard_display_name || '').trim();
+  return value;
+}
+
+async function fetchWorkflowStatus(domain, runId) {
+  const response = await fetch(`/api/workflow/status?${new URLSearchParams({ domain, run_id: runId }).toString()}`);
+  const payload = await safeReadPayload(response);
+  if (!response.ok) throw new Error(payload.error || `Failed to load workflow status (${response.status})`);
+  return payload;
+}
+
+function stopEligiblePolling() {
+  if (eligiblePollingTimer) {
+    clearTimeout(eligiblePollingTimer);
+    eligiblePollingTimer = null;
+  }
+}
+
+async function waitForEligibleDatasetReady(domain, runId, timeoutMs = 30000) {
+  const startedAt = Date.now();
+  stopEligiblePolling();
+  return new Promise((resolve, reject) => {
+    const poll = async () => {
+      try {
+        const payload = await fetchWorkflowStatus(domain, runId);
+        const eligible = payload.eligible_dataset || {};
+        const ready = eligible.ready === true || eligible.status === 'ready' || eligible.status === 'empty';
+        if (ready) {
+          resolve(payload);
+          return;
+        }
+
+        const generationStatus = String(eligible.generation_status || '').toLowerCase();
+        if (generationStatus === 'failed' || generationStatus === 'error') {
+          reject(new Error(eligible.generation_error || 'Eligible dataset generation failed.'));
+          return;
+        }
+
+        if ((Date.now() - startedAt) >= timeoutMs) {
+          reject(new Error('Eligible dataset readiness was not reached in time.'));
+          return;
+        }
+        eligiblePollingTimer = setTimeout(poll, 1000);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    poll();
+  });
+}
+
+async function triggerEligibleDatasetGeneration(domain, runId) {
+  pullsEligibleGenerateButton.disabled = true;
+  setEligibleGenerateMessage('Generating eligible dataset…');
+  try {
+    const response = await fetch('/api/workflow/generate-eligible-dataset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain, run_id: runId }),
+    });
+    const payload = await safeReadPayload(response);
+    if (!response.ok) {
+      throw new Error(payload.error || payload.message || 'Failed to start eligible dataset generation.');
+    }
+
+    const readyPayload = await waitForEligibleDatasetReady(domain, runId);
+    const eligible = readyPayload.eligible_dataset || {};
+    const label = formatEnStandardDisplayName(eligible) || formatEnStandardDisplayName(readyPayload.run);
+    if (label) {
+      setEligibleGenerateMessage(`Ready: ${label}`);
+    } else {
+      setEligibleGenerateMessage('Ready: eligible dataset generated.');
+    }
+  } catch (err) {
+    setEligibleGenerateMessage(`Warning: ${err.message || 'Eligible dataset generation failed.'}`);
+  } finally {
+    pullsEligibleGenerateButton.disabled = false;
+    stopEligiblePolling();
+  }
+}
+
+function ensureEligibleDatasetControls() {
+  pullsEligibleControl.className = 'controls';
+  pullsEligibleGenerateButton.type = 'button';
+  pullsEligibleGenerateButton.textContent = 'Generate eligible dataset';
+  pullsEligibleGenerateMessage.className = 'muted';
+  if (!pullsEligibleControl.childElementCount) {
+    pullsEligibleControl.appendChild(pullsEligibleGenerateButton);
+    pullsEligibleControl.appendChild(pullsEligibleGenerateMessage);
+    pullsStatus.insertAdjacentElement('afterend', pullsEligibleControl);
+  }
 }
 
 function setPreviewStatus(message) {
@@ -656,6 +759,7 @@ function renderRows(domain, runId) {
 
 async function loadPulls() {
   const { domain, runId } = pullsQuery();
+  ensureEligibleDatasetControls();
   updateWorkflowSummary(domain, runId);
   const query = new URLSearchParams({ domain, run_id: runId }).toString();
 
@@ -681,8 +785,12 @@ async function loadPulls() {
     pullsTable.classList.add('hidden');
     pullsLanguageSummary.classList.add('hidden');
     setPullsStatus('Missing required query params: domain and run_id.', 'error');
+    pullsEligibleGenerateButton.disabled = true;
+    setEligibleGenerateMessage('Warning: missing required query params: domain and run_id.');
     return;
   }
+  pullsEligibleGenerateButton.disabled = false;
+  pullsEligibleGenerateButton.onclick = () => triggerEligibleDatasetGeneration(domain, runId);
 
   setPullsStatus('Loading items…');
   const loaded = await reloadPullRows(domain, runId);
