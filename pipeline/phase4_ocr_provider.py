@@ -16,6 +16,10 @@ def _sanitize_ocr_text(text: str) -> str:
     return "\n".join(" ".join(line.split()) for line in text.splitlines()).strip()
 
 
+def _is_usable_text(text: str) -> bool:
+    return bool("".join((text or "").split()))
+
+
 def _default_request(url: str, payload: dict, headers: dict, timeout_s: float) -> httpx.Response:
     return httpx.post(url, data=payload, headers=headers, timeout=timeout_s)
 
@@ -99,7 +103,7 @@ def ocrspace_extract_text(
         first = parsed_results[0] if isinstance(parsed_results[0], dict) else {}
         parsed_text = _sanitize_ocr_text(str(first.get("ParsedText", "")))
 
-    if not parsed_text:
+    if not _is_usable_text(parsed_text):
         return {
             "status": "failed",
             "ocr_text": "",
