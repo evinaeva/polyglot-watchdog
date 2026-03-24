@@ -748,3 +748,31 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c297142fa0832cb62230c47ed03beb)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #114 — 2026-03-24T14:24:27Z
+
+- Title: Add 'Prepare captured data' button and status handling for eligible dataset generation
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/114
+- Author: evinaeva
+- Base branch: main
+- Head branch: fz6wwx-codex/add-captured-data-preparation-functions
+- Merge commit: 9df69d41bda3c188e599ec740c5a32959484140f
+- Changed files:
+  - web/static/pulls.js
+- Description:
+  ### Motivation
+  - Provide a UI control to trigger preparation of captured data for downstream eligible-dataset generation from the pulls view.
+  - Surface progress and error information to the user when calling the server-side workflow endpoint.
+  
+  ### Description
+  - Added DOM hooks for the new controls: `pullsPrepareCapturedData` and `pullsPrepareCapturedDataStatus`.
+  - Implemented `setPrepareCapturedDataStatus` to update the status element text and class.
+  - Added a click handler on `pullsPrepareCapturedData` that posts to `/api/workflow/generate-eligible-dataset` with `{ domain, run_id }` and updates the status on success or failure.
+  - Improved error handling for the fetch response by setting the status message on non-OK responses instead of throwing directly.
+  
+  ### Testing
+  - No automated tests were run for this change.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c297293574832c9dd4d5cdb090da8e)
+- Notes: Auto-generated from merged PR metadata.
