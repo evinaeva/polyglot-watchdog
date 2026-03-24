@@ -1,4 +1,6 @@
-from pipeline.phase4_ocr_provider import extract_text_with_fallback, ocrspace_extract_text
+from unittest.mock import patch
+
+from pipeline.phase4_ocr_provider import extract_text_with_ocrspace_fallback, ocrspace_extract_text
 
 
 class _FakeResponse:
@@ -20,166 +22,141 @@ def _tiny_png_bytes() -> bytes:
     )
 
 
-def test_ocrspace_success_skips_vision_fallback():
-    calls = {"vision": 0}
-
-    def ocrspace_ok(_):
-        return {
+def test_ocrspace_usable_text_returns_primary_without_fallback():
+    with patch(
+        "pipeline.phase4_ocr_provider.ocrspace_extract_text",
+        return_value={
             "status": "ok",
-            "ocr_text": "hello",
+            "ocr_text": "primary",
             "ocr_provider": "ocr.space",
             "ocr_engine": "3",
             "ocr_notes": [],
             "provider_meta": {"provider": "ocr.space"},
-        }
-
-    def vision_unused(_):
-        calls["vision"] += 1
-        return {
-            "status": "ok",
-            "ocr_text": "vision",
-            "ocr_provider": "vision",
-            "ocr_engine": "builtin",
-            "ocr_notes": [],
-            "provider_meta": {"provider": "vision"},
-        }
-
-    result = extract_text_with_fallback(_tiny_png_bytes(), ocrspace_fn=ocrspace_ok, vision_fn=vision_unused)
+        },
+    ), patch(
+        "pipeline.phase4_ocr_provider.google_vision_extract_text",
+        side_effect=AssertionError("fallback should not be called"),
+    ):
+        result = extract_text_with_ocrspace_fallback(_tiny_png_bytes())
 
     assert result["status"] == "ok"
     assert result["ocr_provider"] == "ocr.space"
-    assert calls["vision"] == 0
 
 
-def test_missing_api_key_attempts_vision_fallback(monkeypatch):
-    monkeypatch.delenv("OCR_SPACE_API_KEY", raising=False)
-    calls = {"vision": 0}
-
-    def vision_fail(_):
-        calls["vision"] += 1
-        return {
-            "status": "failed",
-            "ocr_text": "",
-            "ocr_provider": "vision",
-            "ocr_engine": "builtin",
-            "ocr_notes": ["request_failed"],
-            "provider_meta": {"provider": "vision"},
-        }
-
-    result = extract_text_with_fallback(_tiny_png_bytes(), vision_fn=vision_fail)
-
-    assert calls["vision"] == 1
-    assert result["status"] == "skipped"
-    assert result["ocr_notes"] == ["missing_api_key"]
-
-
-def test_ocrspace_request_failure_attempts_vision_fallback():
-    calls = {"vision": 0}
-
-    def ocrspace_failed(_):
-        return {
-            "status": "failed",
-            "ocr_text": "",
-            "ocr_provider": "ocr.space",
-            "ocr_engine": "3",
-            "ocr_notes": ["request_failed"],
-            "provider_meta": {"provider": "ocr.space"},
-        }
-
-    def vision_fail(_):
-        calls["vision"] += 1
-        return {
-            "status": "failed",
-            "ocr_text": "",
-            "ocr_provider": "vision",
-            "ocr_engine": "builtin",
-            "ocr_notes": ["request_failed"],
-            "provider_meta": {"provider": "vision"},
-        }
-
-    result = extract_text_with_fallback(_tiny_png_bytes(), ocrspace_fn=ocrspace_failed, vision_fn=vision_fail)
-
-    assert calls["vision"] == 1
-    assert result["status"] == "failed"
-    assert result["ocr_provider"] == "ocr.space"
-
-
-def test_ocrspace_empty_text_attempts_vision_fallback():
-    calls = {"vision": 0}
-
-    def ocrspace_empty(_):
-        return {
+def test_ocrspace_empty_text_triggers_google_fallback(monkeypatch):
+    with patch(
+        "pipeline.phase4_ocr_provider.ocrspace_extract_text",
+        return_value={
             "status": "failed",
             "ocr_text": "",
             "ocr_provider": "ocr.space",
             "ocr_engine": "3",
             "ocr_notes": ["empty_text"],
             "provider_meta": {"provider": "ocr.space"},
-        }
+        },
+    ), patch(
+        "pipeline.phase4_ocr_provider.google_vision_extract_text",
+        return_value={
+            "status": "ok",
+            "ocr_text": "Vision text",
+            "ocr_provider": "google_vision",
+            "ocr_engine": "text_detection",
+            "ocr_notes": [],
+            "provider_meta": {"provider": "google_vision"},
+        },
+    ) as fallback_call:
+        result = extract_text_with_ocrspace_fallback(_tiny_png_bytes())
 
-    def vision_fail(_):
-        calls["vision"] += 1
-        return {
+    assert fallback_call.call_count == 1
+    assert result["status"] == "ok"
+    assert result["ocr_provider"] == "google_vision"
+    assert "fallback_from_ocr_space" in result["ocr_notes"]
+
+
+def test_ocrspace_whitespace_text_triggers_google_fallback(monkeypatch):
+    monkeypatch.setenv("OCR_SPACE_API_KEY", "test-key")
+
+    def fake_request(*_args, **_kwargs):
+        return _FakeResponse({"IsErroredOnProcessing": False, "ParsedResults": [{"ParsedText": "   \n\t"}]})
+
+    with patch(
+        "pipeline.phase4_ocr_provider.google_vision_extract_text",
+        return_value={
+            "status": "ok",
+            "ocr_text": "fallback",
+            "ocr_provider": "google_vision",
+            "ocr_engine": "text_detection",
+            "ocr_notes": [],
+            "provider_meta": {"provider": "google_vision"},
+        },
+    ) as fallback_call, patch(
+        "pipeline.phase4_ocr_provider._default_request", side_effect=fake_request
+    ):
+        result = extract_text_with_ocrspace_fallback(_tiny_png_bytes())
+
+    assert fallback_call.call_count == 1
+    assert result["ocr_provider"] == "google_vision"
+
+
+def test_ocrspace_failure_triggers_google_fallback():
+    with patch(
+        "pipeline.phase4_ocr_provider.ocrspace_extract_text",
+        return_value={
             "status": "failed",
             "ocr_text": "",
-            "ocr_provider": "vision",
-            "ocr_engine": "builtin",
+            "ocr_provider": "ocr.space",
+            "ocr_engine": "3",
             "ocr_notes": ["request_failed"],
-            "provider_meta": {"provider": "vision"},
-        }
+            "provider_meta": {"provider": "ocr.space"},
+        },
+    ), patch(
+        "pipeline.phase4_ocr_provider.google_vision_extract_text",
+        return_value={
+            "status": "ok",
+            "ocr_text": "bonjour",
+            "ocr_provider": "google_vision",
+            "ocr_engine": "text_detection",
+            "ocr_notes": [],
+            "provider_meta": {"provider": "google_vision"},
+        },
+    ) as fallback_call:
+        result = extract_text_with_ocrspace_fallback(_tiny_png_bytes())
 
-    result = extract_text_with_fallback(_tiny_png_bytes(), ocrspace_fn=ocrspace_empty, vision_fn=vision_fail)
+    assert fallback_call.call_count == 1
+    assert result["ocr_provider"] == "google_vision"
 
-    assert calls["vision"] == 1
+
+def test_both_providers_fail_reports_truthful_fallback_metadata():
+    with patch(
+        "pipeline.phase4_ocr_provider.ocrspace_extract_text",
+        return_value={
+            "status": "failed",
+            "ocr_text": "",
+            "ocr_provider": "ocr.space",
+            "ocr_engine": "3",
+            "ocr_notes": ["request_failed"],
+            "provider_meta": {"provider": "ocr.space", "error": "primary"},
+        },
+    ), patch(
+        "pipeline.phase4_ocr_provider.google_vision_extract_text",
+        return_value={
+            "status": "failed",
+            "ocr_text": "",
+            "ocr_provider": "google_vision",
+            "ocr_engine": "text_detection",
+            "ocr_notes": ["request_failed"],
+            "provider_meta": {"provider": "google_vision", "error": "fallback"},
+        },
+    ):
+        result = extract_text_with_ocrspace_fallback(_tiny_png_bytes())
+
     assert result["status"] == "failed"
-    assert result["ocr_notes"] == ["empty_text"]
+    assert result["ocr_provider"] == "google_vision"
+    assert result["provider_meta"]["fallback_attempted"] is True
+    assert result["provider_meta"]["attempted_providers"] == ["ocr.space", "google_vision"]
 
 
-def test_both_providers_fail_preserves_truthful_primary_outcome():
-    calls = {"vision": 0}
-
-    def vision_fail(_):
-        calls["vision"] += 1
-        return {
-            "status": "failed",
-            "ocr_text": "",
-            "ocr_provider": "vision",
-            "ocr_engine": "builtin",
-            "ocr_notes": ["request_failed"],
-            "provider_meta": {"provider": "vision"},
-        }
-
-    def ocrspace_skipped(_):
-        return {
-            "status": "skipped",
-            "ocr_text": "",
-            "ocr_provider": "ocr.space",
-            "ocr_engine": "3",
-            "ocr_notes": ["missing_api_key"],
-            "provider_meta": {"provider": "ocr.space"},
-        }
-
-    skipped_result = extract_text_with_fallback(_tiny_png_bytes(), ocrspace_fn=ocrspace_skipped, vision_fn=vision_fail)
-    assert skipped_result["status"] == "skipped"
-    assert skipped_result["ocr_notes"] == ["missing_api_key"]
-
-    def ocrspace_failed(_):
-        return {
-            "status": "failed",
-            "ocr_text": "",
-            "ocr_provider": "ocr.space",
-            "ocr_engine": "3",
-            "ocr_notes": ["request_failed"],
-            "provider_meta": {"provider": "ocr.space"},
-        }
-
-    failed_result = extract_text_with_fallback(_tiny_png_bytes(), ocrspace_fn=ocrspace_failed, vision_fn=vision_fail)
-    assert failed_result["status"] == "failed"
-    assert failed_result["ocr_notes"] == ["request_failed"]
-    assert calls["vision"] == 2
-
-
-def test_ocrspace_default_timeout_is_40_and_payload_has_language_auto(monkeypatch):
+def test_ocrspace_request_payload_keeps_engine_language_timeout(monkeypatch):
     captured = {}
 
     def fake_request(url, payload, headers, timeout_s):
@@ -192,5 +169,8 @@ def test_ocrspace_default_timeout_is_40_and_payload_has_language_auto(monkeypatc
     result = ocrspace_extract_text(_tiny_png_bytes(), request_fn=fake_request)
 
     assert result["status"] == "ok"
-    assert captured["timeout_s"] == 40.0
+    assert captured["payload"]["OCREngine"] == "3"
     assert captured["payload"]["language"] == "auto"
+    assert captured["payload"]["base64Image"].startswith("data:image/png;base64,")
+    assert captured["headers"]["apikey"] == "test-key"
+    assert captured["timeout_s"] == 40.0
