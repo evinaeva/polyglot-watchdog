@@ -52,7 +52,7 @@ def ocrspace_extract_text(
             "ocr_notes": ["missing_api_key"],
             "provider_meta": {"provider": "ocr.space"},
         }
-        return _fallback_to_google_if_needed(image_bytes, result)
+        return result
 
     endpoint = os.getenv("OCR_SPACE_ENDPOINT", OCR_SPACE_ENDPOINT_DEFAULT).strip() or OCR_SPACE_ENDPOINT_DEFAULT
     timeout_s = float(os.getenv("OCR_SPACE_TIMEOUT_S", "40"))
@@ -78,7 +78,7 @@ def ocrspace_extract_text(
             "ocr_notes": ["request_failed"],
             "provider_meta": {"provider": "ocr.space", "error": str(exc)},
         }
-        return _fallback_to_google_if_needed(image_bytes, result)
+        return result
 
     if not isinstance(result, dict):
         outcome = {
@@ -89,7 +89,7 @@ def ocrspace_extract_text(
             "ocr_notes": ["malformed_response"],
             "provider_meta": {"provider": "ocr.space"},
         }
-        return _fallback_to_google_if_needed(image_bytes, outcome)
+        return outcome
 
     if result.get("IsErroredOnProcessing"):
         outcome = {
@@ -100,7 +100,7 @@ def ocrspace_extract_text(
             "ocr_notes": ["errored_on_processing"],
             "provider_meta": {"provider": "ocr.space", "error_message": result.get("ErrorMessage")},
         }
-        return _fallback_to_google_if_needed(image_bytes, outcome)
+        return outcome
 
     parsed_results = result.get("ParsedResults")
     parsed_text = ""
@@ -117,7 +117,6 @@ def ocrspace_extract_text(
             "ocr_notes": ["empty_text"],
             "provider_meta": {"provider": "ocr.space"},
         }
-        return _fallback_to_google_if_needed(image_bytes, outcome)
 
     return {
         "status": "ok",
@@ -247,6 +246,8 @@ def extract_text_with_ocrspace_fallback(image_bytes: bytes) -> dict:
             "provider_meta": {
                 "primary_attempt_provider": "ocr.space",
                 "fallback_provider": "google_vision",
+                "fallback_attempted": True,
+                "attempted_providers": ["ocr.space", "google_vision"],
                 "reason_for_fallback": reason_token,
                 "ocr_space_status": primary.get("status"),
                 "google_vision_status": fallback.get("status"),
@@ -263,12 +264,14 @@ def extract_text_with_ocrspace_fallback(image_bytes: bytes) -> dict:
     return {
         "status": final_status,
         "ocr_text": "",
-        "ocr_provider": "ocr.space",
-        "ocr_engine": "3",
+        "ocr_provider": str(fallback.get("ocr_provider") or "google_vision"),
+        "ocr_engine": str(fallback.get("ocr_engine") or "text_detection"),
         "ocr_notes": merged_notes,
         "provider_meta": {
             "primary_attempt_provider": "ocr.space",
             "fallback_provider": "google_vision",
+            "fallback_attempted": True,
+            "attempted_providers": ["ocr.space", "google_vision"],
             "reason_for_fallback": reason_token,
             "ocr_space_status": primary.get("status"),
             "google_vision_status": fallback.get("status"),
