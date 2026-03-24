@@ -812,3 +812,32 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c2972a6384832cb6371b8cbbb4d199)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #115 — 2026-03-24T14:25:00Z
+
+- Title: Prefer en_standard_display_name and normalize run display fields
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/115
+- Author: evinaeva
+- Base branch: main
+- Head branch: bmnrq1-codex/update-option-labels-for-runs
+- Merge commit: f911cfd6ddbdffe5f6ac929e02e49b4a2b73972f
+- Changed files:
+  - app/skeleton_server.py
+- Description:
+  ### Motivation
+  - Ensure run listing and display label resolution prefer normalized display names and the English-standard display name when present.
+  - Surface top-level `display_name` and `en_standard_display_name` in run summaries for downstream UI/logic.
+  - Improve robustness by normalizing optional string fields and falling back to `run_id` when no display name exists.
+  
+  ### Description
+  - Added `display_name` and `en_standard_display_name` to the objects returned by `_load_check_language_runs` using `_normalize_optional_string` and defaulting to an empty string when missing. 
+  - Updated `_run_display_label` to build a display label by preferring `en_standard_display_name`, then `display_label`, then `display_name` from the run itself before checking metadata, and normalize all optional string sources via `_normalize_optional_string`.
+  - Preserved the previous fallback behavior to return `run_id` when no other display value is available, and added a defensive `isinstance(run, dict)` check prior to reading top-level fields.
+  
+  ### Testing
+  - Ran the project's unit test suite with `pytest -q`, and all tests completed successfully. 
+  - Ran a quick smoke check of run list generation and label resolution for runs with combinations of top-level and metadata display fields, and observed expected label selection behavior.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c297299d94832c9ee20cda9f592f56)
+- Notes: Auto-generated from merged PR metadata.
