@@ -752,6 +752,7 @@ async function loadPulls() {
   const primaryLinks = {
     pullsBackToRunHub: `/workflow?${query}`,
     continueCheckLanguages: `/check-languages?${new URLSearchParams({ domain, en_run_id: runId }).toString()}`,
+    continueCheckLanguagesBottom: `/check-languages?${new URLSearchParams({ domain, en_run_id: runId }).toString()}`,
   };
   Object.entries(primaryLinks).forEach(([id, href]) => {
     const link = document.getElementById(id);
