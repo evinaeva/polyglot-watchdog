@@ -490,3 +490,35 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69b7ca6bff7c832cb8f30fd792cd5f50)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #100 — 2026-03-24T13:39:07Z
+
+- Title: Add optional run display_name handling and UI formatting for workflow runs
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/100
+- Author: evinaeva
+- Base branch: main
+- Head branch: 5hf1d7-codex/add-display-name-to-run-metadata
+- Merge commit: 1cc1701e7d27f82a38790e940d9346594e945eca
+- Changed files:
+  - app/skeleton_server.py
+  - web/static/workflow.js
+- Description:
+  ### Motivation
+  
+  - Make it possible to attach, persist and display a human-friendly `display_name` for capture runs when starting or listing runs in the workflow. 
+  - Ensure the UI presents readable run labels and hides placeholder values like `null`/`none` while keeping run IDs available.
+  
+  ### Description
+  
+  - Added `_default_run_display_name()` to produce a default display name and updated `/api/workflow/start-capture` to accept a `display_name` payload, prefer an existing display name for an existing run, and use a default for a new run when requested name is explicitly `null`/`none`.
+  - Updated `_upsert_job_status()` to propagate a run-level `display_name` (normalized via `_normalize_optional_string`) while removing `display_name` from individual job records saved under `jobs`.
+  - Normalized the `/api/capture/runs` response to always include a normalized `display_name` per run in the returned JSON.
+  - Frontend changes in `web/static/workflow.js` add `normalizeDisplayName()` and `formatRunLabel()` and use them to render run labels in the status summary and the existing-runs dropdown, falling back to the run ID when no human name exists.
+  
+  ### Testing
+  
+  - No automated tests were run for these changes.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c28fae4be8832ca26e3352db222c50)
+- Notes: Auto-generated from merged PR metadata.
