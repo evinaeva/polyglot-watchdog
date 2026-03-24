@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://polyglot-watchdog/contract/schemas/coverage_gaps.schema.json",
+  "title": "Image Review Coverage Gaps",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["item_id", "url", "status", "reason", "logical_match_key"],
+    "properties": {
+      "item_id": {"type": "string"},
+      "url": {"type": "string"},
+      "status": {
+        "type": "string",
+        "enum": ["image_text_not_reviewed", "image_text_review_blocked"]
+      },
+      "reason": {
+        "type": "array",
+        "items": {"type": "string"}
+      },
+      "logical_match_key": {
+        "type": ["string", "null"]
+      }
+    }
+  }
+}

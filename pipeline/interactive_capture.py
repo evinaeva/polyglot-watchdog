@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from urllib.parse import urlparse
 from dataclasses import dataclass
 from typing import Any, Protocol
 from pipeline.phase0_crawler import canonicalize_url
@@ -113,6 +114,82 @@ def compute_page_id(context: CaptureContext) -> str:
     # (url, viewport_kind, state, user_tier). language must stay excluded.
     payload = "|".join([context.url, context.viewport_kind, context.state, context.user_tier or ""])
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+
+def compute_page_canonical_key(url: str) -> str:
+    parsed = urlparse(canonicalize_url_for_hash(url))
+    path = parsed.path or "/"
+    segments = [segment for segment in path.split("/") if segment]
+    if segments and re.fullmatch(r"[a-z]{2}(?:-[a-z]{2})?", segments[0], flags=re.IGNORECASE):
+        segments = segments[1:]
+    normalized_path = "/" + "/".join(segments) if segments else "/"
+    payload = "|".join([parsed.netloc.lower(), normalized_path.rstrip("/") or "/"])
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+
+def _normalized_selector_parts(selector: str) -> list[str]:
+    tokens: list[str] = []
+    for raw in selector.split(">"):
+        part = raw.strip().lower()
+        if not part:
+            continue
+        part = re.sub(r":nth-[a-z-]+\([^)]*\)", "", part)
+        part = re.sub(r"\[[^\]]*\]", "", part)
+        part = re.sub(r"\s+", "", part)
+        if part:
+            tokens.append(part)
+    return tokens
+
+
+def _semantic_attribute_hint(attributes: dict[str, Any] | None) -> str:
+    if not isinstance(attributes, dict):
+        return ""
+    ordered = []
+    for key in ("data-testid", "data-test", "data-qa", "name", "aria-label", "role"):
+        value = str(attributes.get(key, "")).strip().lower()
+        if value:
+            ordered.append(f"{key}={value}")
+    return "|".join(ordered)
+
+
+def compute_logical_match_fields(
+    *,
+    url: str,
+    state: str,
+    user_tier: str | None,
+    selector: str,
+    element_type: str,
+    tag: str | None,
+    attributes: dict[str, Any] | None,
+) -> dict[str, Any]:
+    selector_parts = _normalized_selector_parts(selector)
+    container_signature = ">".join(selector_parts[:-1]) if len(selector_parts) > 1 else ""
+    path_signature = ">".join(selector_parts)
+    leaf = selector_parts[-1] if selector_parts else ""
+    ordinal_match = re.search(r"(\d+)$", leaf)
+    ordinal = int(ordinal_match.group(1)) if ordinal_match else 0
+    semantic_hint = _semantic_attribute_hint(attributes)
+    page_canonical_key = compute_page_canonical_key(url)
+    logical_payload = canonical_json_bytes({
+        "page_canonical_key": page_canonical_key,
+        "state": state,
+        "user_tier": user_tier or "",
+        "element_type": element_type,
+        "tag": (tag or "").lower(),
+        "container_signature": container_signature,
+        "path_signature": path_signature,
+        "ordinal": ordinal,
+        "semantic_hint": semantic_hint,
+    })
+    logical_match_key = hashlib.sha1(logical_payload).hexdigest()
+    return {
+        "page_canonical_key": page_canonical_key,
+        "logical_match_key": logical_match_key,
+        "path_signature": path_signature,
+        "container_signature": container_signature,
+        "normalized_ordinal": ordinal,
+        "semantic_hint": semantic_hint,
+    }
 
 
 def derive_capture_point_id(recipe_id: str, capture_point_order: int, state: str) -> str:
@@ -322,6 +399,7 @@ def capture_state(
     assert_language_not_in_contract_identity(context)
     capture_context_id = build_capture_context_id(context)
     page_id = compute_page_id(context)
+    page_canonical_key = compute_page_canonical_key(context.url)
     page_content, raw_elements = page_payload
 
     elements: list[dict[str, Any]] = []
@@ -331,6 +409,15 @@ def capture_state(
         if bbox is None:
             raise DeterminismError("Bounding box unavailable")
         canonical_bbox = json.loads(_canonical_bbox_payload(bbox))
+        logical_fields = compute_logical_match_fields(
+            url=context.url,
+            state=context.state,
+            user_tier=context.user_tier,
+            selector=selector,
+            element_type=raw.get("element_type", "unknown"),
+            tag=raw.get("tag"),
+            attributes=raw.get("attributes") if isinstance(raw.get("attributes"), dict) else None,
+        )
         elements.append({
             "item_id": compute_item_id(context.domain, context.url, selector, canonical_bbox, raw.get("element_type", "unknown")),
             "page_id": page_id,
@@ -346,6 +433,7 @@ def capture_state(
             "visible": bool(raw.get("visible", True)),
             "tag": raw.get("tag"),
             "attributes": raw.get("attributes"),
+            **logical_fields,
         })
 
     elements.sort(key=lambda row: row["item_id"])
@@ -360,6 +448,7 @@ def capture_state(
         "storage_uri": "",
         "captured_at": run_context.run_started_at,
         "viewport": page_content.get("viewport"),
+        "page_canonical_key": page_canonical_key,
         "recipe_id": recipe_id,
         "capture_point_id": capture_point_id,
         "interaction_trace_hash": interaction_trace_hash,

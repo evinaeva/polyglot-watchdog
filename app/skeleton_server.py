@@ -1133,10 +1133,14 @@ def _parse_rerun_payload(payload: dict) -> dict:
     state = str(payload.get("state", "")).strip()
     recipe_id = str(payload.get("recipe_id", "")).strip() or None
     capture_point_id = str(payload.get("capture_point_id", "")).strip() or None
+    interaction_trace_hash = str(payload.get("interaction_trace_hash", "")).strip() or None
     if state == "baseline" and (recipe_id or capture_point_id):
         raise ValueError("baseline rerun cannot include recipe_id/capture_point_id")
-    if state != "baseline" and (bool(recipe_id) != bool(capture_point_id)):
-        raise ValueError("state rerun requires both recipe_id and capture_point_id, or neither for legacy state-only resolution")
+    if state != "baseline":
+        if not recipe_id or not capture_point_id:
+            raise ValueError("state rerun requires both recipe_id and capture_point_id")
+        if not interaction_trace_hash:
+            raise ValueError("state rerun requires interaction_trace_hash")
     runtime_payload = {
         "domain": str(payload.get("domain", "")).strip(),
         "run_id": _validate_run_id(str(payload.get("run_id", "")).strip()),
@@ -1148,6 +1152,7 @@ def _parse_rerun_payload(payload: dict) -> dict:
         "capture_context_id": str(payload.get("capture_context_id", "")).strip() or None,
         "recipe_id": recipe_id,
         "capture_point_id": capture_point_id,
+        "interaction_trace_hash": interaction_trace_hash,
     }
     load_phase1_runtime_config(runtime_payload)
     return runtime_payload
@@ -1242,6 +1247,7 @@ def _run_rerun_async(job_id: str, runtime_payload: dict) -> None:
             original_context_id=runtime_payload.get("capture_context_id"),
             recipe_id=runtime_payload.get("recipe_id"),
             capture_point_id=runtime_payload.get("capture_point_id"),
+            interaction_trace_hash=runtime_payload.get("interaction_trace_hash"),
         )
         _jobs[job_id]["status"] = "done"
         _upsert_job_status(str(runtime_payload.get("domain")), str(runtime_payload.get("run_id")), {"job_id": job_id, "status": "succeeded", "context": runtime_payload, "type": "rerun"})

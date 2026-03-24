@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import argparse
 import io
+import hashlib
 from pathlib import Path
+import re
 import sys
+from urllib.parse import unquote
 
 from PIL import Image
 
@@ -45,6 +48,29 @@ def _crop_image_bytes(png_bytes: bytes, bbox: dict) -> bytes:
         out = io.BytesIO()
         cropped.save(out, format="PNG")
         return out.getvalue()
+
+
+def _extract_svg_text(item: dict) -> tuple[bool, str]:
+    tag = str(item.get("tag", "")).strip().lower()
+    attrs = item.get("attributes") if isinstance(item.get("attributes"), dict) else {}
+    src = str(attrs.get("src", "")).strip()
+    raw_svg = ""
+    if tag == "svg":
+        raw_svg = str(item.get("text", "")).strip()
+    elif src.lower().startswith("data:image/svg+xml,"):
+        raw_svg = unquote(src.split(",", 1)[1])
+    elif src.lower().startswith("data:image/svg+xml;base64,"):
+        try:
+            import base64
+
+            raw_svg = base64.b64decode(src.split(",", 1)[1]).decode("utf-8", errors="ignore")
+        except Exception:
+            raw_svg = ""
+    if not raw_svg:
+        return False, ""
+    text_nodes = re.findall(r">([^<>]+)<", raw_svg)
+    normalized = " ".join(" ".join(node.split()) for node in text_nodes).strip()
+    return True, normalized
 
 
 def _download_gs_uri(gs_uri: str) -> bytes:
@@ -96,11 +122,40 @@ def build_phase4_ocr_rows(
             "ocr_notes": [],
             "provider_meta": {},
             "status": "failed",
+            "asset_hash": "",
+            "src": "",
+            "alt": "",
+            "is_svg": False,
+            "svg_text": "",
+            "image_text_review_status": "image_text_not_reviewed",
         }
+        attrs = collected.get("attributes") if isinstance(collected.get("attributes"), dict) else {}
+        src = str(attrs.get("src", "")).strip()
+        alt = str(attrs.get("alt", "")).strip()
+        is_svg, svg_text = _extract_svg_text(collected)
+        row["src"] = src
+        row["alt"] = alt
+        row["is_svg"] = is_svg
+        row["svg_text"] = svg_text
+        if src:
+            row["asset_hash"] = hashlib.sha1(src.encode("utf-8")).hexdigest()
+        elif svg_text:
+            row["asset_hash"] = hashlib.sha1(svg_text.encode("utf-8")).hexdigest()
+
+        if is_svg and svg_text:
+            row["status"] = "ok"
+            row["ocr_text"] = svg_text
+            row["ocr_provider"] = "svg_dom"
+            row["ocr_engine"] = "svg_text"
+            row["ocr_notes"] = ["svg_text_extracted"]
+            row["image_text_review_status"] = "image_text_reviewed"
+            rows.append(row)
+            continue
 
         if not source_image_uri:
             row["status"] = "failed"
             row["ocr_notes"] = ["missing_source_image"]
+            row["image_text_review_status"] = "image_text_review_blocked"
             rows.append(row)
             continue
 
@@ -110,6 +165,7 @@ def build_phase4_ocr_rows(
             if not crop_png:
                 row["status"] = "failed"
                 row["ocr_notes"] = ["invalid_bbox"]
+                row["image_text_review_status"] = "image_text_review_blocked"
                 rows.append(row)
                 continue
             ocr_result = ocr_fn(crop_png)
@@ -117,10 +173,12 @@ def build_phase4_ocr_rows(
             row["status"] = "failed"
             row["ocr_notes"] = ["prepare_or_fetch_failed"]
             row["provider_meta"] = {"error": str(exc)}
+            row["image_text_review_status"] = "image_text_review_blocked"
             rows.append(row)
             continue
 
         row.update(ocr_result)
+        row["image_text_review_status"] = "image_text_reviewed" if row.get("status") == "ok" else "image_text_not_reviewed"
         rows.append(row)
 
     rows.sort(key=lambda r: (r.get("item_id", ""), r.get("url", "")))
@@ -145,6 +203,9 @@ def run(domain: str, run_id: str) -> list[dict]:
             "ok": len([r for r in rows if r.get("status") == "ok"]),
             "failed": len([r for r in rows if r.get("status") == "failed"]),
             "skipped": len([r for r in rows if r.get("status") == "skipped"]),
+            "image_text_reviewed": len([r for r in rows if r.get("image_text_review_status") == "image_text_reviewed"]),
+            "image_text_not_reviewed": len([r for r in rows if r.get("image_text_review_status") == "image_text_not_reviewed"]),
+            "image_text_review_blocked": len([r for r in rows if r.get("image_text_review_status") == "image_text_review_blocked"]),
         },
         "error_records": [],
         "provenance": {"primary_provider": "ocr.space", "fallback_provider": "google_vision"},

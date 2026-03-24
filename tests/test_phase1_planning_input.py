@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from pipeline.run_phase1 import ensure_run_start_inputs_snapshot, load_planning_rows, load_planning_urls
+from pipeline.run_phase1 import BUCKET_NAME, ensure_run_start_inputs_snapshot, load_planning_rows, load_planning_urls
 
 
 def test_phase1_planning_reads_run_snapshot_only() -> None:
@@ -144,6 +144,39 @@ def test_phase1_snapshot_hashes_are_deterministic_for_same_snapshot() -> None:
     assert captured_manifests[0]["artifacts"]["recipes_manifest"]["sha256"] == captured_manifests[1]["artifacts"]["recipes_manifest"]["sha256"]
 
 
+def test_phase1_snapshot_immutable_after_manual_seed_mutation() -> None:
+    initial_seed = {
+        "domain": "example.com",
+        "urls": [{"url": "https://example.com/original", "description": None, "recipe_ids": []}],
+    }
+    mutated_manual_seed = {
+        "domain": "example.com",
+        "urls": [{"url": "https://example.com/mutated", "description": None, "recipe_ids": []}],
+    }
+    recipe_manifest = {"domain": "example.com", "active_recipe_ids": [], "recipes": []}
+
+    artifacts: dict[tuple[str, str, str], object] = {("example.com", "manual", "seed_urls.json"): initial_seed}
+
+    def _write(domain: str, run_id: str, filename: str, payload: object) -> str:
+        artifacts[(domain, run_id, filename)] = payload
+        return f"gs://{BUCKET_NAME}/{domain}/{run_id}/{filename}"
+
+    def _read(domain: str, run_id: str, filename: str):
+        key = (domain, run_id, filename)
+        if key not in artifacts:
+            raise RuntimeError("missing")
+        return artifacts[key]
+
+    with patch("pipeline.run_phase1.read_json_artifact", side_effect=_read), patch(
+        "pipeline.run_phase1.write_json_artifact", side_effect=_write
+    ), patch("pipeline.run_phase1.load_recipes_for_planner", return_value={}):
+        ensure_run_start_inputs_snapshot("example.com", "run-immut")
+        artifacts[("example.com", "manual", "seed_urls.json")] = mutated_manual_seed
+        artifacts[("example.com", "run-immut", "inputs/recipes_manifest.json")] = recipe_manifest
+        rows = load_planning_rows("example.com", "run-immut")
+    assert rows == [{"url": "https://example.com/original", "recipe_ids": []}]
+
+
 def test_phase1_planner_rejects_duplicate_urls() -> None:
     from pipeline.interactive_capture import DeterministicPlanner, DeterminismError
 
@@ -156,3 +189,19 @@ def test_phase1_planner_rejects_duplicate_urls() -> None:
             viewports=["desktop"],
             user_tiers=["guest"],
         )
+
+
+def test_phase1_snapshot_rejects_same_state_across_multiple_recipes_in_one_scope() -> None:
+    seed_payload = {
+        "domain": "example.com",
+        "urls": [{"url": "https://example.com/a", "description": None, "recipe_ids": ["r1", "r2"]}],
+    }
+    recipes = {
+        "r1": SimpleNamespace(recipe_id="r1", url_pattern="/a", steps=(), capture_points=(SimpleNamespace(state="menu_open"),)),
+        "r2": SimpleNamespace(recipe_id="r2", url_pattern="/a", steps=(), capture_points=(SimpleNamespace(state="menu_open"),)),
+    }
+    with patch("pipeline.run_phase1.read_json_artifact", side_effect=[RuntimeError("missing"), seed_payload]), patch(
+        "pipeline.run_phase1.load_recipes_for_planner", return_value=recipes
+    ), patch("pipeline.run_phase1.write_json_artifact"):
+        with pytest.raises(RuntimeError, match="Ambiguous planning scope"):
+            ensure_run_start_inputs_snapshot("example.com", "run-overlap")

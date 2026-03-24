@@ -104,6 +104,18 @@ def ensure_run_start_inputs_snapshot(domain: str, run_id: str) -> dict:
         "active_recipe_ids": active_recipe_ids,
         "recipes": [_serialize_recipe(recipes[recipe_id]) for recipe_id in active_recipe_ids],
     }
+    for row in planning_rows:
+        recipe_ids_for_url = [rid for rid in row.get("recipe_ids", []) if rid in recipes]
+        state_owners: dict[str, str] = {}
+        for rid in recipe_ids_for_url:
+            for point in recipes[rid].capture_points:
+                owner = state_owners.get(point.state)
+                if owner and owner != rid:
+                    raise RuntimeError(
+                        f"Ambiguous planning scope for url={row['url']}: state={point.state!r} "
+                        f"appears in multiple recipes ({owner}, {rid}); disambiguate recipe selection."
+                    )
+                state_owners[point.state] = rid
 
     seed_snapshot_name = "inputs/seed_urls.snapshot.json"
     recipe_manifest_name = "inputs/recipes_manifest.json"
@@ -226,6 +238,7 @@ def build_exact_context_job(
     user_tier: str | None,
     recipe_id: str | None = None,
     capture_point_id: str | None = None,
+    interaction_trace_hash: str | None = None,
 ) -> CaptureJob:
     recipes = load_recipes_for_planner(domain)
     recipe_ids: list[str] = []
@@ -233,42 +246,28 @@ def build_exact_context_job(
     resolved_recipe_id: str | None = None
     resolved_capture_point_id: str | None = None
     if state != "baseline":
-        if bool(recipe_id) != bool(capture_point_id):
-            raise RuntimeError("Exact-context rerun requires both recipe_id and capture_point_id together")
-        if recipe_id and capture_point_id:
-            if recipe_id not in recipes:
-                raise RuntimeError(f"Unknown recipe_id={recipe_id!r} for exact-context rerun")
-            recipe = recipes[recipe_id]
-            matching_points = [point for point in recipe.capture_points if point.capture_point_id == capture_point_id]
-            if not matching_points:
-                raise RuntimeError(f"No capture point found for recipe_id={recipe_id!r} capture_point_id={capture_point_id!r}")
-            if len(matching_points) > 1:
-                raise RuntimeError(f"Ambiguous capture_point_id={capture_point_id!r} within recipe_id={recipe_id!r}")
-            resolved_point = matching_points[0]
-            if state and resolved_point.state != state:
-                raise RuntimeError(
-                    f"State mismatch for recipe_id={recipe_id!r} capture_point_id={capture_point_id!r}: "
-                    f"expected {resolved_point.state!r}, got {state!r}"
-                )
-            resolved_recipe_id = recipe_id
-            resolved_state = resolved_point.state
-            resolved_capture_point_id = capture_point_id
-            recipe_ids = [resolved_recipe_id]
-        else:
-            # Compatibility path for legacy clients still sending only state.
-            candidates: list[tuple[str, CapturePoint]] = []
-            for candidate_recipe_id, recipe in recipes.items():
-                for point in recipe.capture_points:
-                    if point.state == state:
-                        candidates.append((candidate_recipe_id, point))
-            if not candidates:
-                raise RuntimeError("No recipe capture point matches exact-context resolver inputs")
-            if len(candidates) > 1:
-                raise RuntimeError(f"Ambiguous state={state!r}; provide recipe_id + capture_point_id")
-            resolved_recipe_id, resolved_point = candidates[0]
-            resolved_state = resolved_point.state
-            resolved_capture_point_id = resolved_point.capture_point_id
-            recipe_ids = [resolved_recipe_id]
+        if not recipe_id or not capture_point_id:
+            raise RuntimeError("Exact-context non-baseline rerun requires recipe_id + capture_point_id + interaction_trace_hash")
+        if not interaction_trace_hash:
+            raise RuntimeError("Exact-context non-baseline rerun requires interaction_trace_hash")
+        if recipe_id not in recipes:
+            raise RuntimeError(f"Unknown recipe_id={recipe_id!r} for exact-context rerun")
+        recipe = recipes[recipe_id]
+        matching_points = [point for point in recipe.capture_points if point.capture_point_id == capture_point_id]
+        if not matching_points:
+            raise RuntimeError(f"No capture point found for recipe_id={recipe_id!r} capture_point_id={capture_point_id!r}")
+        if len(matching_points) > 1:
+            raise RuntimeError(f"Ambiguous capture_point_id={capture_point_id!r} within recipe_id={recipe_id!r}")
+        resolved_point = matching_points[0]
+        if state and resolved_point.state != state:
+            raise RuntimeError(
+                f"State mismatch for recipe_id={recipe_id!r} capture_point_id={capture_point_id!r}: "
+                f"expected {resolved_point.state!r}, got {state!r}"
+            )
+        resolved_recipe_id = recipe_id
+        resolved_state = resolved_point.state
+        resolved_capture_point_id = capture_point_id
+        recipe_ids = [resolved_recipe_id]
     elif recipe_id or capture_point_id:
         raise RuntimeError("baseline context must not include recipe_id/capture_point_id")
 
@@ -541,6 +540,12 @@ async def main(
                 interaction_trace_hash=compute_interaction_trace_hash(trace_steps),
             )
             if rerun_provenance is not None:
+                expected_trace_hash = str(rerun_provenance.get("interaction_trace_hash", "")).strip()
+                actual_trace_hash = str(capture_result["page"].get("interaction_trace_hash", "")).strip()
+                if expected_trace_hash and expected_trace_hash != actual_trace_hash:
+                    raise RuntimeError(
+                        f"interaction_trace_hash mismatch: expected {expected_trace_hash!r}, got {actual_trace_hash!r}"
+                    )
                 rerun_provenance_payload["interaction_trace_hash"] = capture_result["page"].get("interaction_trace_hash")
                 rerun_provenance_payload["recipe_id"] = job.recipe_id
                 rerun_provenance_payload["capture_point_id"] = job.capture_point_id
@@ -665,8 +670,19 @@ def run_exact_context(
     original_context_id: str | None = None,
     recipe_id: str | None = None,
     capture_point_id: str | None = None,
+    interaction_trace_hash: str | None = None,
 ):
-    job = build_exact_context_job(domain, url, language, viewport_kind, state, user_tier, recipe_id=recipe_id, capture_point_id=capture_point_id)
+    job = build_exact_context_job(
+        domain,
+        url,
+        language,
+        viewport_kind,
+        state,
+        user_tier,
+        recipe_id=recipe_id,
+        capture_point_id=capture_point_id,
+        interaction_trace_hash=interaction_trace_hash,
+    )
     provenance = {
         "url": url,
         "viewport_kind": viewport_kind,
@@ -675,6 +691,7 @@ def run_exact_context(
         "original_capture_context_id": original_context_id,
         "recipe_id": job.recipe_id,
         "capture_point_id": job.capture_point_id,
+        "interaction_trace_hash": interaction_trace_hash,
     }
     return asyncio.run(main(domain, run_id, language, viewport_kind, state, user_tier, jobs_override=[job], rerun_provenance=provenance))
 

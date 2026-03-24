@@ -258,6 +258,18 @@ The Phase 6 pipeline consists of:
 - **Provider layer** (`phase6_providers.py`): supplies curated EN and target-language items, pairing metadata, and evidence sources. Includes `LLMReviewProvider` with batched review support and configurable token budgeting.
 - **Review layer** (`phase6_review.py`): runs deterministic and AI-assisted checks over paired items to identify suspicious localization cases. Includes `PreparedReviewInputs` dataclass and `prepare_review_inputs` function to centralize normalization, OCR selection/quality assessment, and dynamic counter normalization.
 - **Runner** (`run_phase6.py`): orchestrates the pipeline, manages artifact I/O, and persists issues. Precomputes `prepare_review_inputs` for finalized item pairs and calls `provider.prefetch_reviews` when available to warm a single batched request before per-item review calls.
+- **Pairing layer** (`run_phase6.py`): deterministic EN↔target pairing is tiered: exact `logical_match_key`, then deterministic fallback scorer, and only then `MISSING_TRANSLATION` when no viable candidate exists.
+- **Coverage layer** (`phase4_ocr.py` + `run_phase6.py`): image text review coverage is tracked separately using `image_text_reviewed`, `image_text_not_reviewed`, `image_text_review_blocked` and persisted in `coverage_gaps.json`.
+
+### 12.1.1 Required review mode
+
+Phase 6 execution requires explicit mode selection via CLI or `PHASE6_REVIEW_PROVIDER`:
+
+- `test-heuristic`
+- `disabled`
+- `llm`
+
+There is no implicit production default mode.
 
 ### 12.2 Dynamic counter normalization
 

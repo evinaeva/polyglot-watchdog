@@ -65,11 +65,12 @@ class ReviewAndRerunTests(unittest.TestCase):
                 "viewport_kind": "desktop",
                 "state": "guest",
                 "language": "en",
-                "capture_context_id": "ctx-1",
-                "recipe_id": "profile",
-                "capture_point_id": "cp-1",
-            }
-        )
+                    "capture_context_id": "ctx-1",
+                    "recipe_id": "profile",
+                    "capture_point_id": "cp-1",
+                    "interaction_trace_hash": "a" * 40,
+                }
+            )
         self.assertEqual(payload["capture_context_id"], "ctx-1")
         self.assertEqual(payload["recipe_id"], "profile")
         self.assertEqual(payload["capture_point_id"], "cp-1")
@@ -104,6 +105,22 @@ class ReviewAndRerunTests(unittest.TestCase):
                 }
             )
 
+    def test_rerun_payload_rejects_missing_interaction_trace_hash_for_non_baseline(self):
+        with self.assertRaisesRegex(ValueError, "interaction_trace_hash"):
+            _parse_rerun_payload(
+                {
+                    "domain": "example.com",
+                    "run_id": "r1",
+                    "url": "https://example.com/",
+                    "viewport_kind": "desktop",
+                    "state": "profile_open",
+                    "language": "en",
+                    "capture_context_id": "ctx-1",
+                    "recipe_id": "profile",
+                    "capture_point_id": "cp-1",
+                }
+            )
+
     def test_exact_context_job_resolves_single_job(self):
         recipes = {
             "profile": Recipe(
@@ -123,6 +140,7 @@ class ReviewAndRerunTests(unittest.TestCase):
                 user_tier="guest",
                 recipe_id="profile",
                 capture_point_id="cp-profile-open",
+                interaction_trace_hash="a" * 40,
             )
         self.assertEqual(job.context.url, "https://example.com/profile")
         self.assertEqual(job.context.state, "profile_open")
@@ -146,7 +164,7 @@ class ReviewAndRerunTests(unittest.TestCase):
             ),
         }
         with patch("pipeline.run_phase1.load_recipes_for_planner", return_value=recipes):
-            with self.assertRaisesRegex(RuntimeError, "Ambiguous state"):
+            with self.assertRaisesRegex(RuntimeError, "requires recipe_id"):
                 build_exact_context_job(
                     domain="example.com",
                     url="https://example.com/profile",
@@ -176,6 +194,7 @@ class ReviewAndRerunTests(unittest.TestCase):
                     user_tier="guest",
                     recipe_id="profile",
                     capture_point_id="cp-profile-open",
+                    interaction_trace_hash="a" * 40,
                 )
 
     def test_exact_context_rerun_includes_provenance_link(self):
@@ -201,6 +220,7 @@ class ReviewAndRerunTests(unittest.TestCase):
                 original_context_id="ctx-orig",
                 recipe_id="profile",
                 capture_point_id="cp-profile-open",
+                interaction_trace_hash="b" * 40,
             )
 
         self.assertTrue(main_mock.called)
@@ -208,6 +228,7 @@ class ReviewAndRerunTests(unittest.TestCase):
         self.assertEqual(kwargs["rerun_provenance"]["original_capture_context_id"], "ctx-orig")
         self.assertEqual(kwargs["rerun_provenance"]["state"], "profile_open")
         self.assertEqual(kwargs["rerun_provenance"]["capture_point_id"], "cp-profile-open")
+        self.assertEqual(kwargs["rerun_provenance"]["interaction_trace_hash"], "b" * 40)
 
 
 if __name__ == "__main__":

@@ -50,6 +50,9 @@ In practical terms, v1.0 means:
 - annotation/review support for baseline, scripted, and universal items;
 - deterministic eligible dataset generation;
 - target-language comparison and issue generation through Phase 6.
+- Phase 6 deterministic logical pairing uses `logical_match_key` first and a deterministic fallback scorer before emitting `MISSING_TRANSLATION`.
+- Image text review coverage is tracked separately from issues via `image_text_review_*` statuses and `coverage_gaps.json`.
+- Phase 6 review mode must be explicitly set (`test-heuristic`, `disabled`, or `llm`); implicit default mode is not allowed.
 
 The following are explicitly **deferred** from blocking v1.0:
 

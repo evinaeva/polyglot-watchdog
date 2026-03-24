@@ -21,7 +21,13 @@
       "ocr_engine",
       "ocr_notes",
       "provider_meta",
-      "status"
+      "status",
+      "asset_hash",
+      "src",
+      "alt",
+      "is_svg",
+      "svg_text",
+      "image_text_review_status"
     ],
     "properties": {
       "item_id": {
@@ -65,7 +71,8 @@
         "type": "string",
         "enum": [
           "ocr.space",
-          "google_vision"
+          "google_vision",
+          "svg_dom"
         ],
         "description": "Primary OCR provider used for this item. ocr.space is the baseline; google_vision may be used as a fallback when ocr.space is unavailable or produces unusable text."
       },
@@ -93,6 +100,29 @@
           "failed"
         ],
         "description": "ok: OCR produced usable normalized text; skipped: OCR intentionally not attempted for a non-error reason; failed: OCR attempted/expected but no valid text could be produced."
+      },
+      "asset_hash": {
+        "type": "string"
+      },
+      "src": {
+        "type": "string"
+      },
+      "alt": {
+        "type": "string"
+      },
+      "is_svg": {
+        "type": "boolean"
+      },
+      "svg_text": {
+        "type": "string"
+      },
+      "image_text_review_status": {
+        "type": "string",
+        "enum": [
+          "image_text_reviewed",
+          "image_text_not_reviewed",
+          "image_text_review_blocked"
+        ]
       }
     },
     "allOf": [

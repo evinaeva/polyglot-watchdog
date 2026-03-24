@@ -43,6 +43,75 @@
       },
       "mask_applied": {
         "type": "boolean"
+      },
+      "page_canonical_key": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "pattern": "^[a-f0-9]{40}$"
+      },
+      "logical_match_key": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "pattern": "^[a-f0-9]{40}$"
+      },
+      "path_signature": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "container_signature": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "normalized_ordinal": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "minimum": 0
+      },
+      "semantic_hint": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "tag": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "attributes": {
+        "type": [
+          "object",
+          "null"
+        ]
+      },
+      "state": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "user_tier": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "viewport_kind": {
+        "type": [
+          "string",
+          "null"
+        ]
       }
     }
   }

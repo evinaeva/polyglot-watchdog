@@ -16,6 +16,7 @@ Output:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -71,6 +72,124 @@ def _index_collected(items: list[dict]) -> dict[str, dict]:
 
 def _index_screenshots(rows: list[dict]) -> dict[str, dict]:
     return {r["page_id"]: r for r in rows}
+
+
+def _jaccard_similarity(a: str, b: str) -> float:
+    a_set = {token for token in (a or "").split(">") if token}
+    b_set = {token for token in (b or "").split(">") if token}
+    if not a_set and not b_set:
+        return 1.0
+    union = a_set | b_set
+    if not union:
+        return 0.0
+    return len(a_set & b_set) / len(union)
+
+
+def _fallback_match_score(en_item: dict, target_item: dict) -> tuple[float, dict[str, float]]:
+    breakdown: dict[str, float] = {}
+    same_tag = str(en_item.get("tag", "")).lower() == str(target_item.get("tag", "")).lower()
+    breakdown["tag_compatibility"] = 0.25 if same_tag else 0.0
+    same_type = str(en_item.get("element_type", "")).lower() == str(target_item.get("element_type", "")).lower()
+    breakdown["element_type_compatibility"] = 0.15 if same_type else 0.0
+    breakdown["container_similarity"] = round(_jaccard_similarity(str(en_item.get("container_signature", "")), str(target_item.get("container_signature", ""))) * 0.2, 4)
+    breakdown["path_similarity"] = round(_jaccard_similarity(str(en_item.get("path_signature", "")), str(target_item.get("path_signature", ""))) * 0.2, 4)
+    en_ord = int(en_item.get("normalized_ordinal", 0) or 0)
+    tgt_ord = int(target_item.get("normalized_ordinal", 0) or 0)
+    breakdown["ordinal_proximity"] = 0.1 if abs(en_ord - tgt_ord) <= 1 else 0.0
+    sem_en = str(en_item.get("semantic_hint", "")).strip()
+    sem_tgt = str(target_item.get("semantic_hint", "")).strip()
+    breakdown["semantic_hint"] = 0.1 if sem_en and sem_en == sem_tgt else 0.0
+    score = round(sum(breakdown.values()), 4)
+    return score, breakdown
+
+
+def _pair_items(en_items: list[dict], target_items: list[dict]) -> list[dict]:
+    target_by_logical: dict[str, list[dict]] = {}
+    for item in target_items:
+        logical = str(item.get("logical_match_key", "")).strip()
+        if logical:
+            target_by_logical.setdefault(logical, []).append(item)
+    for logical in target_by_logical:
+        target_by_logical[logical].sort(key=lambda i: i.get("item_id", ""))
+
+    used_target_ids: set[str] = set()
+    pairs: list[dict] = []
+    for en_item in sorted(en_items, key=lambda i: i.get("item_id", "")):
+        logical = str(en_item.get("logical_match_key", "")).strip()
+        if logical and logical in target_by_logical:
+            candidates = [c for c in target_by_logical[logical] if c.get("item_id") not in used_target_ids]
+            if len(candidates) == 1:
+                target = candidates[0]
+                used_target_ids.add(str(target.get("item_id", "")))
+                pairs.append({
+                    "en_item": en_item,
+                    "target_item": target,
+                    "pairing_basis": "logical_match_key",
+                    "pairing_confidence": 1.0,
+                    "logical_match_key": logical,
+                    "matched_target_item_id": target.get("item_id"),
+                    "fallback_score_breakdown": {},
+                })
+                continue
+            if len(candidates) > 1:
+                pairs.append({
+                    "en_item": en_item,
+                    "target_item": None,
+                    "pairing_basis": "logical_match_key_ambiguous",
+                    "pairing_confidence": 0.0,
+                    "logical_match_key": logical,
+                    "matched_target_item_id": None,
+                    "fallback_score_breakdown": {"candidate_count": float(len(candidates))},
+                })
+                continue
+
+        pool = [
+            item
+            for item in target_items
+            if item.get("item_id") not in used_target_ids
+            and str(item.get("state", "")) == str(en_item.get("state", ""))
+            and str(item.get("page_canonical_key", "")) == str(en_item.get("page_canonical_key", ""))
+        ]
+        scored = []
+        for candidate in sorted(pool, key=lambda i: i.get("item_id", "")):
+            score, breakdown = _fallback_match_score(en_item, candidate)
+            scored.append((score, candidate, breakdown))
+        scored.sort(key=lambda row: (-row[0], str(row[1].get("item_id", ""))))
+        if not scored:
+            pairs.append({
+                "en_item": en_item,
+                "target_item": None,
+                "pairing_basis": "no_candidate",
+                "pairing_confidence": 0.0,
+                "logical_match_key": logical,
+                "matched_target_item_id": None,
+                "fallback_score_breakdown": {},
+            })
+            continue
+        best_score, best_item, best_breakdown = scored[0]
+        second_score = scored[1][0] if len(scored) > 1 else -1.0
+        if best_score < 0.55 or abs(best_score - second_score) < 0.03:
+            pairs.append({
+                "en_item": en_item,
+                "target_item": None,
+                "pairing_basis": "fallback_ambiguous_or_low_confidence",
+                "pairing_confidence": best_score,
+                "logical_match_key": logical,
+                "matched_target_item_id": None,
+                "fallback_score_breakdown": best_breakdown,
+            })
+            continue
+        used_target_ids.add(str(best_item.get("item_id", "")))
+        pairs.append({
+            "en_item": en_item,
+            "target_item": best_item,
+            "pairing_basis": "fallback_scorer",
+            "pairing_confidence": best_score,
+            "logical_match_key": logical,
+            "matched_target_item_id": best_item.get("item_id"),
+            "fallback_score_breakdown": best_breakdown,
+        })
+    return pairs
 
 
 def _build_evidence(target_item: dict, target_collected_by_item: dict[str, dict], target_screens_by_page: dict[str, dict]) -> dict:
@@ -145,7 +264,10 @@ def _resolve_review_mode(review_mode: str | None, require_explicit_mode: bool) -
             "Phase 6 review mode must be set explicitly via --review-mode or PHASE6_REVIEW_PROVIDER. "
             "Supported modes: test-heuristic, disabled, llm"
         )
-    return "test-heuristic"
+    raise ValueError(
+        "Phase 6 review mode must be set explicitly via --review-mode or PHASE6_REVIEW_PROVIDER. "
+        "Supported modes: test-heuristic, disabled, llm"
+    )
 
 
 def run(
@@ -154,7 +276,7 @@ def run(
     target_run_id: str,
     review_mode: str | None = None,
     *,
-    require_explicit_mode: bool = False,
+    require_explicit_mode: bool = True,
 ) -> list[dict]:
     en_eligible = read_json_artifact(domain, en_run_id, "eligible_dataset.json")
     target_eligible = read_json_artifact(domain, target_run_id, "eligible_dataset.json")
@@ -165,8 +287,9 @@ def run(
     en_screens = read_json_artifact(domain, en_run_id, "page_screenshots.json")
     target_screens = read_json_artifact(domain, target_run_id, "page_screenshots.json")
 
-    en_by_item = {i["item_id"]: i for i in en_eligible if i.get("language") == "en"}
-    target_by_item = {i["item_id"]: dict(i) for i in target_eligible if i.get("language") != "en"}
+    en_items = [dict(i) for i in en_eligible if i.get("language") == "en"]
+    target_items = [dict(i) for i in target_eligible if i.get("language") != "en"]
+    target_by_item = {i["item_id"]: i for i in target_items}
     ocr_by_item = _load_phase4_ocr_by_item(domain, target_run_id)
     for item_id, item in target_by_item.items():
         ocr_row = ocr_by_item.get(item_id, {})
@@ -189,19 +312,25 @@ def run(
     provider = build_provider(mode=_resolve_review_mode(review_mode, require_explicit_mode=require_explicit_mode))
     if hasattr(provider, "prefetch_reviews"):
         prefetch_pairs = []
-        for item_id in sorted(en_by_item.keys()):
-            if item_id not in target_by_item:
+        for pair in _pair_items(en_items, target_items):
+            if pair["target_item"] is None:
                 continue
-            prepared = prepare_review_inputs(en_by_item[item_id], target_by_item[item_id])
+            prepared = prepare_review_inputs(pair["en_item"], pair["target_item"])
             prefetch_pairs.append((prepared.en_text, prepared.target_text))
         provider.prefetch_reviews(prefetch_pairs, target_language)
 
     issues: list[dict] = []
-
-    for item_id in sorted(en_by_item.keys()):
-        en_item = en_by_item[item_id]
-        t_item = target_by_item.get(item_id)
+    pairing_records = _pair_items(en_items, target_items)
+    for pairing in pairing_records:
+        en_item = pairing["en_item"]
+        t_item = pairing["target_item"]
         evidence_base = _build_evidence(t_item, target_collected_by_item, target_screens_by_page) if t_item else _build_missing_target_evidence(en_item, en_collected_by_item, en_screens_by_page)
+        evidence_base["pairing_basis"] = pairing["pairing_basis"]
+        evidence_base["pairing_confidence"] = pairing["pairing_confidence"]
+        evidence_base["logical_match_key"] = pairing["logical_match_key"]
+        evidence_base["matched_target_item_id"] = pairing["matched_target_item_id"]
+        evidence_base["fallback_score_breakdown"] = pairing["fallback_score_breakdown"]
+        evidence_base["item_id"] = en_item.get("item_id", "")
         issues.extend(
             review_pair(
                 ReviewContext(
@@ -226,13 +355,39 @@ def run(
         sys.exit(1)
 
     write_json_artifact(domain, target_run_id, "issues.json", issues)
+    coverage_gaps = []
+    image_targets = [
+        item for item in target_items
+        if _is_image_item(item) or _is_image_item(target_collected_by_item.get(item.get("item_id", ""), {}))
+    ]
+    for target in sorted(image_targets, key=lambda r: (str(r.get("item_id", "")), str(r.get("url", "")))):
+        item_id = str(target.get("item_id", ""))
+        ocr_row = ocr_by_item.get(item_id, {})
+        status = str(ocr_row.get("image_text_review_status", "image_text_not_reviewed"))
+        if status == "image_text_reviewed":
+            continue
+        reason = list(ocr_row.get("ocr_notes", [])) if ocr_row else ["phase4_ocr_missing_row"]
+        coverage_gaps.append({
+            "item_id": item_id,
+            "url": target.get("url", ""),
+            "status": status,
+            "reason": reason,
+            "logical_match_key": target.get("logical_match_key"),
+        })
+    validate("coverage_gaps", coverage_gaps)
+    coverage_uri = write_json_artifact(domain, target_run_id, "coverage_gaps.json", coverage_gaps)
+    if not isinstance(coverage_uri, str) or not coverage_uri:
+        coverage_uri = f"gs://{BUCKET_NAME}/{domain}/{target_run_id}/coverage_gaps.json"
     manifest = {
         "schema_version": "v1.0",
         "phase": "phase6",
         "run_id": target_run_id,
         "domain": domain,
-        "artifact_uris": [f"gs://{BUCKET_NAME}/{domain}/{target_run_id}/issues.json"],
-        "summary_counters": {"issues": len(issues)},
+        "artifact_uris": [
+            f"gs://{BUCKET_NAME}/{domain}/{target_run_id}/issues.json",
+            coverage_uri,
+        ],
+        "summary_counters": {"issues": len(issues), "coverage_gaps": len(coverage_gaps)},
         "error_records": [],
         "provenance": {"en_run_id": en_run_id, "target_run_id": target_run_id},
     }

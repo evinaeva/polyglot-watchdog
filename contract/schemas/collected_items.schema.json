@@ -115,6 +115,27 @@
           "object",
           "null"
         ]
+      },
+      "page_canonical_key": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{40}$"
+      },
+      "logical_match_key": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{40}$"
+      },
+      "path_signature": {
+        "type": "string"
+      },
+      "container_signature": {
+        "type": "string"
+      },
+      "normalized_ordinal": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "semantic_hint": {
+        "type": "string"
       }
     },
     "allOf": [

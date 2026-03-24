@@ -90,6 +90,13 @@
           }
         }
       },
+      "page_canonical_key": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "pattern": "^[a-f0-9]{40}$"
+      },
       "recipe_id": {
         "type": [
           "string",

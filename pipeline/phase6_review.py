@@ -275,6 +275,7 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
     target_item = context.target_item
 
     prepared = prepare_review_inputs(en_item, target_item)
+    pairing_basis = str(context.evidence_base.get("pairing_basis", "item_id"))
     is_dynamic_counter = prepared.is_dynamic_counter
     en_text = prepared.en_text
 
@@ -288,7 +289,7 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             review_class="OTHER",
             reason=reason,
             signals=signals,
-            pairing_basis="item_id",
+            pairing_basis=pairing_basis,
         )
         message = "Missing target element for EN reference item"
         return [
@@ -341,7 +342,7 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             review_class="PLACEHOLDER",
             reason=reason,
             signals=signals,
-            pairing_basis="item_id",
+            pairing_basis=pairing_basis,
             ocr_text=ocr_text,
             ocr_engine=ocr_engine,
         )
@@ -368,7 +369,7 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             review_class="MEANING",
             reason=reason,
             signals=signals,
-            pairing_basis="item_id",
+            pairing_basis=pairing_basis,
             ocr_text=ocr_text,
             ocr_engine=ocr_engine,
         )
@@ -398,7 +399,7 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             signals=signals,
             provider_notes=spelling_grammar.notes,
             provider_meta=spelling_grammar.provider_meta,
-            pairing_basis="item_id",
+            pairing_basis=pairing_basis,
             ocr_text=ocr_text,
             ocr_engine=ocr_engine,
         )
@@ -425,7 +426,7 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             signals=signals,
             provider_notes=spelling_grammar.notes,
             provider_meta=spelling_grammar.provider_meta,
-            pairing_basis="item_id",
+            pairing_basis=pairing_basis,
             ocr_text=ocr_text,
             ocr_engine=ocr_engine,
         )
@@ -454,7 +455,7 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             signals=signals,
             provider_notes=meaning.notes,
             provider_meta=meaning.provider_meta,
-            pairing_basis="item_id",
+            pairing_basis=pairing_basis,
             ocr_text=ocr_text,
             ocr_engine=ocr_engine,
         )
@@ -482,7 +483,7 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             review_class="OCR_NOISE",
             reason=reason,
             signals=signals,
-            pairing_basis="item_id",
+            pairing_basis=pairing_basis,
             ocr_text=ocr_text,
             ocr_engine=ocr_engine,
             provider_notes=[f"ocr_quality_flags:{','.join(ocr_quality['flags'])}"] if ocr_quality["flags"] else None,

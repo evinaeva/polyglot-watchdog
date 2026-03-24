@@ -22,6 +22,12 @@ def _base_artifacts(target_item_overrides=None):
         "visible": True,
         "tag": "p",
         "attributes": None,
+        "page_canonical_key": "pc-1",
+        "logical_match_key": "lm-1",
+        "path_signature": "main>p",
+        "container_signature": "main",
+        "normalized_ordinal": 1,
+        "semantic_hint": "",
     }
     target_item = {
         "item_id": "item-1",
@@ -38,6 +44,12 @@ def _base_artifacts(target_item_overrides=None):
         "visible": True,
         "tag": "p",
         "attributes": None,
+        "page_canonical_key": "pc-1",
+        "logical_match_key": "lm-1",
+        "path_signature": "main>p",
+        "container_signature": "main",
+        "normalized_ordinal": 1,
+        "semantic_hint": "",
     }
     if target_item_overrides:
         target_item.update(target_item_overrides)
@@ -68,7 +80,8 @@ def test_review_class_mapping_and_rich_evidence_for_placeholder():
     assert issue["evidence"]["review_class"] == "PLACEHOLDER"
     assert issue["evidence"]["reason"]
     assert "signals" in issue["evidence"]
-    assert issue["evidence"]["pairing_basis"] == "item_id"
+    assert issue["evidence"]["pairing_basis"] == "logical_match_key"
+    assert issue["evidence"]["matched_target_item_id"] == "item-1"
     assert issue["evidence"]["text_en"] == "Buy now <name>"
     assert issue["evidence"]["text_target"] == "Acheter %s"
 
@@ -475,3 +488,55 @@ def test_run_fails_fast_when_explicit_review_mode_required_and_omitted():
         "os.environ", {}, clear=True
     ), pytest.raises(ValueError, match="must be set explicitly"):
         run("example.com", "run-en", "run-fr", require_explicit_mode=True)
+
+
+def test_default_run_requires_explicit_review_mode_now():
+    artifacts = _base_artifacts()
+    with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+    ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"), patch.dict(
+        "os.environ", {}, clear=True
+    ), pytest.raises(ValueError, match="must be set explicitly"):
+        run("example.com", "run-en", "run-fr")
+
+
+def test_logical_matching_survives_item_id_drift_without_missing_translation():
+    artifacts = _base_artifacts()
+    artifacts[1][0]["item_id"] = "item-target-drifted"
+    artifacts[1][0]["css_selector"] = "main > div > p"
+    artifacts[1][0]["bbox"] = {"x": 25, "y": 30, "width": 11, "height": 9}
+    artifacts[1][0]["logical_match_key"] = "lm-1"
+    writes = []
+
+    def _write(domain, run_id, filename, payload):
+        writes.append((filename, payload))
+
+    with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+    ), patch("pipeline.run_phase6.write_json_artifact", side_effect=_write), patch("pipeline.run_phase6.write_phase_manifest"):
+        issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
+
+    assert not any(issue["category"] == "MISSING_TRANSLATION" for issue in issues)
+    assert all(issue["evidence"]["pairing_basis"] == "logical_match_key" for issue in issues)
+    coverage_payload = next(payload for name, payload in writes if name == "coverage_gaps.json")
+    assert isinstance(coverage_payload, list)
+
+
+def test_ambiguous_fallback_candidates_do_not_force_pairing():
+    artifacts = _base_artifacts()
+    artifacts[0][0]["logical_match_key"] = "lm-en"
+    artifacts[1] = [
+        dict(artifacts[1][0], item_id="t1", logical_match_key="different", path_signature="main>p", container_signature="main", normalized_ordinal=1),
+        dict(artifacts[1][0], item_id="t2", logical_match_key="different2", path_signature="main>p", container_signature="main", normalized_ordinal=1),
+    ]
+    artifacts[3] = [
+        {"item_id": "t1", "page_id": "fr-page-1", "bbox": {"x": 1, "y": 2, "width": 3, "height": 4}},
+        {"item_id": "t2", "page_id": "fr-page-1", "bbox": {"x": 1, "y": 2, "width": 3, "height": 4}},
+    ]
+    with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+    ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
+        issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
+    missing = next(issue for issue in issues if issue["category"] == "MISSING_TRANSLATION")
+    assert missing["evidence"]["pairing_basis"] == "fallback_ambiguous_or_low_confidence"
+    assert missing["evidence"]["matched_target_item_id"] is None

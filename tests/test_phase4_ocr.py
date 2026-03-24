@@ -61,24 +61,15 @@ def test_ocrspace_request_path_with_engine3_and_base64(monkeypatch):
 
 def test_ocrspace_missing_key_and_malformed_response_are_non_fatal(monkeypatch):
     monkeypatch.delenv("OCR_SPACE_API_KEY", raising=False)
-    skipped = ocrspace_extract_text(
-        _tiny_png_bytes(),
-        vision_client_factory=lambda: _FakeVisionClient(_FakeVisionResponse("fallback text")),
-    )
-    assert skipped["status"] == "ok"
-    assert skipped["ocr_provider"] == "google_vision"
-    assert "used_fallback_from_ocr.space" in skipped["ocr_notes"]
+    skipped = ocrspace_extract_text(_tiny_png_bytes())
+    assert skipped["status"] == "skipped"
+    assert skipped["ocr_provider"] == "ocr.space"
+    assert "missing_api_key" in skipped["ocr_notes"]
 
     monkeypatch.setenv("OCR_SPACE_API_KEY", "test-key")
-    malformed = ocrspace_extract_text(
-        _tiny_png_bytes(),
-        request_fn=lambda *_: _FakeResponse(["not-a-dict"]),
-        vision_client_factory=lambda: _FakeVisionClient(_FakeVisionResponse()),
-    )
+    malformed = ocrspace_extract_text(_tiny_png_bytes(), request_fn=lambda *_: _FakeResponse(["not-a-dict"]))
     assert malformed["status"] == "failed"
     assert "malformed_response" in malformed["ocr_notes"]
-    assert "fallback_empty_text" in malformed["ocr_notes"]
-    assert "fallback_failed" in malformed["ocr_notes"]
 
 
 def test_ocrspace_success_keeps_primary_provider(monkeypatch):
@@ -94,15 +85,16 @@ def test_ocrspace_success_keeps_primary_provider(monkeypatch):
 
 def test_ocrspace_empty_text_falls_back_to_google_vision(monkeypatch):
     monkeypatch.setenv("OCR_SPACE_API_KEY", "test-key")
-    result = ocrspace_extract_text(
-        _tiny_png_bytes(),
-        request_fn=lambda *_: _FakeResponse({"IsErroredOnProcessing": False, "ParsedResults": [{"ParsedText": "   \n\t"}]}),
-        vision_client_factory=lambda: _FakeVisionClient(_FakeVisionResponse(" Vision text ")),
-    )
+    monkeypatch.setenv("GOOGLE_VISION_API_KEY", "vision-key")
+    with patch("pipeline.phase4_ocr_provider._default_request", return_value=_FakeResponse({"IsErroredOnProcessing": False, "ParsedResults": [{"ParsedText": "   \n\t"}]})), patch(
+        "pipeline.phase4_ocr_provider._default_google_request",
+        return_value=_FakeResponse({"responses": [{"fullTextAnnotation": {"text": " Vision text "}}]}),
+    ):
+        result = extract_text_with_ocrspace_fallback(_tiny_png_bytes())
     assert result["status"] == "ok"
     assert result["ocr_text"] == "Vision text"
     assert result["ocr_provider"] == "google_vision"
-    assert "used_fallback_from_ocr.space" in result["ocr_notes"]
+    assert "fallback_from_ocr_space" in result["ocr_notes"]
 
 
 def test_fallback_uses_google_vision_and_reports_deterministic_metadata(monkeypatch):
@@ -173,44 +165,42 @@ def test_fallback_metadata_contains_short_error_summaries():
 def test_ocrspace_falls_back_to_google_on_non_usable_outcome(monkeypatch):
     monkeypatch.delenv("OCR_SPACE_API_KEY", raising=False)
     with patch(
-        "pipeline.phase4_ocr_provider._googlevision_extract_text",
+        "pipeline.phase4_ocr_provider.google_vision_extract_text",
         return_value={
             "status": "ok",
             "ocr_text": "Bonjour",
-            "ocr_provider": "google.vision",
+            "ocr_provider": "google_vision",
             "ocr_engine": "text_detection",
             "ocr_notes": ["fallback_from_ocrspace"],
-            "provider_meta": {"provider": "google.vision"},
+            "provider_meta": {"provider": "google_vision"},
         },
     ):
-        result = ocrspace_extract_text(_tiny_png_bytes())
+        result = extract_text_with_ocrspace_fallback(_tiny_png_bytes())
 
     assert result["status"] == "ok"
-    assert result["ocr_provider"] == "ocr.space"
-    assert result["ocr_engine"] == "3"
+    assert result["ocr_provider"] == "google_vision"
+    assert result["ocr_engine"] == "text_detection"
     assert result["ocr_text"] == "Bonjour"
-    assert "fallback_google_vision" in result["ocr_notes"]
-    assert result["provider_meta"]["fallback"]["provider"] == "google.vision"
+    assert "fallback_from_ocr_space" in result["ocr_notes"]
 
 
 def test_ocrspace_preserves_original_failure_when_google_fallback_fails(monkeypatch):
     monkeypatch.setenv("OCR_SPACE_API_KEY", "test-key")
     with patch(
-        "pipeline.phase4_ocr_provider._googlevision_extract_text",
+        "pipeline.phase4_ocr_provider.google_vision_extract_text",
         return_value={
             "status": "failed",
             "ocr_text": "",
-            "ocr_provider": "google.vision",
+            "ocr_provider": "google_vision",
             "ocr_engine": "text_detection",
             "ocr_notes": ["request_failed"],
-            "provider_meta": {"provider": "google.vision"},
+            "provider_meta": {"provider": "google_vision"},
         },
     ):
-        result = ocrspace_extract_text(_tiny_png_bytes(), request_fn=lambda *_: _FakeResponse(["not-a-dict"]))
+        result = extract_text_with_ocrspace_fallback(_tiny_png_bytes())
 
     assert result["status"] == "failed"
-    assert result["ocr_provider"] == "ocr.space"
-    assert result["provider_meta"]["fallback"]["provider"] == "google.vision"
+    assert result["ocr_provider"] == "google_vision"
 
 
 def test_phase4_rows_include_only_image_backed_items_and_stable_shape():
@@ -236,7 +226,47 @@ def test_phase4_rows_include_only_image_backed_items_and_stable_shape():
     assert rows[0].keys() == {
         "item_id", "page_id", "url", "language", "viewport_kind", "state", "user_tier", "source_image_uri",
         "ocr_text", "ocr_provider", "ocr_engine", "ocr_notes", "provider_meta", "status",
+        "asset_hash", "src", "alt", "is_svg", "svg_text", "image_text_review_status",
     }
+    assert rows[0]["image_text_review_status"] == "image_text_reviewed"
+
+
+def test_phase4_svg_text_extraction_marks_reviewed_without_ocr():
+    eligible = [{"item_id": "svg-1", "page_id": "p1", "url": "https://example.com", "language": "fr"}]
+    collected = [{
+        "item_id": "svg-1",
+        "page_id": "p1",
+        "element_type": "img",
+        "tag": "svg",
+        "text": "<svg><text>Hello SVG</text></svg>",
+        "bbox": {"x": 0, "y": 0, "width": 1, "height": 1},
+        "viewport_kind": "desktop",
+        "state": "baseline",
+        "user_tier": "guest",
+        "attributes": {"src": ""},
+    }]
+    rows = build_phase4_ocr_rows(eligible, collected, [{"page_id": "p1", "storage_uri": ""}], image_fetcher=lambda _: b"", ocr_fn=lambda _: {})
+    assert rows[0]["image_text_review_status"] == "image_text_reviewed"
+    assert rows[0]["svg_text"] == "Hello SVG"
+    assert rows[0]["ocr_provider"] == "svg_dom"
+
+
+def test_phase4_missing_source_marks_blocked_coverage():
+    eligible = [{"item_id": "img-2", "page_id": "p1", "url": "https://example.com", "language": "fr"}]
+    collected = [{
+        "item_id": "img-2",
+        "page_id": "p1",
+        "element_type": "img",
+        "tag": "img",
+        "bbox": {"x": 0, "y": 0, "width": 1, "height": 1},
+        "viewport_kind": "desktop",
+        "state": "baseline",
+        "user_tier": "guest",
+        "attributes": {"src": "https://example.com/a.png", "alt": "promo"},
+    }]
+    rows = build_phase4_ocr_rows(eligible, collected, [{"page_id": "p1", "storage_uri": ""}], image_fetcher=lambda _: b"", ocr_fn=lambda _: {})
+    assert rows[0]["image_text_review_status"] == "image_text_review_blocked"
+    assert rows[0]["alt"] == "promo"
 
 
 
@@ -256,6 +286,12 @@ def _phase4_row(status: str = "ok") -> dict:
         "ocr_notes": [],
         "provider_meta": {"provider": "ocr.space"},
         "status": status,
+        "asset_hash": "abc",
+        "src": "https://example.com/img.png",
+        "alt": "",
+        "is_svg": False,
+        "svg_text": "",
+        "image_text_review_status": "image_text_reviewed" if status == "ok" else "image_text_not_reviewed",
     }
     if status == "skipped":
         row["ocr_notes"] = ["missing_api_key"]
