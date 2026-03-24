@@ -36,10 +36,11 @@ def ocrspace_extract_text(
         }
 
     endpoint = os.getenv("OCR_SPACE_ENDPOINT", OCR_SPACE_ENDPOINT_DEFAULT).strip() or OCR_SPACE_ENDPOINT_DEFAULT
-    timeout_s = float(os.getenv("OCR_SPACE_TIMEOUT_S", "20"))
+    timeout_s = float(os.getenv("OCR_SPACE_TIMEOUT_S", "40"))
     payload = {
         "filetype": "png",
         "OCREngine": "3",
+        "language": "auto",
         "base64Image": "data:image/png;base64," + base64.b64encode(image_bytes).decode("utf-8"),
     }
     headers = {"apikey": api_key}
