@@ -991,3 +991,36 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c2972752e8832cbd17159befff5c81)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #117 — 2026-03-24T14:29:47Z
+
+- Title: OCR: add Vision fallback, extend OCR.Space timeout, and add unit tests
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/117
+- Author: evinaeva
+- Base branch: main
+- Head branch: 4nmm5j-codex/add-unit-tests-for-ocr.space-provider
+- Merge commit: 5ae767fe198fd90563421849cc172614292b6f02
+- Changed files:
+  - tests/test_phase4_ocr_provider.py
+- Description:
+  ### Motivation
+  
+  - Improve OCR reliability by attempting a Vision fallback when OCR.Space does not return usable text.
+  - Reduce spurious OCR.Space failures by increasing the request timeout.
+  - Ensure the new fallback behavior and request defaults are covered by unit tests.
+  
+  ### Description
+  
+  - Replace direct use of `ocrspace_extract_text` with `extract_text_with_fallback` in `pipeline/phase4_ocr.py` and set it as the default `ocr_fn`.
+  - Add a `vision_extract_text` stub and an `extract_text_with_fallback` function in `pipeline/phase4_ocr_provider.py` that returns the primary OCR.Space result when OK and otherwise attempts a Vision fallback.
+  - Increase the default `OCR_SPACE_TIMEOUT_S` from `20` to `40` seconds and add `"language": "auto"` to the OCR.Space request payload.
+  - Add `tests/test_phase4_ocr_provider.py` with unit tests covering successful OCR.Space behavior, fallback invocation, preservation of primary outcomes, and the new timeout/payload defaults.
+  
+  ### Testing
+  
+  - Ran `pytest tests/test_phase4_ocr_provider.py` and all tests in the file passed.
+  - The new tests assert fallback invocation counts, preserved statuses/notes, and that the OCR.Space request uses a `40` second timeout and includes `"language": "auto"` in the payload.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c297188ba8832c9b6bc90abe51393e)
+- Notes: Auto-generated from merged PR metadata.
