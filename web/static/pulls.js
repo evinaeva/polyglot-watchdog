@@ -9,6 +9,8 @@ const pullsWhitelistInput = document.getElementById('pullsWhitelistInput');
 const pullsWhitelistAdd = document.getElementById('pullsWhitelistAdd');
 const pullsWhitelistStatus = document.getElementById('pullsWhitelistStatus');
 const pullsWhitelistChips = document.getElementById('pullsWhitelistChips');
+const pullsPrepareCapturedData = document.getElementById('pullsPrepareCapturedData');
+const pullsPrepareCapturedDataStatus = document.getElementById('pullsPrepareCapturedDataStatus');
 const pullsEligibleControl = document.createElement('section');
 const pullsEligibleGenerateButton = document.createElement('button');
 const pullsEligibleGenerateMessage = document.createElement('p');
@@ -230,6 +232,11 @@ function normalizeElementType(value) {
 function setWhitelistStatus(message, cls = '') {
   pullsWhitelistStatus.className = `muted ${cls}`.trim();
   pullsWhitelistStatus.textContent = message;
+}
+
+function setPrepareCapturedDataStatus(message, cls = '') {
+  pullsPrepareCapturedDataStatus.className = cls;
+  pullsPrepareCapturedDataStatus.textContent = message;
 }
 
 function renderWhitelist() {
@@ -834,7 +841,10 @@ pullsPrepareCapturedData.addEventListener('click', async () => {
       body: JSON.stringify({ domain, run_id: runId }),
     });
     const payload = await safeReadPayload(response);
-    if (!response.ok) throw new Error(payload.error || payload.message || `Failed to prepare captured data (${response.status})`);
+    if (!response.ok) {
+      setPrepareCapturedDataStatus(payload.error || payload.message || `Failed to prepare captured data (${response.status})`, 'error');
+      return;
+    }
     setPrepareCapturedDataStatus('Captured data prepared successfully.', 'ok');
   } catch (err) {
     setPrepareCapturedDataStatus(err.message || 'Failed to prepare captured data.', 'error');
