@@ -9,6 +9,7 @@ const savedUrlsBody = document.getElementById('savedUrlsBody');
 const errorBox = document.getElementById('errorBox');
 const statusBox = document.getElementById('statusBox');
 const continueLink = document.getElementById('continueFirstRun');
+const domainSuggestions = document.getElementById('domainSuggestions');
 let recipes = [];
 
 const SAVE_SUCCESS_TIMEOUT_MS = 2000;
@@ -382,18 +383,21 @@ async function maybeLoadDomains() {
     const payload = await safeReadPayload(response);
     if (!response.ok || !Array.isArray(payload.items) || !payload.items.length) return;
     const selected = selectedDomain() || 'bongacams.com';
-    domainInput.innerHTML = '';
+    const known = new Set();
+    if (domainSuggestions) domainSuggestions.innerHTML = '';
     for (const domain of payload.items) {
+      const value = String(domain || '').trim();
+      if (!value || known.has(value)) continue;
+      known.add(value);
       const option = document.createElement('option');
-      option.value = domain;
-      option.textContent = domain;
-      domainInput.appendChild(option);
+      option.value = value;
+      if (domainSuggestions) {
+        domainSuggestions.appendChild(option);
+      }
     }
-    if (payload.items.includes(selected)) {
-      domainInput.value = selected;
-    }
+    domainInput.value = selected;
   } catch (_error) {
-    // fallback to default domain options in HTML
+    // fallback to default domain suggestions in HTML
   }
 }
 
@@ -476,6 +480,7 @@ clearButton.addEventListener('click', () => mutate('/api/seed-urls/clear', { dom
 
 if (domainInput) {
   domainInput.addEventListener('change', syncContinueLink);
+  domainInput.addEventListener('input', syncContinueLink);
 }
 
 document.addEventListener('pw:i18n:ready', async () => {

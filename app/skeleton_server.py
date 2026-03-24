@@ -560,7 +560,7 @@ def _save_runs(domain: str, payload: dict) -> None:
 
 
 def _en_standard_display_name_today() -> str:
-    return f"EN_standard_{time.strftime('%d.%m.%Y', time.gmtime())}"
+    return f"EN_standard_{time.strftime('%H:%M|%d.%m.%Y', time.gmtime())}"
 
 
 def _default_run_display_name() -> str:
