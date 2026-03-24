@@ -189,6 +189,12 @@ def _build_evidence(evidence_base: dict, en_text: str, target_text: str, review_
         evidence["provider_notes"] = provider_notes
     if provider_meta:
         evidence["provider_meta"] = provider_meta
+        review_mode = str(provider_meta.get("review_mode", "")).strip()
+        if review_mode:
+            evidence["review_mode"] = review_mode
+        confidence_provenance = str(provider_meta.get("confidence_provenance", "")).strip()
+        if confidence_provenance:
+            evidence["confidence_provenance"] = confidence_provenance
     return evidence
 
 

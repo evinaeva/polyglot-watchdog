@@ -135,7 +135,27 @@ def _load_blocked_overlay_pages(domain: str, language: str, target_screens: list
     return blocked_pages
 
 
-def run(domain: str, en_run_id: str, target_run_id: str) -> list[dict]:
+def _resolve_review_mode(review_mode: str | None, require_explicit_mode: bool) -> str:
+    env_mode = os.environ.get("PHASE6_REVIEW_PROVIDER")
+    resolved = (review_mode or env_mode or "").strip()
+    if resolved:
+        return resolved
+    if require_explicit_mode:
+        raise ValueError(
+            "Phase 6 review mode must be set explicitly via --review-mode or PHASE6_REVIEW_PROVIDER. "
+            "Supported modes: test-heuristic, disabled, llm"
+        )
+    return "test-heuristic"
+
+
+def run(
+    domain: str,
+    en_run_id: str,
+    target_run_id: str,
+    review_mode: str | None = None,
+    *,
+    require_explicit_mode: bool = False,
+) -> list[dict]:
     en_eligible = read_json_artifact(domain, en_run_id, "eligible_dataset.json")
     target_eligible = read_json_artifact(domain, target_run_id, "eligible_dataset.json")
 
@@ -166,7 +186,7 @@ def run(domain: str, en_run_id: str, target_run_id: str) -> list[dict]:
     target_screens_by_page = _index_screenshots(target_screens)
     target_language = next((str(item.get("language", "")).strip() for item in target_eligible if str(item.get("language", "")).strip() and str(item.get("language", "")).lower() != "en"), "")
     blocked_pages = _load_blocked_overlay_pages(domain, target_language, target_screens) if target_language else []
-    provider = build_provider(mode=os.environ.get("PHASE6_REVIEW_PROVIDER", "offline"))
+    provider = build_provider(mode=_resolve_review_mode(review_mode, require_explicit_mode=require_explicit_mode))
     if hasattr(provider, "prefetch_reviews"):
         prefetch_pairs = []
         for item_id in sorted(en_by_item.keys()):
@@ -225,5 +245,12 @@ if __name__ == "__main__":
     parser.add_argument("--domain", required=True)
     parser.add_argument("--en-run-id", required=True)
     parser.add_argument("--target-run-id", required=True)
+    parser.add_argument("--review-mode", dest="review_mode", required=False)
     args = parser.parse_args()
-    run(args.domain, args.en_run_id, args.target_run_id)
+    run(
+        args.domain,
+        args.en_run_id,
+        args.target_run_id,
+        review_mode=args.review_mode,
+        require_explicit_mode=True,
+    )
