@@ -136,6 +136,51 @@ def compute_item_id(domain: str, url: str, css_selector: str, bbox: dict[str, An
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()
 
 
+def compute_page_canonical_key(url: str, viewport_kind: str, state: str, user_tier: str | None) -> str:
+    base_url = url.strip() or canonicalize_url(url)
+    payload = json.dumps(
+        {
+            "url": base_url,
+            "viewport_kind": viewport_kind,
+            "state": state,
+            "user_tier": user_tier or "",
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+
+def compute_logical_match_key(
+    page_canonical_key: str,
+    element_type: str,
+    css_selector: str,
+    role_hint: str | None,
+    local_path_signature: str,
+    semantic_attrs: dict[str, Any] | None,
+    stable_ordinal: int,
+) -> str:
+    stable_semantic_attrs = {
+        str(k): str(v).strip()
+        for k, v in sorted((semantic_attrs or {}).items())
+        if str(v).strip()
+    }
+    payload = json.dumps(
+        {
+            "page_canonical_key": page_canonical_key,
+            "element_type": element_type,
+            "css_selector": css_selector,
+            "role_hint": role_hint or "",
+            "local_path_signature": local_path_signature,
+            "stable_ordinal": stable_ordinal,
+            "semantic_attrs": stable_semantic_attrs,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+
 def validate_state_name(state: str) -> None:
     if not STATE_PATTERN.fullmatch(state):
         raise ValueError(f"Invalid state name: {state}")
@@ -298,12 +343,26 @@ def capture_state(
     page_content, raw_elements = page_payload
 
     elements: list[dict[str, Any]] = []
+    page_canonical_key = compute_page_canonical_key(context.url, context.viewport_kind, context.state, context.user_tier)
     for raw in sorted(raw_elements, key=_canonical_element_sort_key):
         selector = raw.get("css_selector")
         bbox = raw.get("bbox")
         if bbox is None:
             raise DeterminismError("Bounding box unavailable")
         canonical_bbox = json.loads(_canonical_bbox_payload(bbox))
+        semantic_attrs = raw.get("semantic_attrs") if isinstance(raw.get("semantic_attrs"), dict) else {}
+        local_path_signature = str(raw.get("local_path_signature", "")).strip()
+        stable_ordinal = int(raw.get("stable_ordinal", 0) or 0)
+        role_hint = raw.get("role_hint")
+        logical_match_key = str(raw.get("logical_match_key", "")).strip() or compute_logical_match_key(
+            page_canonical_key=str(raw.get("page_canonical_key", "")).strip() or page_canonical_key,
+            element_type=raw.get("element_type", "unknown"),
+            css_selector=selector,
+            role_hint=role_hint,
+            local_path_signature=local_path_signature,
+            semantic_attrs=semantic_attrs,
+            stable_ordinal=stable_ordinal,
+        )
         elements.append({
             "item_id": compute_item_id(context.domain, context.url, selector, canonical_bbox, raw.get("element_type", "unknown")),
             "page_id": page_id,
@@ -319,6 +378,13 @@ def capture_state(
             "visible": bool(raw.get("visible", True)),
             "tag": raw.get("tag"),
             "attributes": raw.get("attributes"),
+            "page_canonical_key": str(raw.get("page_canonical_key", "")).strip() or page_canonical_key,
+            "logical_match_key": logical_match_key,
+            "role_hint": role_hint,
+            "semantic_attrs": semantic_attrs,
+            "local_path_signature": local_path_signature,
+            "container_signature": str(raw.get("container_signature", "")).strip(),
+            "stable_ordinal": stable_ordinal,
         })
 
     elements.sort(key=lambda row: row["item_id"])

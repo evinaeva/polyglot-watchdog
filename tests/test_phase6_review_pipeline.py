@@ -66,7 +66,7 @@ def test_review_class_mapping_and_rich_evidence_for_placeholder():
     assert issue["evidence"]["review_class"] == "PLACEHOLDER"
     assert issue["evidence"]["reason"]
     assert "signals" in issue["evidence"]
-    assert issue["evidence"]["pairing_basis"] == "item_id"
+    assert issue["evidence"]["pairing_basis"] in {"logical_match_key_exact", "fallback_weighted"}
     assert issue["evidence"]["text_en"] == "Buy now <name>"
     assert issue["evidence"]["text_target"] == "Acheter %s"
 
@@ -318,6 +318,22 @@ def test_provider_notes_are_not_mixed_into_signals():
     spelling_issue = next(issue for issue in issues if issue["message"] == "Potential spelling issue in target text")
     assert "notes" not in spelling_issue["evidence"]["signals"]
     assert spelling_issue["evidence"]["provider_notes"] == ["spelling_marker_detected"]
+
+
+def test_fallback_weighted_pairing_reduces_false_missing_translation_on_item_id_drift():
+    artifacts = _base_artifacts({"item_id": "item-fr-drifted", "text": "Acheter"})
+
+    with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+    ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
+        issues = run("example.com", "run-en", "run-fr")
+
+    categories = [issue["category"] for issue in issues]
+    assert "MISSING_TRANSLATION" not in categories
+    meaning_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "MEANING")
+    assert meaning_issue["evidence"]["pairing_basis"] == "fallback_weighted"
+    assert meaning_issue["evidence"]["matched_target_item_id"] == "item-fr-drifted"
+    assert "pairing_score_breakdown" in meaning_issue["evidence"]
 
 
 def test_ai_mode_missing_key_falls_back_without_changing_category(monkeypatch):

@@ -21,9 +21,8 @@ from __future__ import annotations
 import datetime
 import hashlib
 import json
-from typing import Any
 
-from pipeline.interactive_capture import compute_item_id
+from pipeline.interactive_capture import compute_item_id, compute_logical_match_key, compute_page_canonical_key
 
 
 
@@ -114,6 +113,52 @@ EXTRACTION_JS = """
     return { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) };
   }
 
+  function semanticAttrs(el) {
+    const attrs = ['role', 'aria-label', 'aria-labelledby', 'aria-describedby', 'name', 'type', 'placeholder', 'title', 'alt', 'href', 'src', 'data-testid'];
+    const out = {};
+    for (const key of attrs) {
+      const v = el.getAttribute(key);
+      if (v && v.trim()) out[key] = v.trim();
+    }
+    return out;
+  }
+
+  function localPathSignature(el) {
+    const parts = [];
+    let current = el;
+    for (let depth = 0; depth < 3 && current && current.nodeType === Node.ELEMENT_NODE; depth += 1) {
+      const tag = current.tagName.toLowerCase();
+      const role = (current.getAttribute('role') || '').trim();
+      const parent = current.parentElement;
+      let sameTagIndex = 1;
+      if (parent) {
+        const same = Array.from(parent.children).filter((n) => n.tagName === current.tagName);
+        sameTagIndex = Math.max(1, same.indexOf(current) + 1);
+      }
+      parts.push(role ? `${tag}[role=${role}]#${sameTagIndex}` : `${tag}#${sameTagIndex}`);
+      current = current.parentElement;
+    }
+    return parts.join('>');
+  }
+
+  function containerSignature(el) {
+    let current = el.parentElement;
+    while (current && current !== document.body) {
+      const tag = current.tagName.toLowerCase();
+      const role = (current.getAttribute('role') || '').trim();
+      if (role || ['main', 'header', 'footer', 'nav', 'section', 'article', 'form'].includes(tag)) {
+        const idPart = current.id ? `#${current.id}` : '';
+        const classes = (current.className && typeof current.className === 'string')
+          ? current.className.trim().split(/\\s+/).filter(Boolean).slice(0, 2).join('.')
+          : '';
+        const classPart = classes ? `.${classes}` : '';
+        return role ? `${tag}${idPart}${classPart}[role=${role}]` : `${tag}${idPart}${classPart}`;
+      }
+      current = current.parentElement;
+    }
+    return 'body';
+  }
+
   function isVisible(el) {
     const style = window.getComputedStyle(el);
     if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
@@ -138,7 +183,12 @@ EXTRACTION_JS = """
         bbox: getBbox(node),
         text: text,  // preserve double spaces
         visible: isVisible(node),
-        attributes: null
+        attributes: null,
+        role_hint: (node.getAttribute('role') || '').trim() || null,
+        semantic_attrs: semanticAttrs(node),
+        local_path_signature: localPathSignature(node),
+        container_signature: containerSignature(node),
+        stable_ordinal: Array.from(node.parentElement ? node.parentElement.children : [node]).indexOf(node) + 1
       });
     }
 
@@ -153,7 +203,12 @@ EXTRACTION_JS = """
         bbox: getBbox(node),
         text: alt,  // use alt as text for img
         visible: isVisible(node),
-        attributes: { src: src, alt: alt }
+        attributes: { src: src, alt: alt },
+        role_hint: (node.getAttribute('role') || '').trim() || null,
+        semantic_attrs: semanticAttrs(node),
+        local_path_signature: localPathSignature(node),
+        container_signature: containerSignature(node),
+        stable_ordinal: Array.from(node.parentElement ? node.parentElement.children : [node]).indexOf(node) + 1
       });
     }
   }
@@ -247,12 +302,27 @@ async def capture_current_page(
 
     # Build collected_items
     items: list[dict] = []
+    page_canonical_key = compute_page_canonical_key(url, viewport_kind, state, user_tier)
     for el in raw_elements:
         css_selector = el.get("css_selector", "")
         bbox = el.get("bbox", {"x": 0, "y": 0, "width": 0, "height": 0})
         element_type = el.get("element_type", "")
         text = el.get("text", "")
         visible = el.get("visible", False)
+        role_hint = (el.get("role_hint") or None)
+        semantic_attrs = el.get("semantic_attrs") if isinstance(el.get("semantic_attrs"), dict) else {}
+        local_path_signature = str(el.get("local_path_signature", "")).strip()
+        container_signature = str(el.get("container_signature", "")).strip()
+        stable_ordinal = int(el.get("stable_ordinal", 0) or 0)
+        logical_match_key = compute_logical_match_key(
+            page_canonical_key=page_canonical_key,
+            element_type=element_type,
+            css_selector=css_selector,
+            role_hint=role_hint,
+            local_path_signature=local_path_signature,
+            semantic_attrs=semantic_attrs,
+            stable_ordinal=stable_ordinal,
+        )
 
         # stable item_id — Contract §3.4; text excluded
         item_id = compute_item_id(domain, url, css_selector, bbox, element_type)
@@ -277,6 +347,13 @@ async def capture_current_page(
             "visible": visible,
             "tag": el.get("tag"),
             "attributes": el.get("attributes"),
+            "page_canonical_key": page_canonical_key,
+            "logical_match_key": logical_match_key,
+            "role_hint": role_hint,
+            "semantic_attrs": semantic_attrs,
+            "local_path_signature": local_path_signature,
+            "container_signature": container_signature,
+            "stable_ordinal": stable_ordinal,
         }
         items.append(item)
 
