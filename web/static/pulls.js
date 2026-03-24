@@ -580,7 +580,7 @@ function renderRows(domain, runId) {
 
   for (const row of rows) {
     const tr = document.createElement('tr');
-    const selected = decisionToValue(row.decision);
+    const selected = decisionToValue(row.decision) || 'eligible';
     tr.innerHTML = `
       <td>${escapeHtml(row.url)}</td>
       <td>${escapeHtml(row.element_type)}</td>
