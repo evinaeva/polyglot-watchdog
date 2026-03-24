@@ -9,6 +9,8 @@ const pullsWhitelistInput = document.getElementById('pullsWhitelistInput');
 const pullsWhitelistAdd = document.getElementById('pullsWhitelistAdd');
 const pullsWhitelistStatus = document.getElementById('pullsWhitelistStatus');
 const pullsWhitelistChips = document.getElementById('pullsWhitelistChips');
+const pullsPrepareCapturedData = document.getElementById('pullsPrepareCapturedData');
+const pullsPrepareCapturedDataStatus = document.getElementById('pullsPrepareCapturedDataStatus');
 
 const pullsPreviewModal = document.getElementById('pullsPreviewModal');
 const pullsPreviewOverlay = document.getElementById('pullsPreviewOverlay');
@@ -57,6 +59,11 @@ function pullsQuery() {
 function setPullsStatus(message, cls = '') {
   pullsStatus.className = cls;
   pullsStatus.textContent = message;
+}
+
+function setPrepareCapturedDataStatus(message, cls = '') {
+  pullsPrepareCapturedDataStatus.className = `muted ${cls}`.trim();
+  pullsPrepareCapturedDataStatus.textContent = message;
 }
 
 function setPreviewStatus(message) {
@@ -580,7 +587,7 @@ function renderRows(domain, runId) {
 
   for (const row of rows) {
     const tr = document.createElement('tr');
-    const selected = decisionToValue(row.decision);
+    const selected = decisionToValue(row.decision) || 'eligible';
     tr.innerHTML = `
       <td>${escapeHtml(row.url)}</td>
       <td>${escapeHtml(row.element_type)}</td>
@@ -709,6 +716,28 @@ pullsElementTypeFilter.addEventListener('change', () => {
 
 pullsWhitelistAdd.addEventListener('click', async () => {
   setWhitelistStatus('Manual add by type is disabled. Use "Add to whitelist" on a concrete row.', 'warning');
+});
+
+pullsPrepareCapturedData.addEventListener('click', async () => {
+  const { domain, runId } = pullsQuery();
+  if (!domain || !runId) {
+    setPrepareCapturedDataStatus('Missing required query params: domain and run_id.', 'error');
+    return;
+  }
+
+  setPrepareCapturedDataStatus('Preparing captured data…', 'warning');
+  try {
+    const response = await fetch('/api/workflow/generate-eligible-dataset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain, run_id: runId }),
+    });
+    const payload = await safeReadPayload(response);
+    if (!response.ok) throw new Error(payload.error || payload.message || `Failed to prepare captured data (${response.status})`);
+    setPrepareCapturedDataStatus('Captured data prepared successfully.', 'ok');
+  } catch (err) {
+    setPrepareCapturedDataStatus(err.message || 'Failed to prepare captured data.', 'error');
+  }
 });
 
 pullsPreviewClose.addEventListener('click', closePreview);
