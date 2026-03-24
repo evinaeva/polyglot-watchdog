@@ -1313,3 +1313,35 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c2cf32cf0c832cb84ed5cf334036d9)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #133 — 2026-03-24T20:12:17Z
+
+- Title: UI: use canonical screenshot URLs, add domain suggestions and input sync, include time in EN run label, and add runtime regression tests
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/133
+- Author: evinaeva
+- Base branch: main
+- Head branch: ykf5pk-codex/implement-focused-ui-fixes-for-operator-workflow
+- Merge commit: d35ade5a762e4c83df461e95ee1f4d7b988908a5
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_operator_ui_runtime_regressions.py
+  - web/static/pulls.js
+  - web/static/urls.js
+  - web/static/workflow.js
+  - web/templates/pulls.html
+  - web/templates/urls.html
+- Description:
+  ### Motivation
+  - Ensure the workflow UI uses canonical screenshot view URLs instead of exposing storage URIs and produce safer empty-state rendering for contexts.
+  - Prefer a human-friendly display name for runs and include a time component in the EN standard dataset label.
+  - Improve domain selection UX by replacing the select with an input + datalist and keep continue/check links in sync with typed domains.
+  - Add runtime regression tests to lock down these UI behaviors and prevent regressions.
+  
+  ### Description
+  - Change `_en_standard_display_name_today()` to include time in the label using the format `HH:MM|DD.MM.YYYY`.
+  - Update `workflow.js` so `formatRunLabel` returns the display name when available and `renderContextsRows` uses `screenshot_view_url` (if present) to render the canonical "open" link instead of `storage_uri`.
+  - Replace the domain `<select>` with an `<input list=
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c2dd4e8cb4832cbf829ce8ec65f0e9)
+- Notes: Auto-generated from merged PR metadata.
