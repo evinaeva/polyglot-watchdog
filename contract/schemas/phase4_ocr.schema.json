@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://polyglot-watchdog/contract/schemas/phase4_ocr.schema.json",
   "title": "Phase 4 OCR Artifact",
-  "description": "OCR output rows for approved image-backed eligible items. OCR.Space provider only (engine 3).",
+  "description": "OCR output rows for approved image-backed eligible items. OCR.Space is the primary provider with optional Google Vision fallback.",
   "type": "array",
   "items": {
     "type": "object",
@@ -63,11 +63,14 @@
       },
       "ocr_provider": {
         "type": "string",
-        "const": "ocr.space"
+        "enum": [
+          "ocr.space",
+          "google_vision"
+        ]
       },
       "ocr_engine": {
         "type": "string",
-        "const": "3"
+        "minLength": 1
       },
       "ocr_notes": {
         "type": "array",
