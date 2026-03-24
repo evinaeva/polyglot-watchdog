@@ -607,3 +607,33 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c28fd52b1c832c8c34e224a83da821)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #103 — 2026-03-24T13:40:29Z
+
+- Title: Add 'Prepare captured data' button to pulls page
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/103
+- Author: evinaeva
+- Base branch: main
+- Head branch: ritipd-codex/update-pulls.html-and-pulls.js-with-new-button
+- Merge commit: 87a2bb90a1179e4d894dd1f8c2780d147a41b89b
+- Changed files:
+  - web/static/pulls.js
+  - web/templates/pulls.html
+- Description:
+  ### Motivation
+  - Provide a manual UI action on the pulls review page to trigger eligible-dataset generation for the current workflow run using the existing backend endpoint. 
+  - Surface immediate plain-text feedback for success/failure so operators can see the result of the action without changing existing workflow phase logic.
+  
+  ### Description
+  - Added a `Prepare captured data` button and a status paragraph directly under `#pullsTable` in `web/templates/pulls.html`.
+  - Wired new DOM references and a small status helper (`setPrepareCapturedDataStatus`) into `web/static/pulls.js` and implemented a click handler that posts `{ domain, run_id }` to the existing endpoint `/api/workflow/generate-eligible-dataset` using the same contract as other workflow actions.
+  - The button remains enabled at all times (no change-tracking gating) and the implementation reuses `safeReadPayload` for response handling and does not duplicate any backend phase logic.
+  
+  ### Testing
+  - Ran `node --check web/static/pulls.js` to validate the JS syntax; it succeeded.
+  - Reviewed the diff and file placements with `git diff`/file previews to confirm the UI and handler were added to `web/templates/pulls.html` and `web/static/pulls.js` as intended.
+  - Committed the changes locally after verification (`git commit`).
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c28fd2ab84832cb70795bb251be43b)
+- Notes: Auto-generated from merged PR metadata.
