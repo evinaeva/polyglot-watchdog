@@ -152,18 +152,6 @@ async function triggerEligibleDatasetGeneration(domain, runId) {
   }
 }
 
-function ensureEligibleDatasetControls() {
-  pullsEligibleControl.className = 'controls';
-  pullsEligibleGenerateButton.type = 'button';
-  pullsEligibleGenerateButton.textContent = 'Generate eligible dataset';
-  pullsEligibleGenerateMessage.className = 'muted';
-  if (!pullsEligibleControl.childElementCount) {
-    pullsEligibleControl.appendChild(pullsEligibleGenerateButton);
-    pullsEligibleControl.appendChild(pullsEligibleGenerateMessage);
-    pullsStatus.insertAdjacentElement('afterend', pullsEligibleControl);
-  }
-}
-
 function setPreviewStatus(message) {
   pullsPreviewStatus.textContent = message;
 }
@@ -766,7 +754,6 @@ function renderRows(domain, runId) {
 
 async function loadPulls() {
   const { domain, runId } = pullsQuery();
-  ensureEligibleDatasetControls();
   updateWorkflowSummary(domain, runId);
   const query = new URLSearchParams({ domain, run_id: runId }).toString();
 
