@@ -669,3 +669,36 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c28fd50698832c9f938afcb080d1c4)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #106 — 2026-03-24T13:42:26Z
+
+- Title: Add eligible-dataset generation UI and Phase 3 metadata tracking
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/106
+- Author: evinaeva
+- Base branch: main
+- Head branch: faw8tx-codex/add-metadata-fields-and-status-handling
+- Merge commit: 2b02dac28415859f867545fe38544b4cebf4d6a1
+- Changed files:
+  - app/skeleton_server.py
+  - web/static/pulls.js
+- Description:
+  ### Motivation
+  
+  - Surface Phase 3 eligible-dataset generation status and allow users to trigger generation from the pulls UI. 
+  - Persist an `en_standard_display_name` produced during Phase 3 to run metadata so the UI can label generated datasets. 
+  - Expose generation readiness, status, and errors in the workflow status API to enable polling and user feedback.
+  
+  ### Description
+  
+  - Added `_latest_phase3_job` to select the most recent Phase 3 job and reused stale-running job normalization logic. 
+  - Introduced `_en_standard_display_name_today` and `_upsert_run_metadata` helpers and updated `_run_phase3_async` to require the `eligible_dataset.json` artifact, capture an `en_standard_display_name`, and upsert run metadata while also recording job success/failure via `_upsert_job_status`. 
+  - Extended `_workflow_status_payload` to include `run.en_standard_display_name` and expanded the `eligible_dataset` section with `ready`, `en_standard_display_name`, `generation_status`, and `generation_error` fields. 
+  - Implemented front-end controls and logic in `web/static/pulls.js` to render a "Generate eligible dataset" button, POST to `/api/workflow/generate-eligible-dataset`, poll `/api/workflow/status` with `waitForEligibleDatasetReady`, and surface generation messages/errors to the user.
+  
+  ### Testing
+  
+  - No automated tests were added or executed as part of this rollout; recommend running the existing test suite with `pytest` and verifying the front-end build and UI flows.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c28fd4216c832caaea4d621f8af9ff)
+- Notes: Auto-generated from merged PR metadata.
