@@ -110,6 +110,20 @@ Avoid these outdated statements:
 - "The full operator workflow must exist on a single page to count as integrated."
 - "The current product is production-ready."
 
+## Deterministic pytest CI expectations
+
+GitHub Actions now runs a deterministic pytest subset on every `push` and `pull_request` via `.github/workflows/pytest.yml`.
+
+The CI subset is intentionally scoped to contract-risk areas and must remain green:
+
+- Phase 1 planning snapshot determinism;
+- exact-context rerun identity resolution and explicit ambiguity rejection;
+- scripted capture marker matching drift regression;
+- image coverage statuses (`ok/skipped/failed`) and image-backed review/OCR-quality behavior;
+- explicit Phase 6 review provider mode behavior (disabled and AI-fallback mode).
+
+When behavior changes in those areas, update the related golden fixtures under `tests/fixtures/` and the targeted CI tests in lockstep.
+
 ## Repo areas
 
 - `app/` — operator server and route handlers

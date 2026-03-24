@@ -1,4 +1,6 @@
+import json
 import unittest
+from pathlib import Path
 
 from pipeline.interactive_capture import CapturePoint, Recipe, RecipeStep
 from pipeline.run_phase1 import _execute_recipe_until_state
@@ -97,6 +99,19 @@ class Phase1RecipeExecutionTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaisesRegex(RuntimeError, "requires capture_state step markers"):
             await _execute_recipe_until_state(page, recipe, "comments_panel_open")
+
+    async def test_recipe_marker_matching_drift_regression(self):
+        case = json.loads(Path("tests/fixtures/recipe_marker_drift_case.json").read_text(encoding="utf-8"))
+        recipe = Recipe(
+            recipe_id=case["recipe_id"],
+            url_pattern=case["url_pattern"],
+            steps=tuple(RecipeStep(action=step["action"], selector=step.get("selector")) for step in case["steps"]),
+            capture_points=tuple(CapturePoint(state=point["state"]) for point in case["capture_points"]),
+        )
+        page = _FakePage()
+
+        with self.assertRaisesRegex(RuntimeError, case["expected_error_substring"]):
+            await _execute_recipe_until_state(page, recipe, case["target_state"])
 
 
 if __name__ == "__main__":

@@ -1,4 +1,6 @@
+import json
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from app.skeleton_server import _parse_rerun_payload, _persist_capture_review
@@ -71,6 +73,29 @@ class ReviewAndRerunTests(unittest.TestCase):
         self.assertEqual(job.context.state, "profile_open")
         self.assertEqual(job.context.viewport_kind, "desktop")
         self.assertEqual(job.context.user_tier, "guest")
+
+
+    def test_exact_context_job_rejects_ambiguous_state_resolution(self):
+        fixture = json.loads(Path("tests/fixtures/rerun_resolution_cases.json").read_text(encoding="utf-8"))
+        case = fixture["ambiguous_state_case"]
+        recipes = {
+            recipe_id: Recipe(
+                recipe_id=recipe_id,
+                url_pattern=raw["url_pattern"],
+                steps=tuple(RecipeStep(action=step["action"], selector=step.get("selector")) for step in raw["steps"]),
+                capture_points=tuple(CapturePoint(state=point["state"]) for point in raw["capture_points"]),
+            )
+            for recipe_id, raw in case["recipes"].items()
+        }
+        with patch("pipeline.run_phase1.load_recipes_for_planner", return_value=recipes), self.assertRaisesRegex(RuntimeError, "ambiguous"):
+            build_exact_context_job(
+                domain="example.com",
+                url="https://example.com/shop",
+                language="en",
+                viewport_kind="desktop",
+                state=case["state"],
+                user_tier="guest",
+            )
 
     def test_exact_context_rerun_includes_provenance_link(self):
         recipes = {

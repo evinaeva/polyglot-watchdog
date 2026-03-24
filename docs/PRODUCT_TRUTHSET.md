@@ -95,6 +95,20 @@ Deferred and still acceptable for v1.0:
 - crawler improvements beyond manual seed URL workflow;
 - keeping the operator workflow distributed across multiple pages/tabs instead of consolidating it into one screen.
 
+## Deterministic CI truth-set alignment
+
+The truth-set for deterministic behavior is enforced by the pytest GitHub Actions workflow on `push` and `pull_request`.
+
+Truth-set-sensitive coverage includes:
+
+- Phase 1 planning snapshots;
+- exact-context rerun identity and ambiguity handling;
+- logical scripted-state matching drift regression;
+- image coverage statuses (`ok/skipped/failed`) and image-backed review behavior;
+- explicit Phase 6 review-provider mode handling.
+
+If these behaviors change, update code, tests, and golden fixtures together in the same change.
+
 ## Stage D gate state
 
 Current release-gate state is **pre_production**.

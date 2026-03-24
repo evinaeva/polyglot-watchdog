@@ -1,0 +1,25 @@
+{
+  "ambiguous_state_case": {
+    "state": "cart_open",
+    "recipes": {
+      "cart_icon": {
+        "url_pattern": "/shop",
+        "steps": [
+          {"action": "click", "selector": "#cart-icon"}
+        ],
+        "capture_points": [
+          {"state": "cart_open"}
+        ]
+      },
+      "cart_menu": {
+        "url_pattern": "/shop",
+        "steps": [
+          {"action": "click", "selector": "#cart-menu"}
+        ],
+        "capture_points": [
+          {"state": "cart_open"}
+        ]
+      }
+    }
+  }
+}

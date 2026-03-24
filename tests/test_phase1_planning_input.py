@@ -1,3 +1,5 @@
+import json
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -52,3 +54,11 @@ def test_phase1_planner_rejects_duplicate_urls() -> None:
             viewports=["desktop"],
             user_tiers=["guest"],
         )
+
+
+def test_phase1_planning_rows_match_snapshot_fixture() -> None:
+    fixture = json.loads(Path("tests/fixtures/phase1_planning_snapshot.json").read_text(encoding="utf-8"))
+    with patch("pipeline.run_phase1.read_json_artifact", side_effect=[fixture["seed_payload"]]):
+        rows = load_planning_rows("example.com", "run-snapshot")
+
+    assert rows == fixture["expected_rows"]

@@ -79,6 +79,11 @@ def build_exact_context_job(domain: str, url: str, language: str, viewport_kind:
         )
         if not matching_recipe_ids:
             raise RuntimeError(f"No recipe defines capture point state={state!r} for exact-context rerun")
+        if len(matching_recipe_ids) > 1:
+            raise RuntimeError(
+                "Exact-context rerun resolution is ambiguous for "
+                f"state={state!r}; matching recipes={matching_recipe_ids}"
+            )
         recipe_ids = [matching_recipe_ids[0]]
 
     jobs = build_planned_jobs(

@@ -1,0 +1,15 @@
+{
+  "recipe_id": "profile",
+  "url_pattern": "/profile",
+  "steps": [
+    {"action": "click", "selector": "#photos"},
+    {"action": "capture_state", "selector": "comments_panel_open"},
+    {"action": "capture_state", "selector": "gallery_photos_open"}
+  ],
+  "capture_points": [
+    {"state": "gallery_photos_open"},
+    {"state": "comments_panel_open"}
+  ],
+  "target_state": "gallery_photos_open",
+  "expected_error_substring": "capture_state markers must match capture_points order"
+}

@@ -1,0 +1,27 @@
+{
+  "seed_payload": {
+    "domain": "example.com",
+    "urls": [
+      {
+        "url": "https://example.com/profile",
+        "description": "profile",
+        "recipe_ids": ["profile_gallery", "profile_gallery", "profile_comments"]
+      },
+      {
+        "url": "https://example.com/",
+        "description": "home",
+        "recipe_ids": []
+      }
+    ]
+  },
+  "expected_rows": [
+    {
+      "url": "https://example.com/",
+      "recipe_ids": []
+    },
+    {
+      "url": "https://example.com/profile",
+      "recipe_ids": ["profile_comments", "profile_gallery"]
+    }
+  ]
+}

@@ -738,3 +738,16 @@ Validation: stable fingerprints.
 
 Goal: add new issue categories
 Validation: overlay issues reported.
+
+## 19. Deterministic CI contract checks (implementation expectation)
+
+Implementation must keep deterministic CI coverage for interaction planning and rerun safety behavior.
+
+The pytest workflow should run on every `push` and `pull_request` and include targeted checks for:
+
+- planning snapshot stability from seed URL input;
+- exact-context rerun identity resolution and ambiguity rejection;
+- scripted-state marker-order drift regression;
+- review status persistence joining on capture context identity.
+
+These checks are designed to prevent silent regressions in deterministic matching/rerun behavior.

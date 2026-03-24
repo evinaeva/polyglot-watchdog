@@ -309,3 +309,15 @@ Phase 6 does **not** exist to:
 - treat every mismatch as equally certain.
 
 The correct outcome is a smaller, evidence-backed review queue for a human operator.
+
+## 14. CI expectations for deterministic Phase 6 review behavior
+
+The repository CI (`.github/workflows/pytest.yml`) must validate deterministic Phase 6 behavior without external service dependencies.
+
+At minimum, CI must continuously cover:
+
+- image-backed OCR quality gating and status outcomes (including weak OCR suppression), plus Phase 4 image coverage statuses (`ok`, `skipped`, `failed`);
+- explicit provider mode behavior (`disabled` deterministic-offline mode and explicit `ai` fallback when credentials are missing);
+- stable issue evidence semantics for comparison text source (`dom` vs `ocr`).
+
+Tests should remain mock-driven/offline and must not require live OCR or LLM services.
