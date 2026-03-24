@@ -578,3 +578,32 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c28fd07bc0832ca89656ad1312beb7)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #105 — 2026-03-24T13:40:10Z
+
+- Title: Canonicalize target languages and normalize aliases for language checks
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/105
+- Author: evinaeva
+- Base branch: main
+- Head branch: 40r8b1-codex/update-target-language-handling-in-skeleton_server
+- Merge commit: 6a59e5178ce1a37a1b2caa27b09e3716ef35fdb7
+- Changed files:
+  - app/skeleton_server.py
+- Description:
+  ### Motivation
+  - Ensure consistent handling of target languages across the check-languages workflow by using a canonical language list instead of ad-hoc environment parsing. 
+  - Accept common country-code aliases (e.g. `cz`, `jp`, `kr`) and normalize them to stable language codes. 
+  - Prevent mismatches when comparing or selecting target languages in job queries, redirects, and UI flows.
+  
+  ### Description
+  - Introduced `CANONICAL_TARGET_LANGUAGES` constant containing the supported target language codes and `TARGET_LANGUAGE_ALIASES` mapping for common aliases. 
+  - Added `_normalize_target_language(value)` helper to normalize input and apply aliases. 
+  - Replaced the previous environment-driven `_load_target_languages` implementation with a function that returns the canonical non-English target list. 
+  - Updated language comparisons and query/redirect handling to use `_normalize_target_language` in `_find_in_progress_check_languages_job`, `_redirect_check_languages`, `_start_check_languages`, and `_serve_check_languages_page`.
+  
+  ### Testing
+  - No automated tests were run as part of this rollout.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c28fd52b1c832c8c34e224a83da821)
+- Notes: Auto-generated from merged PR metadata.
