@@ -1230,3 +1230,47 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c2cf312860832cbae89c9382354123)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #129 — 2026-03-24T18:09:59Z
+
+- Title: Add stable capture_point IDs, interaction trace hashing, and recipe-aware rerun resolution
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/129
+- Author: evinaeva
+- Base branch: main
+- Head branch: muke8f-codex/extend-capturepoint-for-capture_point_id-support
+- Merge commit: d448c19ef395f3b44465fea16a09b88ca0fd9d4b
+- Changed files:
+  - app/recipes.py
+  - app/skeleton_server.py
+  - contract/schemas/interaction_recipe.schema.json
+  - contract/schemas/page_screenshots.schema.json
+  - pipeline/interactive_capture.py
+  - pipeline/run_phase1.py
+  - tests/test_interactive_capture_acceptance.py
+  - tests/test_recipes_crud.py
+  - tests/test_review_and_rerun.py
+- Description:
+  ### Motivation
+  
+  - Provide stable identifiers for recipe capture points to support precise reruns and avoid ambiguity.  
+  - Record interaction traces so reruns can be correlated with the original scripted interactions.  
+  - Extend rerun APIs and planners to accept `recipe_id` + `capture_point_id` for deterministic exact-context resolution while preserving legacy state-only behavior.  
+  
+  ### Description
+  
+  - Add `capture_point_id` support and validation: the `interaction_recipe` schema gains an optional `capture_point_id` property, and `_normalize_recipe` now derives stable IDs via `derive_capture_point_id` when missing while rejecting duplicates.  
+  - Persist recipe provenance and interaction trace: `page_screenshots` schema gained `recipe_id`, `capture_point_id`, and `interaction_trace_hash`, and `capture_state` now accepts and writes these fields.  
+  - New utilities: introduce `derive_capture_point_id` for deterministic capture-point ids and `compute_interaction_trace_hash` to hash executed recipe steps.  
+  - Exact-context rerun and planning changes: `CapturePoint`, `CaptureJob`, and `CaptureJob` construction in the planner carry `capture_point_id`; `build_exact_context_job` and `run_exact_context` accept `recipe_id`/`capture_point_id`, resolve them strictly (with backward-compatible state-only resolution), and use the trace when executing recipes.  
+  - Rerun and server plumbing: `skeleton_server` rerun payload parsing enforces coherent `recipe_id`/`capture_point_id` usage and includes these fields in runtime payloads and provenance.  
+  - Tests updated/added to cover derivation of legacy capture point IDs, duplicate id rejection, interaction trace hash persistence, rerun payload validation, and exact-context resolution semantics.  
+  
+  ### Testing
+  
+  - Ran unit tests covering interactive capture, recipes CRUD, and review/rerun behavior (including `tests/test_interactive_capture_acceptance.py`, `tests/test_recipes_crud.py`, and `tests/test_review_and_rerun.py`).  
+  - New and updated tests validate `derive_capture_point_id`, `compute_interaction_trace_hash`, duplicate `capture_point_id` rejection, rerun payload validation rules, and exact-context resolution edge cases.  
+  - All automated unit tests completed successfully.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c2cf3176fc832cb1fda53e481d3ca3)
+- Notes: Auto-generated from merged PR metadata.
