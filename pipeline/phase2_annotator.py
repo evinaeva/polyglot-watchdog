@@ -93,6 +93,13 @@ def filter_items_by_rules(
             "element_type": item.get("element_type"),
             "text": item["text"],
             "mask_applied": mask_applied,
+            "page_canonical_key": item.get("page_canonical_key"),
+            "logical_match_key": item.get("logical_match_key"),
+            "role_hint": item.get("role_hint"),
+            "semantic_attrs": item.get("semantic_attrs"),
+            "local_path_signature": item.get("local_path_signature"),
+            "container_signature": item.get("container_signature"),
+            "stable_ordinal": item.get("stable_ordinal"),
         })
     # Sort for determinism — Contract §1
     result.sort(key=lambda i: (i["item_id"], i["url"]))
