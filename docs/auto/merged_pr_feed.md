@@ -1121,3 +1121,44 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c29fa2b4fc832caf006427039d071a)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #123 — 2026-03-24T15:08:17Z
+
+- Title: Add batched LLM review with prefetch, prompt/config and prepared input abstraction for Phase 6
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/123
+- Author: evinaeva
+- Base branch: main
+- Head branch: blhv17-codex/refactor-llm-review-integration-to-use-openrouter
+- Merge commit: 86e95dcb18ab469d47d1bb770fde3a1ff2870a1e
+- Changed files:
+  - pipeline/phase6_providers.py
+  - pipeline/phase6_review.py
+  - pipeline/run_phase6.py
+  - tests/test_phase6_providers.py
+  - tests/test_phase6_review_pipeline.py
+- Description:
+  ### Motivation
+  
+  - Improve LLM review reliability and efficiency by batching requests, warming a review cache, and providing a deterministic offline fallback when the API is unavailable or response is malformed. 
+  - Make LLM prompt and runtime token budgeting configurable and switch the default external endpoint/model to an OpenRouter-compatible configuration.
+  - Centralize DOM/OCR text preparation so the review pipeline can reuse canonical comparison inputs and enable prefetching of finalized pairs.
+  
+  ### Description
+  
+  - Introduced batched review support in `LLMReviewProvider` with `prefetch_reviews`, `_review_batch`, `_parse_batch_results`, and `_split_batches` to group items into size-aware requests and populate an internal cache (`_pair_reviews`).
+  - Added configurable system prompt and token budgeting parameters (`hard_context_tokens`, `token_reserve_ratio`, `fixed_token_margin`, `estimated_output_tokens_per_item`) and helper logic for estimating token usage, building the system prompt, and ensuring a safe context budget; changed default `model` and `endpoint` to OpenRouter (`openrouter/free`, `https://openrouter.ai/api/v1/chat/completions`).
+  - Refactored parsing and fallback handling into helper methods `_llm_result` and `_fallback_result`, expanded JSON contract to expect a `results` array with `item_id` keys, and hardened numeric validation and note sanitization.
+  - Added `PreparedReviewInputs` dataclass and `prepare_review_inputs` in `phase6_review` to centralize normalization, OCR selection/quality assessment, and dynamic counter normalization, and updated `review_pair` to use it.
+  - Updated `run_phase6` to precompute `prepare_review_inputs` for finalized item pairs and call `provider.prefetch_reviews` when available so AI providers can warm a single batched request before per-item review calls.
+  - Updated `build_provider` to expose new environment-driven tunables and to read `PHASE6_REVIEW_*` variables for model/endpoint/prompt and token-budget settings.
+  - Extended and updated unit tests in `tests/test_phase6_providers.py` and `tests/test_phase6_review_pipeline.py` to cover batching, prefetch behavior, new JSON contract, default model/endpoint, and the new `prepare_review_inputs` behavior.
+  
+  ### Testing
+  
+  - Ran unit tests in `tests/test_phase6_providers.py` which validate provider selection, fallback behavior, JSON parsing/clamping, caching, batched prefetching, and the OpenRouter defaults, and all tests passed.
+  - Ran unit tests in `tests/test_phase6_review_pipeline.py` which validate `prepare_review_inputs`, OCR preference, dynamic counter normalization, run-level prefetch integration, and pipeline invariants, and all tests passed.
+  - Executed the full test suite (all modified tests under `tests/`), and the suite completed successfully with no failures.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c2a5154724832c91e2468e3c93e983)
+- Notes: Auto-generated from merged PR metadata.
