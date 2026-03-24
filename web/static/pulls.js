@@ -11,9 +11,6 @@ const pullsWhitelistStatus = document.getElementById('pullsWhitelistStatus');
 const pullsWhitelistChips = document.getElementById('pullsWhitelistChips');
 const pullsPrepareCapturedData = document.getElementById('pullsPrepareCapturedData');
 const pullsPrepareCapturedDataStatus = document.getElementById('pullsPrepareCapturedDataStatus');
-const pullsEligibleControl = document.createElement('section');
-const pullsEligibleGenerateButton = document.createElement('button');
-const pullsEligibleGenerateMessage = document.createElement('p');
 
 const pullsPreviewModal = document.getElementById('pullsPreviewModal');
 const pullsPreviewOverlay = document.getElementById('pullsPreviewOverlay');
@@ -63,11 +60,6 @@ function pullsQuery() {
 function setPullsStatus(message, cls = '') {
   pullsStatus.className = cls;
   pullsStatus.textContent = message;
-}
-
-function setEligibleGenerateMessage(message, cls = '') {
-  pullsEligibleGenerateMessage.className = ['muted', cls].filter(Boolean).join(' ');
-  pullsEligibleGenerateMessage.textContent = message;
 }
 
 function formatEnStandardDisplayName(runOrEligibleSection) {
@@ -123,8 +115,8 @@ async function waitForEligibleDatasetReady(domain, runId, timeoutMs = 30000) {
 }
 
 async function triggerEligibleDatasetGeneration(domain, runId) {
-  pullsEligibleGenerateButton.disabled = true;
-  setEligibleGenerateMessage('Generating eligible dataset…');
+  pullsPrepareCapturedData.disabled = true;
+  setPrepareCapturedDataStatus('Preparing captured data…', 'warning');
   try {
     const response = await fetch('/api/workflow/generate-eligible-dataset', {
       method: 'POST',
@@ -140,14 +132,14 @@ async function triggerEligibleDatasetGeneration(domain, runId) {
     const eligible = readyPayload.eligible_dataset || {};
     const label = formatEnStandardDisplayName(eligible) || formatEnStandardDisplayName(readyPayload.run);
     if (label) {
-      setEligibleGenerateMessage(`Ready: ${label}`);
+      setPrepareCapturedDataStatus(`Captured data prepared successfully: ${label}.`, 'ok');
     } else {
-      setEligibleGenerateMessage('Ready: eligible dataset generated.');
+      setPrepareCapturedDataStatus('Captured data prepared successfully.', 'ok');
     }
   } catch (err) {
-    setEligibleGenerateMessage(`Warning: ${err.message || 'Eligible dataset generation failed.'}`);
+    setPrepareCapturedDataStatus(err.message || 'Failed to prepare captured data.', 'error');
   } finally {
-    pullsEligibleGenerateButton.disabled = false;
+    pullsPrepareCapturedData.disabled = false;
     stopEligiblePolling();
   }
 }
@@ -759,7 +751,7 @@ async function loadPulls() {
 
   const primaryLinks = {
     pullsBackToRunHub: `/workflow?${query}`,
-    continueCheckLanguages: `/check-languages?${query}`,
+    continueCheckLanguages: `/check-languages?${new URLSearchParams({ domain, en_run_id: runId }).toString()}`,
   };
   Object.entries(primaryLinks).forEach(([id, href]) => {
     const link = document.getElementById(id);
@@ -779,12 +771,11 @@ async function loadPulls() {
     pullsTable.classList.add('hidden');
     pullsLanguageSummary.classList.add('hidden');
     setPullsStatus('Missing required query params: domain and run_id.', 'error');
-    pullsEligibleGenerateButton.disabled = true;
-    setEligibleGenerateMessage('Warning: missing required query params: domain and run_id.');
+    pullsPrepareCapturedData.disabled = true;
+    setPrepareCapturedDataStatus('Missing required query params: domain and run_id.', 'error');
     return;
   }
-  pullsEligibleGenerateButton.disabled = false;
-  pullsEligibleGenerateButton.onclick = () => triggerEligibleDatasetGeneration(domain, runId);
+  pullsPrepareCapturedData.disabled = false;
 
   setPullsStatus('Loading items…');
   const loaded = await reloadPullRows(domain, runId);
@@ -819,23 +810,7 @@ pullsPrepareCapturedData.addEventListener('click', async () => {
     setPrepareCapturedDataStatus('Missing required query params: domain and run_id.', 'error');
     return;
   }
-
-  setPrepareCapturedDataStatus('Preparing captured data…', 'warning');
-  try {
-    const response = await fetch('/api/workflow/generate-eligible-dataset', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ domain, run_id: runId }),
-    });
-    const payload = await safeReadPayload(response);
-    if (!response.ok) {
-      setPrepareCapturedDataStatus(payload.error || payload.message || `Failed to prepare captured data (${response.status})`, 'error');
-      return;
-    }
-    setPrepareCapturedDataStatus('Captured data prepared successfully.', 'ok');
-  } catch (err) {
-    setPrepareCapturedDataStatus(err.message || 'Failed to prepare captured data.', 'error');
-  }
+  await triggerEligibleDatasetGeneration(domain, runId);
 });
 
 pullsPreviewClose.addEventListener('click', closePreview);
