@@ -283,6 +283,8 @@ def _load_check_language_runs(domain: str) -> list[dict]:
         out.append({
             "run_id": run_id,
             "created_at": str(row.get("created_at", "")).strip(),
+            "display_name": _normalize_optional_string(row.get("display_name")) or "",
+            "en_standard_display_name": _normalize_optional_string(row.get("en_standard_display_name")) or "",
             "metadata": row.get("metadata") if isinstance(row.get("metadata"), dict) else {},
             "languages": languages,
             "has_english": has_english,
@@ -305,8 +307,21 @@ def _run_is_english_only(run: dict) -> bool:
 def _run_display_label(run: dict) -> str:
     metadata = run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
     display = ""
+    if isinstance(run, dict):
+        display = (
+            _normalize_optional_string(run.get("en_standard_display_name"))
+            or _normalize_optional_string(run.get("display_label"))
+            or _normalize_optional_string(run.get("display_name"))
+            or ""
+        )
     if isinstance(metadata, dict):
-        display = str(metadata.get("display_label", "")).strip() or str(metadata.get("display_name", "")).strip()
+        display = (
+            display
+            or _normalize_optional_string(metadata.get("en_standard_display_name"))
+            or _normalize_optional_string(metadata.get("display_label"))
+            or _normalize_optional_string(metadata.get("display_name"))
+            or ""
+        )
     return display or str(run.get("run_id", "")).strip()
 
 
