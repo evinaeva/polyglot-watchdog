@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from pipeline.phase6_providers import (
     DeterministicOfflineProvider,
     DisabledReviewProvider,
@@ -9,14 +11,30 @@ from pipeline.phase6_providers import (
 
 
 def test_build_provider_selection_modes(monkeypatch):
-    assert isinstance(build_provider("offline"), DeterministicOfflineProvider)
+    assert isinstance(build_provider("test-heuristic"), DeterministicOfflineProvider)
     assert isinstance(build_provider("disabled"), DisabledReviewProvider)
 
     monkeypatch.setenv("PHASE6_REVIEW_API_KEY", "test-key")
-    provider = build_provider("ai")
+    provider = build_provider("llm")
     assert isinstance(provider, LLMReviewProvider)
     assert provider._model == "openrouter/free"
     assert provider._endpoint == "https://openrouter.ai/api/v1/chat/completions"
+
+
+def test_build_provider_deprecated_aliases_emit_warnings(monkeypatch):
+    with pytest.deprecated_call(match="offline"):
+        heuristic = build_provider("offline")
+    assert isinstance(heuristic, DeterministicOfflineProvider)
+
+    monkeypatch.setenv("PHASE6_REVIEW_API_KEY", "test-key")
+    with pytest.deprecated_call(match="ai"):
+        llm = build_provider("ai")
+    assert isinstance(llm, LLMReviewProvider)
+
+
+def test_build_provider_rejects_unknown_mode():
+    with pytest.raises(ValueError, match="Unsupported phase6 review mode"):
+        build_provider("something-else")
 
 
 def test_llm_provider_missing_api_key_uses_deterministic_fallback():
@@ -191,3 +209,20 @@ def test_llm_provider_batch_prefetch_single_request_multiple_pairs():
     assert attempts == 1
     assert first.spelling_score == 0.1
     assert second.meaning_mismatch_score == 0.3
+
+
+def test_test_heuristic_provider_has_required_provenance_fields():
+    provider = build_provider("test-heuristic")
+
+    sg = provider.review_spelling_grammar("Hello", "teh", "fr")
+    meaning = provider.review_meaning("Hello", "Hello", "fr")
+
+    expected = {
+        "provider": "deterministic-offline",
+        "review_mode": "test-heuristic",
+        "confidence_provenance": "heuristic",
+        "origin": "deterministic_offline",
+        "fallback_used": False,
+    }
+    assert sg.provider_meta == expected
+    assert meaning.provider_meta == expected
