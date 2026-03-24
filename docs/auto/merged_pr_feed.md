@@ -1162,3 +1162,39 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c2a5154724832c91e2468e3c93e983)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #124 — 2026-03-24T18:00:16Z
+
+- Title: Add provider metadata propagation, explicit review-mode handling, and deprecations
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/124
+- Author: evinaeva
+- Base branch: main
+- Head branch: amredy-codex/add-explicit-review-modes-and-deprecate-aliases
+- Merge commit: ec9cc5d00339e40fa2492f1d771245b3f167a113
+- Changed files:
+  - pipeline/phase6_providers.py
+  - pipeline/phase6_review.py
+  - pipeline/run_phase6.py
+  - tests/test_phase6_providers.py
+  - tests/test_phase6_review_pipeline.py
+- Description:
+  ### Motivation
+  
+  - Make review provider provenance explicit in evidence and surface whether results came from heuristics or an LLM, and tighten accepted provider mode names.
+  - Improve CLI and API ergonomics by allowing explicit per-run `review_mode` and failing fast when an explicit mode is required.
+  
+  ### Description
+  
+  - Added richer `provider_meta` fields to `DeterministicOfflineProvider` and to LLM fallback and result objects, including `provider`, `review_mode`, `confidence_provenance`, and fallback provenance keys.
+  - Propagated `review_mode` and `confidence_provenance` from provider metadata into evidence in `_build_evidence` so those fields appear at the evidence top-level.
+  - Introduced `_resolve_review_mode` and updated `run()` to accept `review_mode` and `require_explicit_mode` arguments, and added a `--review-mode` CLI argument to the script.
+  - Tightened `build_provider` to normalize modes, emit `DeprecationWarning` for legacy aliases (`offline` -> `test-heuristic`, `ai` -> `llm`), and raise `ValueError` for unsupported modes.
+  
+  ### Testing
+  
+  - Ran unit tests in `tests/test_phase6_providers.py` and `tests/test_phase6_review_pipeline.py` via `pytest` after updates; all tests passed.
+  - Added tests for deprecated alias warnings (`test_build_provider_deprecated_aliases_emit_warnings`) and for explicit-mode failure (`test_run_fails_fast_when_explicit_review_mode_required_and_omitted`), which passed.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c2cf3471f4832ca17244ef73259243)
+- Notes: Auto-generated from merged PR metadata.
