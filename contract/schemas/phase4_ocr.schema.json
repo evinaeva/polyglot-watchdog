@@ -16,12 +16,18 @@
       "state",
       "user_tier",
       "source_image_uri",
+      "asset_hash",
+      "src",
+      "alt",
+      "is_svg",
+      "svg_text",
       "ocr_text",
       "ocr_provider",
       "ocr_engine",
       "ocr_notes",
       "provider_meta",
-      "status"
+      "status",
+      "image_text_coverage"
     ],
     "properties": {
       "item_id": {
@@ -58,12 +64,28 @@
         "type": "string",
         "minLength": 1
       },
+      "asset_hash": {
+        "type": "string"
+      },
+      "src": {
+        "type": "string"
+      },
+      "alt": {
+        "type": "string"
+      },
+      "is_svg": {
+        "type": "boolean"
+      },
+      "svg_text": {
+        "type": "string"
+      },
       "ocr_text": {
         "type": "string"
       },
       "ocr_provider": {
         "type": "string",
         "enum": [
+          "deterministic_svg",
           "ocr.space",
           "google_vision"
         ],
@@ -93,6 +115,15 @@
           "failed"
         ],
         "description": "ok: OCR produced usable normalized text; skipped: OCR intentionally not attempted for a non-error reason; failed: OCR attempted/expected but no valid text could be produced."
+      },
+      "image_text_coverage": {
+        "type": "string",
+        "enum": [
+          "image_text_reviewed",
+          "image_text_not_reviewed",
+          "image_text_review_blocked"
+        ],
+        "description": "Additive image text coverage signal. reviewed when deterministic SVG extraction or OCR yields usable text; not_reviewed when attempts complete without usable image text; review_blocked when deterministic extraction/processing is blocked."
       }
     },
     "allOf": [

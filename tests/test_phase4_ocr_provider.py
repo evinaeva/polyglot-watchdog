@@ -156,6 +156,17 @@ def test_both_providers_fail_reports_truthful_fallback_metadata():
     assert result["provider_meta"]["attempted_providers"] == ["ocr.space", "google_vision"]
 
 
+def test_both_providers_missing_keys_returns_skipped_status_transition(monkeypatch):
+    monkeypatch.delenv("OCR_SPACE_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_VISION_API_KEY", raising=False)
+
+    result = extract_text_with_ocrspace_fallback(_tiny_png_bytes())
+
+    assert result["status"] == "skipped"
+    assert result["ocr_text"] == ""
+    assert "ocr_space_missing_api_key" in result["ocr_notes"]
+
+
 def test_ocrspace_request_payload_keeps_engine_language_timeout(monkeypatch):
     captured = {}
 

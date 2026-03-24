@@ -219,7 +219,7 @@ def test_phase4_rows_include_only_image_backed_items_and_stable_shape():
         {"item_id": "txt-1", "page_id": "p1", "url": "https://example.com", "language": "fr"},
     ]
     collected = [
-        {"item_id": "img-1", "page_id": "p1", "element_type": "img", "tag": "img", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}, "viewport_kind": "desktop", "state": "baseline", "user_tier": "guest"},
+        {"item_id": "img-1", "page_id": "p1", "element_type": "img", "tag": "img", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}, "viewport_kind": "desktop", "state": "baseline", "user_tier": "guest", "asset_hash": "h1", "src": "https://example.com/image.png", "alt": "cta", "is_svg": False, "svg_text": ""},
         {"item_id": "txt-1", "page_id": "p1", "element_type": "p", "tag": "p", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}, "viewport_kind": "desktop", "state": "baseline", "user_tier": "guest"},
     ]
     screenshots = [{"page_id": "p1", "storage_uri": "gs://b/page.png"}]
@@ -235,8 +235,11 @@ def test_phase4_rows_include_only_image_backed_items_and_stable_shape():
     assert [r["item_id"] for r in rows] == ["img-1"]
     assert rows[0].keys() == {
         "item_id", "page_id", "url", "language", "viewport_kind", "state", "user_tier", "source_image_uri",
+        "asset_hash", "src", "alt", "is_svg", "svg_text",
         "ocr_text", "ocr_provider", "ocr_engine", "ocr_notes", "provider_meta", "status",
+        "image_text_coverage",
     }
+    assert rows[0]["image_text_coverage"] == "image_text_reviewed"
 
 
 
@@ -250,12 +253,18 @@ def _phase4_row(status: str = "ok") -> dict:
         "state": "baseline",
         "user_tier": "guest",
         "source_image_uri": "gs://bucket/page.png",
+        "asset_hash": "h1",
+        "src": "https://example.com/image.png",
+        "alt": "alt",
+        "is_svg": False,
+        "svg_text": "",
         "ocr_text": "cta" if status == "ok" else "",
         "ocr_provider": "ocr.space",
         "ocr_engine": "3",
         "ocr_notes": [],
         "provider_meta": {"provider": "ocr.space"},
         "status": status,
+        "image_text_coverage": "image_text_reviewed" if status == "ok" else "image_text_not_reviewed",
     }
     if status == "skipped":
         row["ocr_notes"] = ["missing_api_key"]
@@ -276,6 +285,32 @@ def test_phase4_ocr_schema_rejects_invalid_status():
         assert False, "expected schema validation to fail for invalid status"
     except SchemaValidationError:
         pass
+
+
+def test_phase4_deterministic_svg_data_uri_extraction_without_ocr():
+    svg_payload = "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%3E%3Ctext%3EBonjour%3C/text%3E%3C/svg%3E"
+    rows = build_phase4_ocr_rows(
+        [{"item_id": "img-1", "page_id": "p1", "url": "https://example.com", "language": "fr"}],
+        [{"item_id": "img-1", "page_id": "p1", "element_type": "img", "tag": "img", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}, "viewport_kind": "desktop", "state": "baseline", "user_tier": "guest", "asset_hash": "h1", "src": svg_payload, "alt": "", "is_svg": True, "svg_text": ""}],
+        [{"page_id": "p1", "storage_uri": "gs://b/page.png"}],
+        image_fetcher=lambda _: (_ for _ in ()).throw(AssertionError("image fetch should not run")),
+        ocr_fn=lambda _: (_ for _ in ()).throw(AssertionError("ocr should not run")),
+    )
+    assert rows[0]["status"] == "ok"
+    assert rows[0]["ocr_text"] == "Bonjour"
+    assert rows[0]["image_text_coverage"] == "image_text_reviewed"
+
+
+def test_phase4_external_svg_is_marked_blocked_without_live_fetch():
+    rows = build_phase4_ocr_rows(
+        [{"item_id": "img-1", "page_id": "p1", "url": "https://example.com", "language": "fr"}],
+        [{"item_id": "img-1", "page_id": "p1", "element_type": "img", "tag": "img", "bbox": {"x": 0, "y": 0, "width": 1, "height": 1}, "viewport_kind": "desktop", "state": "baseline", "user_tier": "guest", "asset_hash": "h1", "src": "https://example.com/asset.svg", "alt": "", "is_svg": True, "svg_text": ""}],
+        [{"page_id": "p1", "storage_uri": "gs://b/page.png"}],
+        image_fetcher=lambda _: (_ for _ in ()).throw(AssertionError("image fetch should not run")),
+        ocr_fn=lambda _: (_ for _ in ()).throw(AssertionError("ocr should not run")),
+    )
+    assert rows[0]["status"] == "skipped"
+    assert rows[0]["image_text_coverage"] == "image_text_review_blocked"
 
 
 def test_phase4_ocr_schema_rejects_missing_required_field():

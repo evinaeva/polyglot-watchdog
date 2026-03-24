@@ -21,6 +21,7 @@ from __future__ import annotations
 import datetime
 import hashlib
 import json
+import re
 from typing import Any
 
 from pipeline.interactive_capture import compute_item_id
@@ -156,10 +157,56 @@ EXTRACTION_JS = """
         attributes: { src: src, alt: alt }
       });
     }
+
+    if (tag === 'svg') {
+      const alt = node.getAttribute('aria-label') || node.getAttribute('title') || '';
+      const svgText = (node.textContent || '').trim();
+      results.push({
+        element_type: 'svg',
+        tag: 'svg',
+        css_selector: getSelector(node),
+        bbox: getBbox(node),
+        text: svgText,
+        visible: isVisible(node),
+        attributes: { src: '', alt: alt, svg_text: svgText }
+      });
+    }
   }
   return results;
 }
 """
+
+_DATA_SVG_RE = re.compile(r"^data:image/svg\+xml", re.IGNORECASE)
+
+
+def _image_evidence_for_element(el: dict[str, Any]) -> dict[str, Any]:
+    tag = str(el.get("tag", "") or "").strip().lower()
+    attributes = el.get("attributes") if isinstance(el.get("attributes"), dict) else {}
+    src = str(attributes.get("src", "") or "").strip()
+    alt = str(attributes.get("alt", "") or "").strip()
+    svg_text = str(attributes.get("svg_text", "") or "").strip()
+    is_svg = bool(
+        tag == "svg"
+        or src.lower().endswith(".svg")
+        or _DATA_SVG_RE.match(src)
+        or bool(svg_text)
+    )
+    if not (tag in {"img", "image", "svg"} or str(el.get("element_type", "")).strip().lower() in {"img", "image", "svg"}):
+        return {}
+
+    asset_basis = svg_text or src
+    asset_hash = hashlib.sha1(asset_basis.encode("utf-8")).hexdigest() if asset_basis else ""
+    coverage = "image_text_not_reviewed"
+    if is_svg and not svg_text and src and not _DATA_SVG_RE.match(src):
+        coverage = "image_text_review_blocked"
+    return {
+        "asset_hash": asset_hash,
+        "src": src,
+        "alt": alt,
+        "is_svg": is_svg,
+        "svg_text": svg_text,
+        "image_text_coverage": coverage,
+    }
 
 
 async def wait_for_capture_readiness(page, state: str) -> None:
@@ -278,6 +325,7 @@ async def capture_current_page(
             "tag": el.get("tag"),
             "attributes": el.get("attributes"),
         }
+        item.update(_image_evidence_for_element(el))
         items.append(item)
 
     # Sort items for determinism — Contract §1 (stable ordering)

@@ -31,7 +31,7 @@ from pipeline.interactive_capture import CaptureContext, build_capture_context_i
 from pipeline.schema_validator import SchemaValidationError, validate
 from pipeline.storage import BUCKET_NAME, read_json_artifact, write_json_artifact, write_phase_manifest
 
-_IMAGE_TAGS = {"img", "image"}
+_IMAGE_TAGS = {"img", "image", "svg"}
 
 
 def _is_image_item(item: dict) -> bool:
@@ -77,13 +77,17 @@ def _build_evidence(target_item: dict, target_collected_by_item: dict[str, dict]
     collected = target_collected_by_item.get(target_item["item_id"], {})
     page_id = collected.get("page_id")
     screenshot = target_screens_by_page.get(page_id, {}) if page_id else {}
-    return {
+    evidence = {
         "url": target_item["url"],
         "bbox": collected.get("bbox", {"x": 0, "y": 0, "width": 0, "height": 0}),
         "storage_uri": screenshot.get("storage_uri", ""),
         "page_id": page_id,
         "item_id": target_item["item_id"],
     }
+    for key in ("asset_hash", "src", "alt", "is_svg", "svg_text", "image_text_coverage"):
+        if key in target_item:
+            evidence[key] = target_item.get(key)
+    return evidence
 
 
 def _build_missing_target_evidence(en_item: dict, en_collected_by_item: dict[str, dict], en_screens_by_page: dict[str, dict]) -> dict:
@@ -147,22 +151,30 @@ def run(domain: str, en_run_id: str, target_run_id: str) -> list[dict]:
 
     en_by_item = {i["item_id"]: i for i in en_eligible if i.get("language") == "en"}
     target_by_item = {i["item_id"]: dict(i) for i in target_eligible if i.get("language") != "en"}
+    target_collected_by_item = _index_collected(target_collected)
     ocr_by_item = _load_phase4_ocr_by_item(domain, target_run_id)
     for item_id, item in target_by_item.items():
         ocr_row = ocr_by_item.get(item_id, {})
+        collected_row = target_collected_by_item.get(item_id, {})
         # OCR text applies only to approved image-backed items and is supporting
         # evidence for EN↔target review, not a standalone issue generator.
         if not _is_image_item(item):
             continue
+        for key in ("asset_hash", "src", "alt", "is_svg", "svg_text", "image_text_coverage"):
+            if key in ocr_row:
+                item[key] = ocr_row.get(key)
+            elif key in collected_row and key not in item:
+                item[key] = collected_row.get(key)
         if ocr_row.get("status") == "ok":
             item["ocr_text"] = str(ocr_row.get("ocr_text", "")).strip()
             item["ocr_engine"] = f"{ocr_row.get('ocr_provider', '')}:{ocr_row.get('ocr_engine', '')}".strip(":")
             notes = ocr_row.get("ocr_notes", [])
             if isinstance(notes, list):
                 item["ocr_notes"] = [str(note).strip() for note in notes if str(note).strip()]
+        elif "image_text_coverage" not in item:
+            item["image_text_coverage"] = "image_text_not_reviewed"
     en_collected_by_item = _index_collected(en_collected)
     en_screens_by_page = _index_screenshots(en_screens)
-    target_collected_by_item = _index_collected(target_collected)
     target_screens_by_page = _index_screenshots(target_screens)
     target_language = next((str(item.get("language", "")).strip() for item in target_eligible if str(item.get("language", "")).strip() and str(item.get("language", "")).lower() != "en"), "")
     blocked_pages = _load_blocked_overlay_pages(domain, target_language, target_screens) if target_language else []
@@ -206,13 +218,44 @@ def run(domain: str, en_run_id: str, target_run_id: str) -> list[dict]:
         sys.exit(1)
 
     write_json_artifact(domain, target_run_id, "issues.json", issues)
+    coverage_gaps = []
+    coverage_states = {
+        "image_text_reviewed": 0,
+        "image_text_not_reviewed": 0,
+        "image_text_review_blocked": 0,
+    }
+    for item in sorted(target_by_item.values(), key=lambda row: str(row.get("item_id", ""))):
+        if not _is_image_item(item):
+            continue
+        state = str(item.get("image_text_coverage", "image_text_not_reviewed")).strip() or "image_text_not_reviewed"
+        if state not in coverage_states:
+            state = "image_text_not_reviewed"
+        coverage_states[state] += 1
+        if state == "image_text_reviewed":
+            continue
+        coverage_gaps.append({
+            "item_id": item.get("item_id", ""),
+            "url": item.get("url", ""),
+            "language": item.get("language", ""),
+            "image_text_coverage": state,
+            "asset_hash": item.get("asset_hash", ""),
+            "src": item.get("src", ""),
+            "alt": item.get("alt", ""),
+            "is_svg": bool(item.get("is_svg", False)),
+            "svg_text": item.get("svg_text", ""),
+            "ocr_notes": item.get("ocr_notes", []),
+        })
+    write_json_artifact(domain, target_run_id, "coverage_gaps.json", coverage_gaps)
     manifest = {
         "schema_version": "v1.0",
         "phase": "phase6",
         "run_id": target_run_id,
         "domain": domain,
-        "artifact_uris": [f"gs://{BUCKET_NAME}/{domain}/{target_run_id}/issues.json"],
-        "summary_counters": {"issues": len(issues)},
+        "artifact_uris": [
+            f"gs://{BUCKET_NAME}/{domain}/{target_run_id}/coverage_gaps.json",
+            f"gs://{BUCKET_NAME}/{domain}/{target_run_id}/issues.json",
+        ],
+        "summary_counters": {"issues": len(issues), **coverage_states},
         "error_records": [],
         "provenance": {"en_run_id": en_run_id, "target_run_id": target_run_id},
     }

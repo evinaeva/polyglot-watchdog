@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import io
 from pathlib import Path
+import re
 import sys
+import urllib.parse
+import xml.etree.ElementTree as ET
 
 from PIL import Image
 
@@ -14,7 +18,8 @@ if project_root not in sys.path:
 from pipeline.phase4_ocr_provider import extract_text_with_ocrspace_fallback
 from pipeline.storage import BUCKET_NAME, read_json_artifact, write_json_artifact, write_phase_manifest
 
-_IMAGE_TAGS = {"img", "image"}
+_IMAGE_TAGS = {"img", "image", "svg"}
+_DATA_SVG_RE = re.compile(r"^data:image/svg\+xml(?:;charset=[^;,]+)?(?:;base64)?,", re.IGNORECASE)
 
 
 def _is_image_item(item: dict) -> bool:
@@ -59,6 +64,28 @@ def _download_gs_uri(gs_uri: str) -> bytes:
     return blob.download_as_bytes()
 
 
+def _extract_svg_text(svg_payload: str) -> str:
+    try:
+        root = ET.fromstring(svg_payload)
+    except ET.ParseError:
+        return ""
+    parts = [text.strip() for text in root.itertext() if str(text).strip()]
+    return " ".join(parts).strip()
+
+
+def _decode_data_svg_src(src: str) -> str:
+    if not _DATA_SVG_RE.match(src):
+        return ""
+    payload = src.split(",", 1)[1] if "," in src else ""
+    if ";base64," in src.lower():
+        try:
+            decoded = base64.b64decode(payload)
+            return decoded.decode("utf-8", errors="replace")
+        except Exception:
+            return ""
+    return urllib.parse.unquote(payload)
+
+
 def build_phase4_ocr_rows(
     eligible_dataset: list[dict],
     collected_items: list[dict],
@@ -90,17 +117,47 @@ def build_phase4_ocr_rows(
             "state": collected.get("state", eligible.get("state", "")),
             "user_tier": collected.get("user_tier", eligible.get("user_tier")),
             "source_image_uri": source_image_uri,
+            "asset_hash": str(collected.get("asset_hash", "")).strip(),
+            "src": str(collected.get("src", "")).strip(),
+            "alt": str(collected.get("alt", "")).strip(),
+            "is_svg": bool(collected.get("is_svg", False)),
+            "svg_text": str(collected.get("svg_text", "")).strip(),
             "ocr_text": "",
             "ocr_provider": "ocr.space",
             "ocr_engine": "3",
             "ocr_notes": [],
             "provider_meta": {},
             "status": "failed",
+            "image_text_coverage": "image_text_not_reviewed",
         }
+
+        if row["is_svg"]:
+            extracted_svg_text = row["svg_text"]
+            if not extracted_svg_text and row["src"]:
+                extracted_svg_text = _extract_svg_text(_decode_data_svg_src(row["src"]))
+            if extracted_svg_text:
+                row["svg_text"] = extracted_svg_text
+                row["ocr_text"] = extracted_svg_text
+                row["ocr_provider"] = "deterministic_svg"
+                row["ocr_engine"] = "deterministic_svg"
+                row["ocr_notes"] = ["deterministic_svg_extraction"]
+                row["provider_meta"] = {"provider": "deterministic_svg", "mode": "inline_or_data_uri"}
+                row["status"] = "ok"
+                row["image_text_coverage"] = "image_text_reviewed"
+                rows.append(row)
+                continue
+            if row["src"] and not _DATA_SVG_RE.match(row["src"]):
+                row["status"] = "skipped"
+                row["ocr_notes"] = ["svg_review_blocked_no_local_payload"]
+                row["provider_meta"] = {"provider": "deterministic_svg", "blocked": "external_svg_src"}
+                row["image_text_coverage"] = "image_text_review_blocked"
+                rows.append(row)
+                continue
 
         if not source_image_uri:
             row["status"] = "failed"
             row["ocr_notes"] = ["missing_source_image"]
+            row["image_text_coverage"] = "image_text_review_blocked"
             rows.append(row)
             continue
 
@@ -110,6 +167,7 @@ def build_phase4_ocr_rows(
             if not crop_png:
                 row["status"] = "failed"
                 row["ocr_notes"] = ["invalid_bbox"]
+                row["image_text_coverage"] = "image_text_review_blocked"
                 rows.append(row)
                 continue
             ocr_result = ocr_fn(crop_png)
@@ -117,10 +175,12 @@ def build_phase4_ocr_rows(
             row["status"] = "failed"
             row["ocr_notes"] = ["prepare_or_fetch_failed"]
             row["provider_meta"] = {"error": str(exc)}
+            row["image_text_coverage"] = "image_text_review_blocked"
             rows.append(row)
             continue
 
         row.update(ocr_result)
+        row["image_text_coverage"] = "image_text_reviewed" if row.get("status") == "ok" and str(row.get("ocr_text", "")).strip() else "image_text_not_reviewed"
         rows.append(row)
 
     rows.sort(key=lambda r: (r.get("item_id", ""), r.get("url", "")))
@@ -145,6 +205,9 @@ def run(domain: str, run_id: str) -> list[dict]:
             "ok": len([r for r in rows if r.get("status") == "ok"]),
             "failed": len([r for r in rows if r.get("status") == "failed"]),
             "skipped": len([r for r in rows if r.get("status") == "skipped"]),
+            "image_text_reviewed": len([r for r in rows if r.get("image_text_coverage") == "image_text_reviewed"]),
+            "image_text_not_reviewed": len([r for r in rows if r.get("image_text_coverage") == "image_text_not_reviewed"]),
+            "image_text_review_blocked": len([r for r in rows if r.get("image_text_coverage") == "image_text_review_blocked"]),
         },
         "error_records": [],
         "provenance": {"primary_provider": "ocr.space", "fallback_provider": "google_vision"},

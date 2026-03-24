@@ -24,7 +24,7 @@ from pipeline.phase6_providers import Phase6ReviewProvider
 _PLACEHOLDER_RE = re.compile(r"(%[^%]+%|\[[^\]]+\]|<[^>]+>)")
 _DYNAMIC_NUMBER_RE = re.compile(r"\d+")
 _HEADER_ONLINE_CLASS_TOKENS = {"header_online", "bc_flex", "bc_flex_items_center"}
-_IMAGE_TAGS = {"img", "image"}
+_IMAGE_TAGS = {"img", "image", "svg"}
 _REPEATED_CHAR_RE = re.compile(r"(.)\1{3,}")
 _NOISY_NOTE_HINTS = ("ambig", "uncertain", "low_conf", "failed", "no_text", "empty")
 
@@ -57,6 +57,7 @@ class PreparedReviewInputs:
     ocr_engine: str
     ocr_quality: dict | None
     comparison_text_source: str
+    image_text_coverage: str | None
 
 
 def _issue_id(category: str, en_item_id: str, target_url: str, message: str) -> str:
@@ -235,6 +236,7 @@ def prepare_review_inputs(en_item: dict, target_item: dict | None) -> PreparedRe
             ocr_engine="",
             ocr_quality=None,
             comparison_text_source="dom",
+            image_text_coverage=None,
         )
 
     dom_target_text = _normalize_dynamic_counter_text(en_item, target_item, normalize_text(target_item.get("text", "")))
@@ -244,8 +246,20 @@ def prepare_review_inputs(en_item: dict, target_item: dict | None) -> PreparedRe
     if is_image and ocr_text and not ocr_engine:
         ocr_engine = "OCR.Space:engine3"
     ocr_notes = list(target_item.get("ocr_notes", [])) if is_image and isinstance(target_item.get("ocr_notes"), list) else []
+    image_text_coverage = str(target_item.get("image_text_coverage", "")).strip() or None
     has_ocr_handoff = is_image and any(key in target_item for key in ("ocr_text", "ocr_notes", "ocr_engine"))
     ocr_quality = _assess_ocr_quality(en_text, ocr_text, ocr_notes) if has_ocr_handoff else None
+    if is_image and image_text_coverage in {"image_text_not_reviewed", "image_text_review_blocked"}:
+        return PreparedReviewInputs(
+            en_text=en_text,
+            target_text="",
+            is_dynamic_counter=is_dynamic_counter,
+            ocr_text=ocr_text,
+            ocr_engine=ocr_engine,
+            ocr_quality=ocr_quality,
+            comparison_text_source="image_text_unreviewed",
+            image_text_coverage=image_text_coverage,
+        )
     target_text, comparison_text_source = _select_target_comparison_text(
         en_item=en_item,
         target_item=target_item,
@@ -261,6 +275,7 @@ def prepare_review_inputs(en_item: dict, target_item: dict | None) -> PreparedRe
         ocr_engine=ocr_engine,
         ocr_quality=ocr_quality,
         comparison_text_source=comparison_text_source,
+        image_text_coverage=image_text_coverage,
     )
 
 
@@ -308,6 +323,10 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
     ocr_quality = prepared.ocr_quality
     target_text = prepared.target_text
     comparison_text_source = prepared.comparison_text_source
+    image_text_coverage = prepared.image_text_coverage
+
+    if _is_image_item(target_item) and image_text_coverage in {"image_text_not_reviewed", "image_text_review_blocked"}:
+        return []
 
     en_placeholders = sorted(_PLACEHOLDER_RE.findall(en_text))
     target_placeholders = sorted(_PLACEHOLDER_RE.findall(target_text))

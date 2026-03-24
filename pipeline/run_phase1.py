@@ -33,6 +33,19 @@ from pipeline.storage import BUCKET_NAME, write_json_artifact, read_json_artifac
 from pipeline.schema_validator import validate, SchemaValidationError
 
 
+def _image_coverage_counters(items: list[dict]) -> dict[str, int]:
+    counters = {
+        "image_text_reviewed": 0,
+        "image_text_not_reviewed": 0,
+        "image_text_review_blocked": 0,
+    }
+    for row in items:
+        state = str(row.get("image_text_coverage", "")).strip()
+        if state in counters:
+            counters[state] += 1
+    return counters
+
+
 def load_planning_rows(domain: str, run_id: str) -> list[dict]:
     """Load planning rows with seed_urls as primary input for v1.0."""
     try:
@@ -394,6 +407,7 @@ async def main(
             "pages": len(all_page_screenshots),
             "items": len(all_collected_items),
             "universal_sections": len(universal_sections),
+            **_image_coverage_counters(all_collected_items),
         },
         "provenance": {
             "language": language,

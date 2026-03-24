@@ -319,6 +319,7 @@ def capture_state(
             "visible": bool(raw.get("visible", True)),
             "tag": raw.get("tag"),
             "attributes": raw.get("attributes"),
+            **_image_evidence_for_element(raw),
         })
 
     elements.sort(key=lambda row: row["item_id"])
@@ -446,3 +447,29 @@ def generate_issues(pairs: list[dict[str, Any]], expected_states: set[str], actu
             })
     issues.sort(key=lambda item: item["id"])
     return issues
+_DATA_SVG_RE = re.compile(r"^data:image/svg\+xml", re.IGNORECASE)
+
+
+def _image_evidence_for_element(raw: dict[str, Any]) -> dict[str, Any]:
+    tag = str(raw.get("tag", "") or "").strip().lower()
+    element_type = str(raw.get("element_type", "") or "").strip().lower()
+    attributes = raw.get("attributes") if isinstance(raw.get("attributes"), dict) else {}
+    if tag not in {"img", "image", "svg"} and element_type not in {"img", "image", "svg"}:
+        return {}
+    src = str(attributes.get("src", "") or "").strip()
+    alt = str(attributes.get("alt", "") or "").strip()
+    svg_text = str(attributes.get("svg_text", "") or "").strip()
+    is_svg = bool(tag == "svg" or src.lower().endswith(".svg") or _DATA_SVG_RE.match(src) or svg_text)
+    asset_basis = svg_text or src
+    asset_hash = hashlib.sha1(asset_basis.encode("utf-8")).hexdigest() if asset_basis else ""
+    coverage = "image_text_not_reviewed"
+    if is_svg and not svg_text and src and not _DATA_SVG_RE.match(src):
+        coverage = "image_text_review_blocked"
+    return {
+        "asset_hash": asset_hash,
+        "src": src,
+        "alt": alt,
+        "is_svg": is_svg,
+        "svg_text": svg_text,
+        "image_text_coverage": coverage,
+    }

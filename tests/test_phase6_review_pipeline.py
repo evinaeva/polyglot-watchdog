@@ -167,6 +167,50 @@ def test_non_image_items_do_not_receive_ocr_signals():
     assert issues == []
 
 
+def test_image_not_reviewed_coverage_skips_dom_alt_review_and_records_gap():
+    artifacts = _base_artifacts(
+        {
+            "tag": "img",
+            "element_type": "img",
+            "text": "ALT text should not imply full review",
+        }
+    )
+    artifacts[-1] = [
+        {
+            "item_id": "item-1",
+            "page_id": "fr-page-1",
+            "url": "https://example.com/fr/p",
+            "language": "fr",
+            "viewport_kind": "desktop",
+            "state": "baseline",
+            "user_tier": "guest",
+            "source_image_uri": "gs://bucket/page.png",
+            "asset_hash": "h1",
+            "src": "https://example.com/asset.png",
+            "alt": "ALT text should not imply full review",
+            "is_svg": False,
+            "svg_text": "",
+            "ocr_text": "",
+            "ocr_provider": "ocr.space",
+            "ocr_engine": "3",
+            "ocr_notes": ["empty_text"],
+            "provider_meta": {"provider": "ocr.space"},
+            "status": "failed",
+            "image_text_coverage": "image_text_not_reviewed",
+        }
+    ]
+    with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+    ), patch("pipeline.run_phase6.write_phase_manifest"), patch("pipeline.run_phase6.write_json_artifact") as write_json:
+        issues = run("example.com", "run-en", "run-fr")
+
+    assert issues == []
+    coverage_call = next(call for call in write_json.call_args_list if call.args[2] == "coverage_gaps.json")
+    gaps = coverage_call.args[3]
+    assert len(gaps) == 1
+    assert gaps[0]["image_text_coverage"] == "image_text_not_reviewed"
+
+
 def test_provider_disabled_mode_is_deterministic_and_offline():
     artifacts = _base_artifacts({"text": "teh translation"})
 

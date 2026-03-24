@@ -115,6 +115,29 @@
           "object",
           "null"
         ]
+      },
+      "asset_hash": {
+        "type": "string"
+      },
+      "src": {
+        "type": "string"
+      },
+      "alt": {
+        "type": "string"
+      },
+      "is_svg": {
+        "type": "boolean"
+      },
+      "svg_text": {
+        "type": "string"
+      },
+      "image_text_coverage": {
+        "type": "string",
+        "enum": [
+          "image_text_reviewed",
+          "image_text_not_reviewed",
+          "image_text_review_blocked"
+        ]
       }
     },
     "allOf": [
