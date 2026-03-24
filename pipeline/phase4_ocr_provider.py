@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import os
 import unicodedata
+from typing import Optional
 
 import httpx
 
@@ -43,7 +44,7 @@ def ocrspace_extract_text(
 ) -> dict:
     api_key = os.getenv("OCR_SPACE_API_KEY", "").strip()
     if not api_key:
-        return {
+        result = {
             "status": "skipped",
             "ocr_text": "",
             "ocr_provider": "ocr.space",
@@ -51,6 +52,7 @@ def ocrspace_extract_text(
             "ocr_notes": ["missing_api_key"],
             "provider_meta": {"provider": "ocr.space"},
         }
+        return _fallback_to_google_if_needed(image_bytes, result)
 
     endpoint = os.getenv("OCR_SPACE_ENDPOINT", OCR_SPACE_ENDPOINT_DEFAULT).strip() or OCR_SPACE_ENDPOINT_DEFAULT
     timeout_s = float(os.getenv("OCR_SPACE_TIMEOUT_S", "40"))
@@ -68,7 +70,7 @@ def ocrspace_extract_text(
         response.raise_for_status()
         result = response.json()
     except Exception as exc:
-        return {
+        result = {
             "status": "failed",
             "ocr_text": "",
             "ocr_provider": "ocr.space",
@@ -76,9 +78,10 @@ def ocrspace_extract_text(
             "ocr_notes": ["request_failed"],
             "provider_meta": {"provider": "ocr.space", "error": str(exc)},
         }
+        return _fallback_to_google_if_needed(image_bytes, result)
 
     if not isinstance(result, dict):
-        return {
+        outcome = {
             "status": "failed",
             "ocr_text": "",
             "ocr_provider": "ocr.space",
@@ -86,9 +89,10 @@ def ocrspace_extract_text(
             "ocr_notes": ["malformed_response"],
             "provider_meta": {"provider": "ocr.space"},
         }
+        return _fallback_to_google_if_needed(image_bytes, outcome)
 
     if result.get("IsErroredOnProcessing"):
-        return {
+        outcome = {
             "status": "failed",
             "ocr_text": "",
             "ocr_provider": "ocr.space",
@@ -96,6 +100,7 @@ def ocrspace_extract_text(
             "ocr_notes": ["errored_on_processing"],
             "provider_meta": {"provider": "ocr.space", "error_message": result.get("ErrorMessage")},
         }
+        return _fallback_to_google_if_needed(image_bytes, outcome)
 
     parsed_results = result.get("ParsedResults")
     parsed_text = ""
@@ -112,6 +117,7 @@ def ocrspace_extract_text(
             "ocr_notes": ["empty_text"],
             "provider_meta": {"provider": "ocr.space"},
         }
+        return _fallback_to_google_if_needed(image_bytes, outcome)
 
     return {
         "status": "ok",
