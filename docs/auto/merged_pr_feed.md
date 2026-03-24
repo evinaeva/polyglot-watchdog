@@ -1057,3 +1057,38 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c297188ba8832c9b6bc90abe51393e)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #121 — 2026-03-24T14:58:38Z
+
+- Title: OCR: stop implicit google fallback in ocrspace extractor, enrich fallback metadata, and update tests
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/121
+- Author: evinaeva
+- Base branch: main
+- Head branch: qd1h4g-codex/validate-ocr-improvements-compliance
+- Merge commit: 742ffbcfcb12b8aaeee8226b0f14e7c42c9fed72
+- Changed files:
+  - pipeline/phase4_ocr_provider.py
+  - tests/test_phase4_ocr_provider.py
+- Description:
+  ### Motivation
+  
+  - Remove hidden automatic fallback from inside the OCR.space extraction function so fallback behavior is centralized and predictable.  
+  - Provide richer metadata when an OCR.space primary attempt falls back to Google Vision so downstream consumers can reason about which providers were attempted.  
+  - Update and simplify tests to use `unittest.mock.patch` and assert the new metadata and request payload fields.
+  
+  ### Description
+  
+  - `ocrspace_extract_text` no longer calls an internal `_fallback_to_google_if_needed` and instead returns its direct result for skipped/failed/malformed cases.  
+  - `extract_text_with_ocrspace_fallback` now records `fallback_attempted` and `attempted_providers` in `provider_meta`, and uses the fallback's `ocr_provider` and `ocr_engine` when reporting failure outputs.  
+  - Adjusted merged `ocr_notes` and provider metadata to include a `reason_for_fallback` token and short error summaries from both providers.  
+  - Tests in `tests/test_phase4_ocr_provider.py` were rewritten to use `patch`, renamed to match the new function `extract_text_with_ocrspace_fallback`, and extended to assert the request payload (`OCREngine`, `language`, `base64Image`), headers (`apikey`), and timeout behavior.
+  
+  ### Testing
+  
+  - Ran the unit tests in `tests/test_phase4_ocr_provider.py` which exercise primary-success, empty/whitespace primary text fallback, primary failure fallback, both-fail metadata, and request payload assertions, and all tests passed.  
+  - The tests verify that a successful OCR.space result does not call Google Vision and that fallback path populates `provider_meta` with `fallback_attempted` and `attempted_providers` as expected.  
+  - The tests also confirm that the OCR.space request payload includes `OCREngine: "3"`, `language: "auto"`, a base64 image prefixed with `data:image/png;base64,`, and that `headers["apikey"]` and timeout are applied.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c2a0562cfc832ca827bff00086eddb)
+- Notes: Auto-generated from merged PR metadata.
