@@ -29,6 +29,7 @@ jobs:
           PYTHONPATH=. pytest -q \
             tests/test_phase1_planning_input.py::test_phase1_planning_rows_match_snapshot_fixture \
             tests/test_review_and_rerun.py::ReviewAndRerunTests::test_exact_context_job_resolves_single_job \
+            tests/test_review_and_rerun.py::ReviewAndRerunTests::test_exact_context_job_uses_url_scoped_recipe_to_avoid_false_ambiguity \
             tests/test_review_and_rerun.py::ReviewAndRerunTests::test_exact_context_job_rejects_ambiguous_state_resolution \
             tests/test_phase1_recipe_execution.py::Phase1RecipeExecutionTests::test_recipe_marker_matching_drift_regression \
             tests/test_phase6_review_pipeline.py::test_weak_ocr_suppresses_strong_meaning_claims_and_adds_quality_evidence \

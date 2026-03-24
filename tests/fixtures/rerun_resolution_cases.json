@@ -5,21 +5,66 @@
       "cart_icon": {
         "url_pattern": "/shop",
         "steps": [
-          {"action": "click", "selector": "#cart-icon"}
+          {
+            "action": "click",
+            "selector": "#cart-icon"
+          }
         ],
         "capture_points": [
-          {"state": "cart_open"}
+          {
+            "state": "cart_open"
+          }
         ]
       },
       "cart_menu": {
         "url_pattern": "/shop",
         "steps": [
-          {"action": "click", "selector": "#cart-menu"}
+          {
+            "action": "click",
+            "selector": "#cart-menu"
+          }
         ],
         "capture_points": [
-          {"state": "cart_open"}
+          {
+            "state": "cart_open"
+          }
         ]
       }
     }
+  },
+  "url_scoped_case": {
+    "state": "cart_open",
+    "url": "https://example.com/account",
+    "recipes": {
+      "cart_account": {
+        "url_pattern": "/account",
+        "steps": [
+          {
+            "action": "click",
+            "selector": "#cart"
+          }
+        ],
+        "capture_points": [
+          {
+            "state": "cart_open"
+          }
+        ]
+      },
+      "cart_shop": {
+        "url_pattern": "/shop",
+        "steps": [
+          {
+            "action": "click",
+            "selector": "#cart"
+          }
+        ],
+        "capture_points": [
+          {
+            "state": "cart_open"
+          }
+        ]
+      }
+    },
+    "expected_recipe_id": "cart_account"
   }
 }

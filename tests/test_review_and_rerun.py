@@ -97,6 +97,32 @@ class ReviewAndRerunTests(unittest.TestCase):
                 user_tier="guest",
             )
 
+
+    def test_exact_context_job_uses_url_scoped_recipe_to_avoid_false_ambiguity(self):
+        fixture = json.loads(Path("tests/fixtures/rerun_resolution_cases.json").read_text(encoding="utf-8"))
+        case = fixture["url_scoped_case"]
+        recipes = {
+            recipe_id: Recipe(
+                recipe_id=recipe_id,
+                url_pattern=raw["url_pattern"],
+                steps=tuple(RecipeStep(action=step["action"], selector=step.get("selector")) for step in raw["steps"]),
+                capture_points=tuple(CapturePoint(state=point["state"]) for point in raw["capture_points"]),
+            )
+            for recipe_id, raw in case["recipes"].items()
+        }
+
+        with patch("pipeline.run_phase1.load_recipes_for_planner", return_value=recipes):
+            job = build_exact_context_job(
+                domain="example.com",
+                url=case["url"],
+                language="en",
+                viewport_kind="desktop",
+                state=case["state"],
+                user_tier="guest",
+            )
+
+        self.assertEqual(job.recipe_id, case["expected_recipe_id"])
+
     def test_exact_context_rerun_includes_provenance_link(self):
         recipes = {
             "profile": Recipe(

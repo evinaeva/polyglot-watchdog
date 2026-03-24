@@ -19,6 +19,7 @@ import datetime
 import json
 import os
 import sys
+from urllib.parse import urlparse
 from pathlib import Path
 
 project_root = str(Path(__file__).resolve().parents[1])
@@ -68,23 +69,39 @@ def build_planned_jobs(domain: str, planning_rows: list[dict], language: str, vi
     )
 
 
+def _recipe_matches_rerun_url(url: str, recipe: Recipe) -> bool:
+    pattern = str(recipe.url_pattern or "").strip()
+    if not pattern:
+        return True
+    parsed = urlparse(url)
+    path = parsed.path or "/"
+    return pattern in path or pattern in url
+
+
 def build_exact_context_job(domain: str, url: str, language: str, viewport_kind: str, state: str, user_tier: str | None) -> CaptureJob:
     recipes = load_recipes_for_planner(domain)
     recipe_ids: list[str] = []
     if state != "baseline":
-        matching_recipe_ids = sorted(
+        state_matching_recipe_ids = sorted(
             recipe_id
             for recipe_id, recipe in recipes.items()
             if any(point.state == state for point in recipe.capture_points)
         )
-        if not matching_recipe_ids:
+        if not state_matching_recipe_ids:
             raise RuntimeError(f"No recipe defines capture point state={state!r} for exact-context rerun")
-        if len(matching_recipe_ids) > 1:
+
+        url_scoped_recipe_ids = [
+            recipe_id
+            for recipe_id in state_matching_recipe_ids
+            if _recipe_matches_rerun_url(url, recipes[recipe_id])
+        ]
+        selected_recipe_ids = url_scoped_recipe_ids or state_matching_recipe_ids
+        if len(selected_recipe_ids) > 1:
             raise RuntimeError(
                 "Exact-context rerun resolution is ambiguous for "
-                f"state={state!r}; matching recipes={matching_recipe_ids}"
+                f"state={state!r}; matching recipes={selected_recipe_ids}"
             )
-        recipe_ids = [matching_recipe_ids[0]]
+        recipe_ids = selected_recipe_ids
 
     jobs = build_planned_jobs(
         domain=domain,
@@ -101,7 +118,6 @@ def build_exact_context_job(domain: str, url: str, language: str, viewport_kind:
         and job.context.state == state
         and (job.context.user_tier or None) == (user_tier or None)
         and job.context.language == language
-        and (state == "baseline" or job.recipe_id == recipe_ids[0])
     ]
     if len(matching) != 1:
         raise RuntimeError(f"Exact-context rerun resolution failed: expected 1 job, got {len(matching)}")
