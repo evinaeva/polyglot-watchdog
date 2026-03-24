@@ -53,6 +53,49 @@ def test_ocrspace_missing_key_and_malformed_response_are_non_fatal(monkeypatch):
     assert malformed["ocr_notes"] == ["malformed_response"]
 
 
+def test_ocrspace_falls_back_to_google_on_non_usable_outcome(monkeypatch):
+    monkeypatch.delenv("OCR_SPACE_API_KEY", raising=False)
+    with patch(
+        "pipeline.phase4_ocr_provider._googlevision_extract_text",
+        return_value={
+            "status": "ok",
+            "ocr_text": "Bonjour",
+            "ocr_provider": "google.vision",
+            "ocr_engine": "text_detection",
+            "ocr_notes": ["fallback_from_ocrspace"],
+            "provider_meta": {"provider": "google.vision"},
+        },
+    ):
+        result = ocrspace_extract_text(_tiny_png_bytes())
+
+    assert result["status"] == "ok"
+    assert result["ocr_provider"] == "ocr.space"
+    assert result["ocr_engine"] == "3"
+    assert result["ocr_text"] == "Bonjour"
+    assert "fallback_google_vision" in result["ocr_notes"]
+    assert result["provider_meta"]["fallback"]["provider"] == "google.vision"
+
+
+def test_ocrspace_preserves_original_failure_when_google_fallback_fails(monkeypatch):
+    monkeypatch.setenv("OCR_SPACE_API_KEY", "test-key")
+    with patch(
+        "pipeline.phase4_ocr_provider._googlevision_extract_text",
+        return_value={
+            "status": "failed",
+            "ocr_text": "",
+            "ocr_provider": "google.vision",
+            "ocr_engine": "text_detection",
+            "ocr_notes": ["request_failed"],
+            "provider_meta": {"provider": "google.vision"},
+        },
+    ):
+        result = ocrspace_extract_text(_tiny_png_bytes(), request_fn=lambda *_: _FakeResponse(["not-a-dict"]))
+
+    assert result["status"] == "failed"
+    assert result["ocr_provider"] == "ocr.space"
+    assert result["provider_meta"]["fallback"]["provider"] == "google.vision"
+
+
 def test_phase4_rows_include_only_image_backed_items_and_stable_shape():
     eligible = [
         {"item_id": "img-1", "page_id": "p1", "url": "https://example.com", "language": "fr"},
