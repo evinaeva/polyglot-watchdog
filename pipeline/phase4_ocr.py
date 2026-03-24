@@ -11,7 +11,7 @@ project_root = str(Path(__file__).resolve().parents[1])
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from pipeline.phase4_ocr_provider import ocrspace_extract_text
+from pipeline.phase4_ocr_provider import extract_text_with_ocrspace_fallback
 from pipeline.storage import BUCKET_NAME, read_json_artifact, write_json_artifact, write_phase_manifest
 
 _IMAGE_TAGS = {"img", "image"}
@@ -65,7 +65,7 @@ def build_phase4_ocr_rows(
     page_screenshots: list[dict],
     *,
     image_fetcher=_download_gs_uri,
-    ocr_fn=ocrspace_extract_text,
+    ocr_fn=extract_text_with_ocrspace_fallback,
 ) -> list[dict]:
     collected_by_item = {row.get("item_id"): row for row in collected_items}
     screenshot_by_page = {row.get("page_id"): row for row in page_screenshots}
@@ -147,7 +147,7 @@ def run(domain: str, run_id: str) -> list[dict]:
             "skipped": len([r for r in rows if r.get("status") == "skipped"]),
         },
         "error_records": [],
-        "provenance": {"provider": "ocr.space", "ocr_engine": "3"},
+        "provenance": {"primary_provider": "ocr.space", "fallback_provider": "google_vision"},
     }
     write_phase_manifest(domain, run_id, "phase4", manifest)
     return rows
