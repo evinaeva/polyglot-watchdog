@@ -515,6 +515,10 @@ def _en_standard_display_name_today() -> str:
     return f"EN_standard_{time.strftime('%d.%m.%Y', time.gmtime())}"
 
 
+def _default_run_display_name() -> str:
+    return f"First_run_{time.strftime('%H:%M|%d.%m.%Y', time.gmtime())}"
+
+
 def _upsert_run_metadata(domain: str, run_id: str, metadata: dict) -> None:
     normalized = {str(key).strip(): value for key, value in (metadata or {}).items() if str(key).strip()}
     if not normalized:
