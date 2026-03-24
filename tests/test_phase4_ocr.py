@@ -25,6 +25,23 @@ def _tiny_png_bytes() -> bytes:
     )
 
 
+class _FakeVisionResponse:
+    def __init__(self, text: str = "", error_message: str = ""):
+        self.error = type("Err", (), {"message": error_message})()
+        if text:
+            self.text_annotations = [type("Ann", (), {"description": text})()]
+        else:
+            self.text_annotations = []
+
+
+class _FakeVisionClient:
+    def __init__(self, response: _FakeVisionResponse):
+        self._response = response
+
+    def text_detection(self, image):
+        return self._response
+
+
 def test_ocrspace_request_path_with_engine3_and_base64(monkeypatch):
     captured = {}
 
@@ -44,13 +61,48 @@ def test_ocrspace_request_path_with_engine3_and_base64(monkeypatch):
 
 def test_ocrspace_missing_key_and_malformed_response_are_non_fatal(monkeypatch):
     monkeypatch.delenv("OCR_SPACE_API_KEY", raising=False)
-    skipped = ocrspace_extract_text(_tiny_png_bytes())
-    assert skipped["status"] == "skipped"
+    skipped = ocrspace_extract_text(
+        _tiny_png_bytes(),
+        vision_client_factory=lambda: _FakeVisionClient(_FakeVisionResponse("fallback text")),
+    )
+    assert skipped["status"] == "ok"
+    assert skipped["ocr_provider"] == "google_vision"
+    assert "used_fallback_from_ocr.space" in skipped["ocr_notes"]
 
     monkeypatch.setenv("OCR_SPACE_API_KEY", "test-key")
-    malformed = ocrspace_extract_text(_tiny_png_bytes(), request_fn=lambda *_: _FakeResponse(["not-a-dict"]))
+    malformed = ocrspace_extract_text(
+        _tiny_png_bytes(),
+        request_fn=lambda *_: _FakeResponse(["not-a-dict"]),
+        vision_client_factory=lambda: _FakeVisionClient(_FakeVisionResponse()),
+    )
     assert malformed["status"] == "failed"
-    assert malformed["ocr_notes"] == ["malformed_response"]
+    assert "malformed_response" in malformed["ocr_notes"]
+    assert "fallback_empty_text" in malformed["ocr_notes"]
+    assert "fallback_failed" in malformed["ocr_notes"]
+
+
+def test_ocrspace_success_keeps_primary_provider(monkeypatch):
+    monkeypatch.setenv("OCR_SPACE_API_KEY", "test-key")
+    result = ocrspace_extract_text(
+        _tiny_png_bytes(),
+        request_fn=lambda *_: _FakeResponse({"IsErroredOnProcessing": False, "ParsedResults": [{"ParsedText": "  OCR Space  "}]})
+    )
+    assert result["status"] == "ok"
+    assert result["ocr_provider"] == "ocr.space"
+    assert result["ocr_engine"] == "3"
+
+
+def test_ocrspace_empty_text_falls_back_to_google_vision(monkeypatch):
+    monkeypatch.setenv("OCR_SPACE_API_KEY", "test-key")
+    result = ocrspace_extract_text(
+        _tiny_png_bytes(),
+        request_fn=lambda *_: _FakeResponse({"IsErroredOnProcessing": False, "ParsedResults": [{"ParsedText": "   \n\t"}]}),
+        vision_client_factory=lambda: _FakeVisionClient(_FakeVisionResponse(" Vision text ")),
+    )
+    assert result["status"] == "ok"
+    assert result["ocr_text"] == "Vision text"
+    assert result["ocr_provider"] == "google_vision"
+    assert "used_fallback_from_ocr.space" in result["ocr_notes"]
 
 
 def test_phase4_rows_include_only_image_backed_items_and_stable_shape():
