@@ -873,3 +873,37 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c297173018832ca3d489c96e231b15)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #109 — 2026-03-24T14:26:36Z
+
+- Title: Add Google Vision fallback to OCR.space extraction and improve response handling
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/109
+- Author: evinaeva
+- Base branch: main
+- Head branch: p7s0bq-codex/implement-two-step-ocr-provider-flow
+- Merge commit: 79c6e024704c4e0ffba79ccd346b5a334e43ca7f
+- Changed files:
+  - pipeline/phase4_ocr_provider.py
+  - tests/test_phase4_ocr.py
+- Description:
+  ### Motivation
+  
+  - Make OCR extraction more robust by falling back to Google Vision when OCR.space is unavailable, yields empty text, or returns malformed responses.
+  - Normalize and validate extracted text so whitespace-only results are treated as unusable.
+  - Preserve and expose provider metadata and notes to aid debugging when fallback behavior occurs.
+  
+  ### Description
+  
+  - Introduce `GOOGLE_VISION_ENGINE_DEFAULT` and a new `_is_usable_text` helper to determine whether OCR output contains real text.
+  - Factor the original OCR.space logic into `_ocrspace_extract_text` and add `_google_vision_extract_text` which wraps `google.cloud.vision` and accepts a `vision_client_factory` for testability.
+  - Replace `ocrspace_extract_text` with a coordinator that calls the primary OCR.space extractor and, on failure or empty output, attempts Google Vision and merges provider metadata and notes to indicate fallback usage.
+  - Update tests in `tests/test_phase4_ocr.py` to add fake vision client/response classes and new tests covering missing API key, malformed responses, successful primary results, and fallback behavior.
+  
+  ### Testing
+  
+  - Ran unit tests with `pytest tests/test_phase4_ocr.py` which exercised `test_ocrspace_request_path_with_engine3_and_base64`, `test_ocrspace_missing_key_and_malformed_response_are_non_fatal`, `test_ocrspace_success_keeps_primary_provider`, and `test_ocrspace_empty_text_falls_back_to_google_vision`, and they all passed.
+  - The updated OCR extraction tests validate primary success, fallback success, and combined metadata/notes for failure cases.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c297151d34832c9aa9e1ee8334fb5b)
+- Notes: Auto-generated from merged PR metadata.
