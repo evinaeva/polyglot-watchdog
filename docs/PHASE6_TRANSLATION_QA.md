@@ -240,13 +240,24 @@ It should display what Phase 6 already generated and stored.
 
 Phase 6 has been refactored into a modular deterministic translation QA pipeline with the following structure:
 
+### 12.0 Batched LLM review and prefetch support
+
+Phase 6 now supports batched LLM review requests to improve efficiency and enable prefetching of review results before per-item review calls.
+
+- `LLMReviewProvider` implements `prefetch_reviews` to batch items into size-aware requests and populate an internal cache (`_pair_reviews`).
+- Batching is controlled by configurable token budgeting parameters: `hard_context_tokens`, `token_reserve_ratio`, `fixed_token_margin`, `estimated_output_tokens_per_item`.
+- The default LLM endpoint and model have been switched to OpenRouter-compatible configuration: `openrouter/free` model at `https://openrouter.ai/api/v1/chat/completions`.
+- System prompt and token budgeting are now configurable via environment variables (`PHASE6_REVIEW_*` prefix).
+- JSON response contract has been expanded to expect a `results` array with `item_id` keys for batched responses.
+- Fallback handling is hardened with `_llm_result` and `_fallback_result` helper methods for deterministic offline fallback when the API is unavailable or response is malformed.
+
 ### 12.1 Pipeline architecture
 
 The Phase 6 pipeline consists of:
 
-- **Provider layer** (`phase6_providers.py`): supplies curated EN and target-language items, pairing metadata, and evidence sources.
-- **Review layer** (`phase6_review.py`): runs deterministic and AI-assisted checks over paired items to identify suspicious localization cases.
-- **Runner** (`run_phase6.py`): orchestrates the pipeline, manages artifact I/O, and persists issues.
+- **Provider layer** (`phase6_providers.py`): supplies curated EN and target-language items, pairing metadata, and evidence sources. Includes `LLMReviewProvider` with batched review support and configurable token budgeting.
+- **Review layer** (`phase6_review.py`): runs deterministic and AI-assisted checks over paired items to identify suspicious localization cases. Includes `PreparedReviewInputs` dataclass and `prepare_review_inputs` function to centralize normalization, OCR selection/quality assessment, and dynamic counter normalization.
+- **Runner** (`run_phase6.py`): orchestrates the pipeline, manages artifact I/O, and persists issues. Precomputes `prepare_review_inputs` for finalized item pairs and calls `provider.prefetch_reviews` when available to warm a single batched request before per-item review calls.
 
 ### 12.2 Dynamic counter normalization
 
@@ -254,7 +265,18 @@ Phase 6 normalizes dynamic counters (e.g., "1 item", "2 items") to a canonical f
 
 This prevents false positives when the same content appears with different numeric values across languages.
 
-### 12.3 Missing-target evidence sourcing
+### 12.3 Prepared review inputs and OCR selection
+
+Phase 6 centralizes DOM/OCR text preparation through `prepare_review_inputs`, which:
+
+- normalizes and validates EN and target-language text;
+- selects the best available OCR text for approved image-backed items (preferring usable OCR over DOM text when quality is acceptable);
+- performs dynamic counter normalization to prevent false positives when numeric values differ across languages;
+- returns a `PreparedReviewInputs` dataclass with canonical comparison inputs ready for AI-assisted and deterministic checks.
+
+This ensures that the review pipeline reuses canonical comparison inputs and enables prefetching of finalized pairs.
+
+### 12.4 Missing-target evidence sourcing
 
 When a target-language item is missing (not captured or not found in the pairing), Phase 6 generates evidence that includes:
 
@@ -264,14 +286,15 @@ When a target-language item is missing (not captured or not found in the pairing
 
 This allows operators to understand why an issue was generated and to investigate missing captures.
 
-### 12.4 Evidence signals
+### 12.5 Evidence signals
 
 Phase 6 evidence includes deterministic signals that contributed to issue generation:
 
 - text comparison results (EN vs. target);
 - placeholder consistency checks;
 - OCR quality signals when applicable;
-- AI-assisted review signals (spelling, grammar, meaning).
+- AI-assisted review signals (spelling, grammar, meaning);
+- batched prefetch metadata indicating which items were reviewed in a single batch request.
 
 These signals are preserved in the persisted issue artifact so that operators can understand the reasoning behind each issue.
 

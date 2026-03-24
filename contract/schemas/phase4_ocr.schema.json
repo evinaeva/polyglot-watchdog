@@ -66,11 +66,13 @@
         "enum": [
           "ocr.space",
           "google_vision"
-        ]
+        ],
+        "description": "Primary OCR provider used for this item. ocr.space is the baseline; google_vision may be used as a fallback when ocr.space is unavailable or produces unusable text."
       },
       "ocr_engine": {
         "type": "string",
-        "minLength": 1
+        "minLength": 1,
+        "description": "OCR engine identifier. For ocr.space, typically '3' (engine 3). For google_vision, a descriptive identifier such as 'google_vision_default'."
       },
       "ocr_notes": {
         "type": "array",
@@ -80,7 +82,8 @@
         }
       },
       "provider_meta": {
-        "type": "object"
+        "type": "object",
+        "description": "Provider-specific metadata. May include fallback_attempted (boolean), attempted_providers (array of provider names), reason_for_fallback (string), and other provider-specific signals."
       },
       "status": {
         "type": "string",
