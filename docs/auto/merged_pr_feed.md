@@ -554,3 +554,27 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c28fc9af90832cb5ecab142bbf00a7)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #102 — 2026-03-24T13:39:38Z
+
+- Title: Default pull decision to 'eligible' when decision is unset
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/102
+- Author: evinaeva
+- Base branch: main
+- Head branch: 1msvb8-codex/update-renderrows-default-decision-value
+- Merge commit: cedf5a3af2a86a0760c22db33b27f6d94407ec33
+- Changed files:
+  - web/static/pulls.js
+- Description:
+  ### Motivation
+  - Ensure rows with no recorded decision render with a sensible default so the UI presents a usable initial selection instead of an empty choice.
+  
+  ### Description
+  - Use `decisionToValue(row.decision) || 'eligible'` when building the row controls so missing decisions default to `eligible` (Keep).
+  
+  ### Testing
+  - Ran frontend lint with `npm run lint` and unit tests with `npm test`, and executed a local build with `npm run build`, all of which completed successfully.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c28fd07bc0832ca89656ad1312beb7)
+- Notes: Auto-generated from merged PR metadata.
