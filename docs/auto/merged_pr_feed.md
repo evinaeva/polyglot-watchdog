@@ -1198,3 +1198,35 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c2cf3471f4832ca17244ef73259243)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #127 — 2026-03-24T18:03:10Z
+
+- Title: Add run-start planning input snapshots for Phase 1 provenance
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/127
+- Author: evinaeva
+- Base branch: main
+- Head branch: jedfx9-codex/add-snapshot-function-before-planning-expansion
+- Merge commit: 014ace19f0add29af99137264acf794e465d5eb8
+- Changed files:
+  - pipeline/run_phase1.py
+  - tests/test_phase1_planning_input.py
+- Description:
+  ### Motivation
+  - Freeze planning inputs at run start so planning expansion is deterministic and auditable via run-scoped artifacts and stable hashes.
+  - Provide deterministic provenance for Phase 1 by persisting canonical seed and recipe inputs and referencing them from the phase manifest.
+  
+  ### Description
+  - Add `ensure_run_start_inputs_snapshot(domain, run_id)` which snapshots `inputs/seed_urls.snapshot.json`, `inputs/recipes_manifest.json`, and `inputs/inputs_manifest.json` using canonical JSON and stores SHA-256 and SHA-1 hashes. 
+  - Use canonical serialization bytes via `canonical_json_bytes` and deterministic hashing in helper `_hash_payload` to produce stable `sha256`/`sha1` values for artifacts. 
+  - Update `load_planning_rows(domain, run_id)` to read and validate run-scoped snapshot artifacts only and fail fast when snapshots are missing or hashes/URIs mismatch. 
+  - Add `load_snapshot_recipes(domain, run_id)` and switch normal planning expansion to use snapshot recipes instead of live manual recipes when `jobs_override is None`. 
+  - Extend the Phase 1 manifest `provenance` with `seed_payload_hash`, `recipe_manifest_hash`, `seed_snapshot_uri`, `recipe_manifest_uri`, and `inputs_manifest_uri`. 
+  - Add/extend tests in `tests/test_phase1_planning_input.py` covering snapshot-only reads, snapshot creation/reuse, and deterministic hash stability. 
+  
+  ### Testing
+  - Compiled the modified files using `python -m py_compile pipeline/run_phase1.py tests/test_phase1_planning_input.py` which succeeded. 
+  - Ran `PYTHONPATH=. pytest -q tests/test_phase1_planning_input.py` but collection failed in this environment due to a missing test-time dependency (`jsonschema`), so the full test run could not complete here.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c2cf312860832cbae89c9382354123)
+- Notes: Auto-generated from merged PR metadata.
