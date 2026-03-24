@@ -522,3 +522,35 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c28fae4be8832ca26e3352db222c50)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #101 — 2026-03-24T13:39:23Z
+
+- Title: Add capture review helper and integrate contexts review into Workflow UI
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/101
+- Author: evinaeva
+- Base branch: main
+- Head branch: e66t9p-codex/update-workflow.html-and-workflow.js
+- Merge commit: d063d46928064d76e612494c31d8a8a45b28a6ef
+- Changed files:
+  - web/static/capture-review.js
+  - web/static/contexts.js
+  - web/static/workflow.js
+  - web/templates/contexts.html
+  - web/templates/workflow.html
+- Description:
+  ### Motivation
+  - Provide a reusable client-side function to post capture context reviews and enable reviewing capture contexts directly from the Workflow hub UI.
+  - Reduce duplicated review-posting code by centralizing the payload construction and POST logic in a single module.
+  
+  ### Description
+  - Add a new module `web/static/capture-review.js` which implements `buildCaptureReviewPayload` and `postCaptureReview` for sending reviews to `POST /api/capture/reviews`.
+  - Refactor `web/static/contexts.js` to remove the inline `saveReview` implementation and call the shared `postCaptureReview` instead.
+  - Extend `web/static/workflow.js` to render a contexts review table inside the Workflow page, including `setContextsStatus`, `renderContextsRows`, and `loadContexts`, and to call `loadContexts` when workflow status is refreshed.
+  - Update templates `web/templates/contexts.html` and `web/templates/workflow.html` to include the new script `web/static/capture-review.js` and add the contexts status/table markup to the Workflow page, plus minor heading reorganizations.
+  
+  ### Testing
+  - No automated tests were run for this change.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c28fc9af90832cb5ecab142bbf00a7)
+- Notes: Auto-generated from merged PR metadata.
