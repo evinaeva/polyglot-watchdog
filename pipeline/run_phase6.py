@@ -16,10 +16,12 @@ Output:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 project_root = str(Path(__file__).resolve().parents[1])
 if project_root not in sys.path:
@@ -99,6 +101,156 @@ def _build_missing_target_evidence(en_item: dict, en_collected_by_item: dict[str
     }
 
 
+def _stable_semantic_attrs(item: dict) -> dict[str, str]:
+    attrs = item.get("semantic_attrs")
+    if not isinstance(attrs, dict):
+        return {}
+    return {
+        str(k): str(v).strip()
+        for k, v in sorted(attrs.items())
+        if str(v).strip()
+    }
+
+
+def _derive_page_canonical_key(item: dict) -> str:
+    existing = str(item.get("page_canonical_key", "")).strip()
+    if existing:
+        return existing
+    payload = json.dumps({
+        "url": item.get("url", ""),
+        "viewport_kind": item.get("viewport_kind", ""),
+        "state": item.get("state", ""),
+        "user_tier": item.get("user_tier") or "",
+    }, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+
+def _derive_logical_match_key(item: dict) -> str:
+    existing = str(item.get("logical_match_key", "")).strip()
+    if existing:
+        return existing
+    payload = json.dumps({
+        "page_canonical_key": _derive_page_canonical_key(item),
+        "element_type": item.get("element_type", ""),
+        "css_selector": item.get("css_selector", ""),
+        "role_hint": item.get("role_hint") or "",
+        "local_path_signature": item.get("local_path_signature") or "",
+        "stable_ordinal": item.get("stable_ordinal", 0) or 0,
+        "semantic_attrs": _stable_semantic_attrs(item),
+    }, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+
+def _score_pair(en_item: dict, target_item: dict) -> tuple[float, dict[str, float]]:
+    breakdown: dict[str, float] = {}
+    score = 0.0
+
+    if str(en_item.get("css_selector", "")) == str(target_item.get("css_selector", "")):
+        breakdown["selector"] = 0.33
+        score += 0.33
+    if str(en_item.get("local_path_signature", "")) == str(target_item.get("local_path_signature", "")) and str(en_item.get("local_path_signature", "")):
+        breakdown["path"] = 0.2
+        score += 0.2
+    if str(en_item.get("container_signature", "")) == str(target_item.get("container_signature", "")) and str(en_item.get("container_signature", "")):
+        breakdown["container"] = 0.15
+        score += 0.15
+    if str(en_item.get("role_hint", "")) and str(en_item.get("role_hint", "")) == str(target_item.get("role_hint", "")):
+        breakdown["role"] = 0.08
+        score += 0.08
+    if str(en_item.get("element_type", "")) == str(target_item.get("element_type", "")) and str(en_item.get("element_type", "")):
+        breakdown["tag"] = 0.08
+        score += 0.08
+    if int(en_item.get("stable_ordinal", 0) or 0) and int(en_item.get("stable_ordinal", 0) or 0) == int(target_item.get("stable_ordinal", 0) or 0):
+        breakdown["ordinal"] = 0.08
+        score += 0.08
+
+    en_attrs = _stable_semantic_attrs(en_item)
+    target_attrs = _stable_semantic_attrs(target_item)
+    if en_attrs and target_attrs:
+        overlap = sum(1 for key, value in en_attrs.items() if target_attrs.get(key) == value)
+        ratio = overlap / max(len(en_attrs), len(target_attrs))
+        attr_score = round(0.13 * ratio, 4)
+        if attr_score > 0:
+            breakdown["attrs"] = attr_score
+            score += attr_score
+
+    en_text = str(en_item.get("text", "")).strip()
+    target_text = str(target_item.get("text", "")).strip()
+    if en_text and target_text and en_text == target_text:
+        breakdown["text_weak"] = 0.04
+        score += 0.04
+
+    return round(score, 4), breakdown
+
+
+def _pair_target_items(en_item: dict, candidates: list[dict], used_target_ids: set[str]) -> tuple[dict | None, dict[str, Any]]:
+    available = [item for item in candidates if item.get("item_id") not in used_target_ids]
+    if not available:
+        return None, {
+            "pairing_basis": "none",
+            "pairing_confidence": 0.0,
+            "matched_target_item_id": None,
+            "logical_match_key": _derive_logical_match_key(en_item),
+            "pairing_score_breakdown": {},
+        }
+
+    logical_key = _derive_logical_match_key(en_item)
+    exact = [item for item in available if _derive_logical_match_key(item) == logical_key]
+    if len(exact) == 1:
+        matched = exact[0]
+        return matched, {
+            "pairing_basis": "logical_match_key_exact",
+            "pairing_confidence": 1.0,
+            "matched_target_item_id": matched.get("item_id"),
+            "logical_match_key": logical_key,
+            "pairing_score_breakdown": {},
+        }
+    if len(exact) > 1:
+        return None, {
+            "pairing_basis": "ambiguous_logical_match_key",
+            "pairing_confidence": 0.0,
+            "matched_target_item_id": None,
+            "logical_match_key": logical_key,
+            "pairing_score_breakdown": {
+                "candidate_item_ids": sorted(str(row.get("item_id", "")) for row in exact),
+            },
+        }
+
+    scored = []
+    for candidate in available:
+        score, breakdown = _score_pair(en_item, candidate)
+        scored.append((score, str(candidate.get("item_id", "")), candidate, breakdown))
+    scored.sort(key=lambda row: (-row[0], row[1]))
+    top_score, _, top_candidate, top_breakdown = scored[0]
+    second_score = scored[1][0] if len(scored) > 1 else -1.0
+    tie = len(scored) > 1 and abs(top_score - second_score) < 0.0001
+    if top_score < 0.35 or tie:
+        return None, {
+            "pairing_basis": "fallback_ambiguous" if tie else "fallback_no_viable_candidate",
+            "pairing_confidence": 0.0,
+            "matched_target_item_id": None,
+            "logical_match_key": logical_key,
+            "pairing_score_breakdown": {
+                "top_score": top_score,
+                "top_candidate_item_id": top_candidate.get("item_id"),
+                "top_breakdown": top_breakdown,
+                "second_score": second_score if len(scored) > 1 else None,
+                "second_candidate_item_id": scored[1][2].get("item_id") if len(scored) > 1 else None,
+            },
+        }
+
+    return top_candidate, {
+        "pairing_basis": "fallback_weighted",
+        "pairing_confidence": top_score,
+        "matched_target_item_id": top_candidate.get("item_id"),
+        "logical_match_key": logical_key,
+        "pairing_score_breakdown": {
+            "top_score": top_score,
+            "weights": top_breakdown,
+        },
+    }
+
+
 def _load_blocked_overlay_pages(domain: str, language: str, target_screens: list[dict]) -> list[dict]:
     from google.cloud import storage  # type: ignore
     from pipeline.storage import BUCKET_NAME
@@ -135,7 +287,27 @@ def _load_blocked_overlay_pages(domain: str, language: str, target_screens: list
     return blocked_pages
 
 
-def run(domain: str, en_run_id: str, target_run_id: str) -> list[dict]:
+def _resolve_review_mode(review_mode: str | None, require_explicit_mode: bool) -> str:
+    env_mode = os.environ.get("PHASE6_REVIEW_PROVIDER")
+    resolved = (review_mode or env_mode or "").strip()
+    if resolved:
+        return resolved
+    if require_explicit_mode:
+        raise ValueError(
+            "Phase 6 review mode must be set explicitly via --review-mode or PHASE6_REVIEW_PROVIDER. "
+            "Supported modes: test-heuristic, disabled, llm"
+        )
+    return "test-heuristic"
+
+
+def run(
+    domain: str,
+    en_run_id: str,
+    target_run_id: str,
+    review_mode: str | None = None,
+    *,
+    require_explicit_mode: bool = False,
+) -> list[dict]:
     en_eligible = read_json_artifact(domain, en_run_id, "eligible_dataset.json")
     target_eligible = read_json_artifact(domain, target_run_id, "eligible_dataset.json")
 
@@ -166,22 +338,31 @@ def run(domain: str, en_run_id: str, target_run_id: str) -> list[dict]:
     target_screens_by_page = _index_screenshots(target_screens)
     target_language = next((str(item.get("language", "")).strip() for item in target_eligible if str(item.get("language", "")).strip() and str(item.get("language", "")).lower() != "en"), "")
     blocked_pages = _load_blocked_overlay_pages(domain, target_language, target_screens) if target_language else []
-    provider = build_provider(mode=os.environ.get("PHASE6_REVIEW_PROVIDER", "offline"))
+    provider = build_provider(mode=_resolve_review_mode(review_mode, require_explicit_mode=require_explicit_mode))
     if hasattr(provider, "prefetch_reviews"):
         prefetch_pairs = []
+        used_target_ids_for_prefetch: set[str] = set()
+        target_candidates = [target_by_item[item_id] for item_id in sorted(target_by_item.keys())]
         for item_id in sorted(en_by_item.keys()):
-            if item_id not in target_by_item:
+            matched, _ = _pair_target_items(en_by_item[item_id], target_candidates, used_target_ids_for_prefetch)
+            if not matched:
                 continue
-            prepared = prepare_review_inputs(en_by_item[item_id], target_by_item[item_id])
+            used_target_ids_for_prefetch.add(str(matched.get("item_id")))
+            prepared = prepare_review_inputs(en_by_item[item_id], matched)
             prefetch_pairs.append((prepared.en_text, prepared.target_text))
         provider.prefetch_reviews(prefetch_pairs, target_language)
 
     issues: list[dict] = []
+    used_target_ids: set[str] = set()
+    target_candidates = [target_by_item[item_id] for item_id in sorted(target_by_item.keys())]
 
     for item_id in sorted(en_by_item.keys()):
         en_item = en_by_item[item_id]
-        t_item = target_by_item.get(item_id)
+        t_item, pairing_meta = _pair_target_items(en_item, target_candidates, used_target_ids)
+        if t_item:
+            used_target_ids.add(str(t_item.get("item_id")))
         evidence_base = _build_evidence(t_item, target_collected_by_item, target_screens_by_page) if t_item else _build_missing_target_evidence(en_item, en_collected_by_item, en_screens_by_page)
+        evidence_base.update(pairing_meta)
         issues.extend(
             review_pair(
                 ReviewContext(
@@ -225,5 +406,12 @@ if __name__ == "__main__":
     parser.add_argument("--domain", required=True)
     parser.add_argument("--en-run-id", required=True)
     parser.add_argument("--target-run-id", required=True)
+    parser.add_argument("--review-mode", dest="review_mode", required=False)
     args = parser.parse_args()
-    run(args.domain, args.en_run_id, args.target_run_id)
+    run(
+        args.domain,
+        args.en_run_id,
+        args.target_run_id,
+        review_mode=args.review_mode,
+        require_explicit_mode=True,
+    )

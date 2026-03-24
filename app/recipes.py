@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from pipeline import storage
-from pipeline.interactive_capture import CapturePoint, Recipe, RecipeStep, validate_state_name
+from pipeline.interactive_capture import CapturePoint, Recipe, RecipeStep, derive_capture_point_id, validate_state_name
 from pipeline.schema_validator import validate
 
 
@@ -22,8 +22,17 @@ def _normalize_recipe(recipe: dict[str, Any]) -> dict[str, Any]:
         "capture_points": list(recipe.get("capture_points", [])),
     }
     validate("interaction_recipe", normalized)
-    for point in normalized["capture_points"]:
-        validate_state_name(str(point.get("state", "")))
+    normalized_points: list[dict[str, str]] = []
+    seen_capture_point_ids: set[str] = set()
+    for index, point in enumerate(normalized["capture_points"]):
+        state = str(point.get("state", "")).strip()
+        validate_state_name(state)
+        capture_point_id = str(point.get("capture_point_id", "")).strip() or derive_capture_point_id(normalized["recipe_id"], index, state)
+        if capture_point_id in seen_capture_point_ids:
+            raise ValueError(f"Duplicate capture_point_id in recipe {normalized['recipe_id']}: {capture_point_id}")
+        seen_capture_point_ids.add(capture_point_id)
+        normalized_points.append({"state": state, "capture_point_id": capture_point_id})
+    normalized["capture_points"] = normalized_points
     return normalized
 
 
@@ -70,6 +79,6 @@ def load_recipes_for_planner(domain: str) -> dict[str, Recipe]:
             recipe_id=raw["recipe_id"],
             url_pattern=raw["url_pattern"],
             steps=tuple(RecipeStep(**step) for step in raw["steps"]),
-            capture_points=tuple(CapturePoint(**cp) for cp in raw["capture_points"]),
+            capture_points=tuple(CapturePoint(state=str(cp["state"]), capture_point_id=str(cp.get("capture_point_id", "")).strip() or None) for cp in raw["capture_points"]),
         )
     return recipes

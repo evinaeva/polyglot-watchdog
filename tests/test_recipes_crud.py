@@ -5,6 +5,19 @@ from app.recipes import delete_recipe, list_recipes, load_recipes_for_planner, u
 
 
 class RecipesCrudTests(unittest.TestCase):
+    def test_duplicate_capture_point_id_rejected_within_recipe(self):
+        recipe = {
+            "recipe_id": "dup",
+            "url_pattern": "/p",
+            "steps": [{"action": "click"}],
+            "capture_points": [
+                {"state": "gallery_open", "capture_point_id": "cp-shared"},
+                {"state": "menu_open", "capture_point_id": "cp-shared"},
+            ],
+        }
+        with self.assertRaisesRegex(ValueError, "Duplicate capture_point_id"):
+            upsert_recipe("example.com", recipe)
+
     def test_upsert_and_list_are_deterministic(self):
         r2 = {
             "recipe_id": "b",

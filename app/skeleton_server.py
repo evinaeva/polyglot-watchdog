@@ -352,7 +352,7 @@ def _replay_scope_from_reference_run(domain: str, en_run_id: str, target_languag
     from pipeline.run_phase1 import build_exact_context_job
 
     pages = _read_list_artifact_required(domain, en_run_id, "page_screenshots.json")
-    unique_contexts: dict[tuple[str, str, str, str | None], dict] = {}
+    unique_contexts: dict[tuple[str, str, str, str | None, str | None, str | None], dict] = {}
     for row in pages:
         if not isinstance(row, dict):
             continue
@@ -364,10 +364,19 @@ def _replay_scope_from_reference_run(domain: str, en_run_id: str, target_languag
         state = str(row.get("state", "")).strip()
         user_tier_raw = row.get("user_tier")
         user_tier = str(user_tier_raw).strip() if user_tier_raw not in (None, "") else None
+        recipe_id = str(row.get("recipe_id", "")).strip() or None
+        capture_point_id = str(row.get("capture_point_id", "")).strip() or None
         if not url or not viewport_kind or not state:
             raise ValueError("reference run scope is incomplete in page_screenshots.json")
-        key = (url, viewport_kind, state, user_tier)
-        unique_contexts[key] = {"url": url, "viewport_kind": viewport_kind, "state": state, "user_tier": user_tier}
+        key = (url, viewport_kind, state, user_tier, recipe_id, capture_point_id)
+        unique_contexts[key] = {
+            "url": url,
+            "viewport_kind": viewport_kind,
+            "state": state,
+            "user_tier": user_tier,
+            "recipe_id": recipe_id,
+            "capture_point_id": capture_point_id,
+        }
 
     if not unique_contexts:
         raise ValueError("reference run has no English capture scope to replay")
@@ -375,7 +384,18 @@ def _replay_scope_from_reference_run(domain: str, en_run_id: str, target_languag
     jobs: list[dict] = []
     for key in sorted(unique_contexts.keys()):
         context = unique_contexts[key]
-        jobs.append(build_exact_context_job(domain, context["url"], target_language, context["viewport_kind"], context["state"], context["user_tier"]))
+        jobs.append(
+            build_exact_context_job(
+                domain,
+                context["url"],
+                target_language,
+                context["viewport_kind"],
+                context["state"],
+                context["user_tier"],
+                recipe_id=context.get("recipe_id"),
+                capture_point_id=context.get("capture_point_id"),
+            )
+        )
     return jobs
 
 
@@ -1121,15 +1141,24 @@ def _parse_rerun_payload(payload: dict) -> dict:
     missing = [k for k in required if not str(payload.get(k, "")).strip()]
     if missing:
         raise ValueError(f"missing required fields: {', '.join(missing)}")
+    state = str(payload.get("state", "")).strip()
+    recipe_id = str(payload.get("recipe_id", "")).strip() or None
+    capture_point_id = str(payload.get("capture_point_id", "")).strip() or None
+    if state == "baseline" and (recipe_id or capture_point_id):
+        raise ValueError("baseline rerun cannot include recipe_id/capture_point_id")
+    if state != "baseline" and (bool(recipe_id) != bool(capture_point_id)):
+        raise ValueError("state rerun requires both recipe_id and capture_point_id, or neither for legacy state-only resolution")
     runtime_payload = {
         "domain": str(payload.get("domain", "")).strip(),
         "run_id": _validate_run_id(str(payload.get("run_id", "")).strip()),
         "language": str(payload.get("language", "")).strip(),
         "viewport_kind": str(payload.get("viewport_kind", "")).strip(),
-        "state": str(payload.get("state", "")).strip(),
+        "state": state,
         "user_tier": payload.get("user_tier") or None,
         "url": str(payload.get("url", "")).strip(),
         "capture_context_id": str(payload.get("capture_context_id", "")).strip() or None,
+        "recipe_id": recipe_id,
+        "capture_point_id": capture_point_id,
     }
     load_phase1_runtime_config(runtime_payload)
     return runtime_payload
@@ -1222,6 +1251,8 @@ def _run_rerun_async(job_id: str, runtime_payload: dict) -> None:
             user_tier=runtime_payload.get("user_tier"),
             language=str(runtime_payload.get("language")),
             original_context_id=runtime_payload.get("capture_context_id"),
+            recipe_id=runtime_payload.get("recipe_id"),
+            capture_point_id=runtime_payload.get("capture_point_id"),
         )
         _jobs[job_id]["status"] = "done"
         _upsert_job_status(str(runtime_payload.get("domain")), str(runtime_payload.get("run_id")), {"job_id": job_id, "status": "succeeded", "context": runtime_payload, "type": "rerun"})

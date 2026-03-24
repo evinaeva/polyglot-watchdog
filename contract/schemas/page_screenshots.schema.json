@@ -89,6 +89,27 @@
             "minimum": 1
           }
         }
+      },
+      "recipe_id": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "minLength": 1
+      },
+      "capture_point_id": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "minLength": 1
+      },
+      "interaction_trace_hash": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "pattern": "^[a-f0-9]{40}$"
       }
     }
   }

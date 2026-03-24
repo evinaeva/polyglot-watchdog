@@ -49,6 +49,7 @@ class CaptureContext:
 @dataclass(frozen=True)
 class CapturePoint:
     state: str
+    capture_point_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -71,6 +72,7 @@ class CaptureJob:
     context: CaptureContext
     mode: str
     recipe_id: str | None = None
+    capture_point_id: str | None = None
 
 
 class ConfigStore(Protocol):
@@ -113,6 +115,21 @@ def compute_page_id(context: CaptureContext) -> str:
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()
 
 
+def derive_capture_point_id(recipe_id: str, capture_point_order: int, state: str) -> str:
+    canonical = json.dumps(
+        [str(recipe_id).strip(), int(capture_point_order), str(state).strip()],
+        ensure_ascii=False,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    digest = hashlib.sha1(canonical.encode("utf-8")).hexdigest()
+    return f"cp-{digest[:16]}"
+
+
+def compute_interaction_trace_hash(trace_steps: list[dict[str, Any]]) -> str:
+    return hashlib.sha1(canonical_json_bytes(trace_steps)).hexdigest()
+
+
 def _canonical_bbox_payload(bbox: dict[str, Any]) -> str:
     required = ("x", "y", "width", "height")
     missing = [k for k in required if k not in bbox or bbox[k] is None]
@@ -133,6 +150,51 @@ def compute_item_id(domain: str, url: str, css_selector: str, bbox: dict[str, An
         raise DeterminismError("Selector generation cannot be guaranteed")
     canonical_bbox = _canonical_bbox_payload(bbox)
     payload = _ITEM_ID_DELIMITER.join([domain, url, css_selector, canonical_bbox, element_type])
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+
+def compute_page_canonical_key(url: str, viewport_kind: str, state: str, user_tier: str | None) -> str:
+    base_url = url.strip() or canonicalize_url(url)
+    payload = json.dumps(
+        {
+            "url": base_url,
+            "viewport_kind": viewport_kind,
+            "state": state,
+            "user_tier": user_tier or "",
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+
+def compute_logical_match_key(
+    page_canonical_key: str,
+    element_type: str,
+    css_selector: str,
+    role_hint: str | None,
+    local_path_signature: str,
+    semantic_attrs: dict[str, Any] | None,
+    stable_ordinal: int,
+) -> str:
+    stable_semantic_attrs = {
+        str(k): str(v).strip()
+        for k, v in sorted((semantic_attrs or {}).items())
+        if str(v).strip()
+    }
+    payload = json.dumps(
+        {
+            "page_canonical_key": page_canonical_key,
+            "element_type": element_type,
+            "css_selector": css_selector,
+            "role_hint": role_hint or "",
+            "local_path_signature": local_path_signature,
+            "stable_ordinal": stable_ordinal,
+            "semantic_attrs": stable_semantic_attrs,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()
 
 
@@ -186,7 +248,14 @@ class DeterministicPlanner:
                                 raise DeterminismError(f"Recipe {recipe.recipe_id} has no explicit capture_points")
                             for point in recipe.capture_points:
                                 validate_state_name(point.state)
-                                jobs.append(CaptureJob(CaptureContext(seed_urls["domain"], url, language, viewport, point.state, user_tier), "recipe", recipe_id))
+                                jobs.append(
+                                    CaptureJob(
+                                        CaptureContext(seed_urls["domain"], url, language, viewport, point.state, user_tier),
+                                        "recipe",
+                                        recipe_id,
+                                        point.capture_point_id,
+                                    )
+                                )
         jobs.sort(key=lambda j: (j.context.domain, j.context.language, j.context.url, j.context.viewport_kind, j.context.user_tier or "", j.context.state, j.recipe_id or ""))
         return jobs
 
@@ -290,6 +359,9 @@ def capture_state(
     page_payload: tuple[dict[str, Any], list[dict[str, Any]]],
     writer: ArtifactWriter,
     run_context: RunContext,
+    recipe_id: str | None = None,
+    capture_point_id: str | None = None,
+    interaction_trace_hash: str | None = None,
 ) -> dict[str, Any]:
     validate_state_name(context.state)
     assert_language_not_in_contract_identity(context)
@@ -298,12 +370,26 @@ def capture_state(
     page_content, raw_elements = page_payload
 
     elements: list[dict[str, Any]] = []
+    page_canonical_key = compute_page_canonical_key(context.url, context.viewport_kind, context.state, context.user_tier)
     for raw in sorted(raw_elements, key=_canonical_element_sort_key):
         selector = raw.get("css_selector")
         bbox = raw.get("bbox")
         if bbox is None:
             raise DeterminismError("Bounding box unavailable")
         canonical_bbox = json.loads(_canonical_bbox_payload(bbox))
+        semantic_attrs = raw.get("semantic_attrs") if isinstance(raw.get("semantic_attrs"), dict) else {}
+        local_path_signature = str(raw.get("local_path_signature", "")).strip()
+        stable_ordinal = int(raw.get("stable_ordinal", 0) or 0)
+        role_hint = raw.get("role_hint")
+        logical_match_key = str(raw.get("logical_match_key", "")).strip() or compute_logical_match_key(
+            page_canonical_key=str(raw.get("page_canonical_key", "")).strip() or page_canonical_key,
+            element_type=raw.get("element_type", "unknown"),
+            css_selector=selector,
+            role_hint=role_hint,
+            local_path_signature=local_path_signature,
+            semantic_attrs=semantic_attrs,
+            stable_ordinal=stable_ordinal,
+        )
         elements.append({
             "item_id": compute_item_id(context.domain, context.url, selector, canonical_bbox, raw.get("element_type", "unknown")),
             "page_id": page_id,
@@ -319,6 +405,13 @@ def capture_state(
             "visible": bool(raw.get("visible", True)),
             "tag": raw.get("tag"),
             "attributes": raw.get("attributes"),
+            "page_canonical_key": str(raw.get("page_canonical_key", "")).strip() or page_canonical_key,
+            "logical_match_key": logical_match_key,
+            "role_hint": role_hint,
+            "semantic_attrs": semantic_attrs,
+            "local_path_signature": local_path_signature,
+            "container_signature": str(raw.get("container_signature", "")).strip(),
+            "stable_ordinal": stable_ordinal,
         })
 
     elements.sort(key=lambda row: row["item_id"])
@@ -333,6 +426,9 @@ def capture_state(
         "storage_uri": "",
         "captured_at": run_context.run_started_at,
         "viewport": page_content.get("viewport"),
+        "recipe_id": recipe_id,
+        "capture_point_id": capture_point_id,
+        "interaction_trace_hash": interaction_trace_hash,
     }
     validate("collected_items", elements)
 

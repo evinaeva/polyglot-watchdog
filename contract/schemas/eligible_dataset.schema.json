@@ -43,6 +43,49 @@
       },
       "mask_applied": {
         "type": "boolean"
+      },
+      "page_canonical_key": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "logical_match_key": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "role_hint": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "semantic_attrs": {
+        "type": [
+          "object",
+          "null"
+        ]
+      },
+      "local_path_signature": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "container_signature": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "stable_ordinal": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "minimum": 0
       }
     }
   }

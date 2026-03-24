@@ -1,5 +1,7 @@
 import unittest
+from unittest.mock import patch
 
+from app.recipes import list_recipes
 from pipeline.interactive_capture import (
     CaptureContext,
     CapturePoint,
@@ -15,6 +17,8 @@ from pipeline.interactive_capture import (
     build_universal_sections_en_only,
     capture_state,
     deterministic_url_hash,
+    derive_capture_point_id,
+    compute_interaction_trace_hash,
 )
 
 
@@ -270,6 +274,41 @@ class InteractiveCaptureAcceptanceTests(unittest.TestCase):
         result = capture_state(context, payload, writer, self._run_context())
         ids = [element["item_id"] for element in result["elements"]]
         self.assertEqual(ids, sorted(ids))
+
+    def test_legacy_recipe_capture_points_derive_stable_ids(self):
+        legacy_recipe = [
+            {
+                "recipe_id": "profile",
+                "url_pattern": "/profile",
+                "steps": [{"action": "click", "selector": "#profile"}],
+                "capture_points": [{"state": "profile_open"}, {"state": "settings_open"}],
+            }
+        ]
+        with patch("app.recipes.storage.read_json_artifact", return_value=legacy_recipe):
+            recipes = list_recipes("example.com")
+        self.assertEqual(
+            [point["capture_point_id"] for point in recipes[0]["capture_points"]],
+            [
+                derive_capture_point_id("profile", 0, "profile_open"),
+                derive_capture_point_id("profile", 1, "settings_open"),
+            ],
+        )
+
+    def test_capture_state_persists_interaction_trace_hash(self):
+        store = InMemoryStore()
+        writer = GCSArtifactWriter(store, "watchdog-data", "watchdog-review")
+        context = CaptureContext("example.com", "https://example.com/", "en", "desktop", "profile_open", "guest")
+        trace_hash = compute_interaction_trace_hash([{"action": "click", "selector": "#profile", "wait_for": None, "marker_state": None}])
+        result = capture_state(
+            context,
+            self._payload(),
+            writer,
+            self._run_context(),
+            recipe_id="profile",
+            capture_point_id="cp-profile-open",
+            interaction_trace_hash=trace_hash,
+        )
+        self.assertEqual(result["page"]["interaction_trace_hash"], trace_hash)
 
 
 if __name__ == "__main__":
