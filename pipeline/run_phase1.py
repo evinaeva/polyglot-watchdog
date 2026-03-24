@@ -27,7 +27,17 @@ if project_root not in sys.path:
 
 from app.recipes import load_recipes_for_planner
 from pipeline.phase1_puller import capture_current_page, execute_recipe_step, pull_page, detect_universal_sections
-from pipeline.interactive_capture import CaptureContext, CapturePoint, CaptureJob, DeterministicPlanner, GCSArtifactWriter, Recipe, RunContext, capture_state
+from pipeline.interactive_capture import (
+    CaptureContext,
+    CapturePoint,
+    CaptureJob,
+    DeterministicPlanner,
+    GCSArtifactWriter,
+    Recipe,
+    RunContext,
+    capture_state,
+    compute_interaction_trace_hash,
+)
 from pipeline.runtime_config import Phase1RuntimeConfig, load_phase1_runtime_config, validate_seed_urls_payload
 from pipeline.storage import BUCKET_NAME, write_json_artifact, read_json_artifact, write_phase_manifest
 from pipeline.schema_validator import validate, SchemaValidationError
@@ -68,18 +78,60 @@ def build_planned_jobs(domain: str, planning_rows: list[dict], language: str, vi
     )
 
 
-def build_exact_context_job(domain: str, url: str, language: str, viewport_kind: str, state: str, user_tier: str | None) -> CaptureJob:
+def build_exact_context_job(
+    domain: str,
+    url: str,
+    language: str,
+    viewport_kind: str,
+    state: str,
+    user_tier: str | None,
+    recipe_id: str | None = None,
+    capture_point_id: str | None = None,
+) -> CaptureJob:
     recipes = load_recipes_for_planner(domain)
     recipe_ids: list[str] = []
+    resolved_state = state
+    resolved_recipe_id: str | None = None
+    resolved_capture_point_id: str | None = None
     if state != "baseline":
-        matching_recipe_ids = sorted(
-            recipe_id
-            for recipe_id, recipe in recipes.items()
-            if any(point.state == state for point in recipe.capture_points)
-        )
-        if not matching_recipe_ids:
-            raise RuntimeError(f"No recipe defines capture point state={state!r} for exact-context rerun")
-        recipe_ids = [matching_recipe_ids[0]]
+        if bool(recipe_id) != bool(capture_point_id):
+            raise RuntimeError("Exact-context rerun requires both recipe_id and capture_point_id together")
+        if recipe_id and capture_point_id:
+            if recipe_id not in recipes:
+                raise RuntimeError(f"Unknown recipe_id={recipe_id!r} for exact-context rerun")
+            recipe = recipes[recipe_id]
+            matching_points = [point for point in recipe.capture_points if point.capture_point_id == capture_point_id]
+            if not matching_points:
+                raise RuntimeError(f"No capture point found for recipe_id={recipe_id!r} capture_point_id={capture_point_id!r}")
+            if len(matching_points) > 1:
+                raise RuntimeError(f"Ambiguous capture_point_id={capture_point_id!r} within recipe_id={recipe_id!r}")
+            resolved_point = matching_points[0]
+            if state and resolved_point.state != state:
+                raise RuntimeError(
+                    f"State mismatch for recipe_id={recipe_id!r} capture_point_id={capture_point_id!r}: "
+                    f"expected {resolved_point.state!r}, got {state!r}"
+                )
+            resolved_recipe_id = recipe_id
+            resolved_state = resolved_point.state
+            resolved_capture_point_id = capture_point_id
+            recipe_ids = [resolved_recipe_id]
+        else:
+            # Compatibility path for legacy clients still sending only state.
+            candidates: list[tuple[str, CapturePoint]] = []
+            for candidate_recipe_id, recipe in recipes.items():
+                for point in recipe.capture_points:
+                    if point.state == state:
+                        candidates.append((candidate_recipe_id, point))
+            if not candidates:
+                raise RuntimeError("No recipe capture point matches exact-context resolver inputs")
+            if len(candidates) > 1:
+                raise RuntimeError(f"Ambiguous state={state!r}; provide recipe_id + capture_point_id")
+            resolved_recipe_id, resolved_point = candidates[0]
+            resolved_state = resolved_point.state
+            resolved_capture_point_id = resolved_point.capture_point_id
+            recipe_ids = [resolved_recipe_id]
+    elif recipe_id or capture_point_id:
+        raise RuntimeError("baseline context must not include recipe_id/capture_point_id")
 
     jobs = build_planned_jobs(
         domain=domain,
@@ -93,10 +145,11 @@ def build_exact_context_job(domain: str, url: str, language: str, viewport_kind:
         job for job in jobs
         if job.context.url == url
         and job.context.viewport_kind == viewport_kind
-        and job.context.state == state
+        and job.context.state == resolved_state
         and (job.context.user_tier or None) == (user_tier or None)
         and job.context.language == language
-        and (state == "baseline" or job.recipe_id == recipe_ids[0])
+        and (resolved_state == "baseline" or job.recipe_id == resolved_recipe_id)
+        and (resolved_state == "baseline" or job.capture_point_id == resolved_capture_point_id)
     ]
     if len(matching) != 1:
         raise RuntimeError(f"Exact-context rerun resolution failed: expected 1 job, got {len(matching)}")
@@ -137,11 +190,12 @@ def _capture_marker_state(step: RecipeStep) -> str | None:
     return marker or None
 
 
-async def _execute_recipe_until_state(page, recipe: Recipe, target_state: str) -> None:
+async def _execute_recipe_until_state(page, recipe: Recipe, target_state: str) -> list[dict[str, str | None]]:
     defined_states = [point.state for point in recipe.capture_points]
     if target_state not in defined_states:
         raise RuntimeError(f"Recipe {recipe.recipe_id} does not define capture state {target_state!r}")
 
+    executed_steps: list[dict[str, str | None]] = []
     marker_states = [state for state in (_capture_marker_state(step) for step in recipe.steps) if state is not None]
     if marker_states:
         if marker_states != defined_states:
@@ -152,16 +206,18 @@ async def _execute_recipe_until_state(page, recipe: Recipe, target_state: str) -
         for step in recipe.steps:
             marker_state = _capture_marker_state(step)
             if marker_state is not None:
+                executed_steps.append({"action": "capture_state", "selector": step.selector, "wait_for": step.wait_for, "marker_state": marker_state})
                 if marker_state == target_state:
                     reached = True
                     break
                 continue
             await execute_recipe_step(page, step.action, step.selector, step.wait_for)
+            executed_steps.append({"action": step.action, "selector": step.selector, "wait_for": step.wait_for, "marker_state": None})
         if not reached:
             raise RuntimeError(
                 f"Recipe {recipe.recipe_id} did not reach capture marker for state={target_state!r}"
             )
-        return
+        return executed_steps
 
     if len(defined_states) != 1:
         raise RuntimeError(
@@ -171,6 +227,8 @@ async def _execute_recipe_until_state(page, recipe: Recipe, target_state: str) -
         raise RuntimeError(f"Recipe {recipe.recipe_id} cannot produce state={target_state!r}")
     for step in recipe.steps:
         await execute_recipe_step(page, step.action, step.selector, step.wait_for)
+        executed_steps.append({"action": step.action, "selector": step.selector, "wait_for": step.wait_for, "marker_state": None})
+    return executed_steps
 
 
 def _is_non_fatal_not_found_error(exc: Exception) -> bool:
@@ -233,6 +291,7 @@ async def main(
     all_items_by_url: dict[str, list[dict]] = {}
     representative_page_ids: dict[str, str] = {}
     error_records: list[dict] = []
+    rerun_provenance_payload = dict(rerun_provenance or {})
     run_context = RunContext(run_id=run_id, run_started_at=datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"))
     review_bucket = os.environ.get("REVIEW_BUCKET", BUCKET_NAME)
     artifact_writer = GCSArtifactWriter(_GCSConfigStore(), BUCKET_NAME, review_bucket)
@@ -271,7 +330,7 @@ async def main(
                         raise RuntimeError(f"Missing recipe for scripted capture: recipe_id={job.recipe_id!r}")
                     recipe = recipes[job.recipe_id]
                     await page.goto(url, timeout=30000)
-                    await _execute_recipe_until_state(page, recipe, job.context.state)
+                    trace_steps = await _execute_recipe_until_state(page, recipe, job.context.state)
                     page_screenshot, items, screenshot_bytes = await capture_current_page(
                         page=page,
                         url=url,
@@ -281,6 +340,8 @@ async def main(
                         user_tier=job.context.user_tier or None,
                         language=job.context.language,
                     )
+                if job.mode == "baseline":
+                    trace_steps = []
                 await page.close()
             except Exception as exc:
                 if rerun_provenance is not None and _is_non_fatal_not_found_error(exc):
@@ -324,7 +385,14 @@ async def main(
                 ),
                 writer=artifact_writer,
                 run_context=run_context,
+                recipe_id=job.recipe_id,
+                capture_point_id=job.capture_point_id,
+                interaction_trace_hash=compute_interaction_trace_hash(trace_steps),
             )
+            if rerun_provenance is not None:
+                rerun_provenance_payload["interaction_trace_hash"] = capture_result["page"].get("interaction_trace_hash")
+                rerun_provenance_payload["recipe_id"] = job.recipe_id
+                rerun_provenance_payload["capture_point_id"] = job.capture_point_id
 
             all_page_screenshots.append(capture_result["page"])
             all_collected_items.extend(capture_result["elements"])
@@ -401,7 +469,7 @@ async def main(
             "state": state,
             "user_tier": user_tier,
             "run_started_at": run_context.run_started_at,
-            "rerun": rerun_provenance or {},
+            "rerun": rerun_provenance_payload,
         },
         "error_records": sorted(error_records, key=lambda r: (r.get("url", ""), r.get("state", ""))),
     }
@@ -434,8 +502,19 @@ def run_with_config(config: Phase1RuntimeConfig):
     return asyncio.run(main(config.domain, config.run_id, config.language, config.viewport_kind, config.state, config.user_tier))
 
 
-def run_exact_context(domain: str, run_id: str, url: str, viewport_kind: str, state: str, user_tier: str | None, language: str, original_context_id: str | None = None):
-    job = build_exact_context_job(domain, url, language, viewport_kind, state, user_tier)
+def run_exact_context(
+    domain: str,
+    run_id: str,
+    url: str,
+    viewport_kind: str,
+    state: str,
+    user_tier: str | None,
+    language: str,
+    original_context_id: str | None = None,
+    recipe_id: str | None = None,
+    capture_point_id: str | None = None,
+):
+    job = build_exact_context_job(domain, url, language, viewport_kind, state, user_tier, recipe_id=recipe_id, capture_point_id=capture_point_id)
     provenance = {
         "url": url,
         "viewport_kind": viewport_kind,
@@ -443,6 +522,7 @@ def run_exact_context(domain: str, run_id: str, url: str, viewport_kind: str, st
         "user_tier": user_tier,
         "original_capture_context_id": original_context_id,
         "recipe_id": job.recipe_id,
+        "capture_point_id": job.capture_point_id,
     }
     return asyncio.run(main(domain, run_id, language, viewport_kind, state, user_tier, jobs_override=[job], rerun_provenance=provenance))
 
