@@ -36,10 +36,11 @@ def ocrspace_extract_text(
         }
 
     endpoint = os.getenv("OCR_SPACE_ENDPOINT", OCR_SPACE_ENDPOINT_DEFAULT).strip() or OCR_SPACE_ENDPOINT_DEFAULT
-    timeout_s = float(os.getenv("OCR_SPACE_TIMEOUT_S", "20"))
+    timeout_s = float(os.getenv("OCR_SPACE_TIMEOUT_S", "40"))
     payload = {
         "filetype": "png",
         "OCREngine": "3",
+        "language": "auto",
         "base64Image": "data:image/png;base64," + base64.b64encode(image_bytes).decode("utf-8"),
     }
     headers = {"apikey": api_key}
@@ -103,3 +104,36 @@ def ocrspace_extract_text(
         "ocr_notes": [],
         "provider_meta": {"provider": "ocr.space", "endpoint": endpoint},
     }
+
+
+def vision_extract_text(
+    image_bytes: bytes,  # noqa: ARG001
+) -> dict:
+    # The baseline implementation intentionally avoids direct Vision API calls
+    # unless explicit integration is configured.
+    return {
+        "status": "skipped",
+        "ocr_text": "",
+        "ocr_provider": "vision",
+        "ocr_engine": "",
+        "ocr_notes": ["vision_not_configured"],
+        "provider_meta": {"provider": "vision"},
+    }
+
+
+def extract_text_with_fallback(
+    image_bytes: bytes,
+    *,
+    ocrspace_fn=ocrspace_extract_text,
+    vision_fn=vision_extract_text,
+) -> dict:
+    primary = ocrspace_fn(image_bytes)
+    if primary.get("status") == "ok":
+        return primary
+
+    # Attempt Vision fallback for non-OK OCR.Space outcomes. Preserve the
+    # original OCR.Space status if fallback does not produce usable text.
+    fallback = vision_fn(image_bytes)
+    if fallback.get("status") == "ok":
+        return fallback
+    return primary
