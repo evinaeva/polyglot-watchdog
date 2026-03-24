@@ -530,6 +530,13 @@ async def main(
                             "visible": item["visible"],
                             "tag": item.get("tag"),
                             "attributes": item.get("attributes"),
+                            "page_canonical_key": item.get("page_canonical_key"),
+                            "logical_match_key": item.get("logical_match_key"),
+                            "role_hint": item.get("role_hint"),
+                            "semantic_attrs": item.get("semantic_attrs"),
+                            "local_path_signature": item.get("local_path_signature"),
+                            "container_signature": item.get("container_signature"),
+                            "stable_ordinal": item.get("stable_ordinal"),
                         }
                         for item in items
                     ],
