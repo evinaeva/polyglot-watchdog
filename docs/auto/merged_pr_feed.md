@@ -725,3 +725,26 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c297142fa0832cb62230c47ed03beb)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #108 — 2026-03-24T14:24:17Z
+
+- Title: Add language:auto to OCR.space payload and raise timeout default to 40s
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/108
+- Author: evinaeva
+- Base branch: main
+- Head branch: f37lw1-codex/update-ocrspace_extract_text-payload
+- Merge commit: 8da3142193093ab867da36ff7e09d8da53c4081d
+- Changed files:
+  - pipeline/phase4_ocr_provider.py
+- Description:
+  ### Motivation
+  - Improve OCR accuracy by allowing OCR.space to auto-detect the input language via the `language` parameter.
+  - Reduce spurious timeouts for slower OCR requests by increasing the default timeout from 20s to 40s while preserving the existing env var override behavior.
+  
+  ### Description
+  - Change the default timeout expression from `os.getenv("OCR_SPACE_TIMEOUT_S", "20")` to `os.getenv("OCR_SPACE_TIMEOUT_S", "40")`.
+  - Add `
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c297142fa0832cb62230c47ed03beb)
+- Notes: Auto-generated from merged PR metadata.
