@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import warnings
 from math import ceil
 from dataclasses import dataclass, field
 from typing import Any, Callable, Protocol
@@ -50,6 +51,13 @@ class DeterministicOfflineProvider:
     """Heuristic-only provider with deterministic outputs and no network calls."""
 
     _SPELLING_MARKERS = ("teh", "recieve", "definately")
+    _PROVIDER_META = {
+        "provider": "deterministic-offline",
+        "review_mode": "test-heuristic",
+        "confidence_provenance": "heuristic",
+        "origin": "deterministic_offline",
+        "fallback_used": False,
+    }
 
     def review_spelling_grammar(self, text_en: str, text_target: str, language: str) -> SpellingGrammarSignals:
         target_lc = text_target.lower()
@@ -66,7 +74,12 @@ class DeterministicOfflineProvider:
             grammar_score = 0.78
             notes.append("punctuation_instability")
 
-        return SpellingGrammarSignals(spelling_score=spelling_score, grammar_score=grammar_score, notes=notes)
+        return SpellingGrammarSignals(
+            spelling_score=spelling_score,
+            grammar_score=grammar_score,
+            notes=notes,
+            provider_meta=dict(self._PROVIDER_META),
+        )
 
     def review_meaning(self, text_en: str, text_target: str, language: str) -> MeaningSignals:
         notes: list[str] = []
@@ -80,7 +93,11 @@ class DeterministicOfflineProvider:
             score = max(score, 0.8)
             notes.append("identical_text_signal")
 
-        return MeaningSignals(meaning_mismatch_score=score, notes=notes)
+        return MeaningSignals(
+            meaning_mismatch_score=score,
+            notes=notes,
+            provider_meta=dict(self._PROVIDER_META),
+        )
 
 
 class DisabledReviewProvider:
@@ -252,9 +269,10 @@ class LLMReviewProvider:
             notes=self._sanitize_notes(parsed.get("notes")),
             provider_meta={
                 "provider": "llm",
-                "mode": "ai",
+                "review_mode": "llm",
                 "model": self._model,
                 "fallback_used": False,
+                "confidence_provenance": "llm",
                 "provider_score_summary": {
                     "spelling_score": spelling_score,
                     "grammar_score": grammar_score,
@@ -276,7 +294,15 @@ class LLMReviewProvider:
             grammar_score=fallback_spelling_grammar.grammar_score,
             meaning_mismatch_score=fallback_meaning.meaning_mismatch_score,
             notes=fallback_notes,
-            provider_meta={"provider": "llm", "mode": "ai", "model": self._model, "fallback_used": True},
+            provider_meta={
+                "provider": "llm",
+                "review_mode": "llm",
+                "model": self._model,
+                "fallback_used": True,
+                "fallback_origin": "deterministic_offline",
+                "fallback_review_mode": "test-heuristic",
+                "confidence_provenance": "heuristic",
+            },
         )
 
     def _split_batches(self, language: str, items: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
@@ -365,11 +391,28 @@ class LLMReviewProvider:
         return merged[:5] if merged else ["llm_response_no_notes"]
 
 
-def build_provider(mode: str = "offline") -> Phase6ReviewProvider:
+def build_provider(mode: str) -> Phase6ReviewProvider:
     normalized = mode.strip().lower()
+    if normalized == "offline":
+        warnings.warn(
+            "phase6 review mode 'offline' is deprecated; use 'test-heuristic'",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        normalized = "test-heuristic"
+    elif normalized == "ai":
+        warnings.warn(
+            "phase6 review mode 'ai' is deprecated; use 'llm'",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        normalized = "llm"
+
+    if normalized in {"test-heuristic", "heuristic", "deterministic"}:
+        return DeterministicOfflineProvider()
     if normalized in {"disabled", "off", "none"}:
         return DisabledReviewProvider()
-    if normalized in {"ai", "llm", "openai"}:
+    if normalized in {"llm", "openai"}:
         def _read_float(env_key: str, default: float) -> float:
             raw = os.environ.get(env_key, str(default))
             try:
@@ -400,4 +443,6 @@ def build_provider(mode: str = "offline") -> Phase6ReviewProvider:
             fixed_token_margin=_read_int("PHASE6_REVIEW_FIXED_TOKEN_MARGIN", 1024),
             estimated_output_tokens_per_item=_read_int("PHASE6_REVIEW_ESTIMATED_OUTPUT_TOKENS_PER_ITEM", 64),
         )
-    return DeterministicOfflineProvider()
+    raise ValueError(
+        f"Unsupported phase6 review mode: {mode!r}. Supported modes: test-heuristic, disabled, llm"
+    )
