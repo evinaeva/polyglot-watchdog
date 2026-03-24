@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime
+import hashlib
 import json
 import os
 import sys
@@ -27,29 +28,177 @@ if project_root not in sys.path:
 
 from app.recipes import load_recipes_for_planner
 from pipeline.phase1_puller import capture_current_page, execute_recipe_step, pull_page, detect_universal_sections
-from pipeline.interactive_capture import CaptureContext, CapturePoint, CaptureJob, DeterministicPlanner, GCSArtifactWriter, Recipe, RunContext, capture_state
+from pipeline.interactive_capture import (
+    CaptureContext,
+    CapturePoint,
+    CaptureJob,
+    DeterministicPlanner,
+    GCSArtifactWriter,
+    Recipe,
+    RecipeStep,
+    RunContext,
+    capture_state,
+    compute_interaction_trace_hash,
+)
+from pipeline.interactive_capture import CaptureContext, CapturePoint, CaptureJob, DeterministicPlanner, GCSArtifactWriter, Recipe, RecipeStep, RunContext, capture_state, canonical_json_bytes
 from pipeline.runtime_config import Phase1RuntimeConfig, load_phase1_runtime_config, validate_seed_urls_payload
 from pipeline.storage import BUCKET_NAME, write_json_artifact, read_json_artifact, write_phase_manifest
 from pipeline.schema_validator import validate, SchemaValidationError
 
 
-def load_planning_rows(domain: str, run_id: str) -> list[dict]:
-    """Load planning rows with seed_urls as primary input for v1.0."""
+def _normalize_planning_rows(seed_payload: dict) -> list[dict]:
+    rows = [
+        {"url": str(row.get("url")), "recipe_ids": sorted({str(rid) for rid in row.get("recipe_ids", []) if str(rid)})}
+        for row in seed_payload.get("urls", [])
+        if isinstance(row, dict) and isinstance(row.get("url"), str)
+    ]
+    rows.sort(key=lambda r: r["url"])
+    return rows
+
+
+def _hash_payload(value: object) -> dict[str, str]:
+    payload = canonical_json_bytes(value)
+    return {
+        "sha256": hashlib.sha256(payload).hexdigest(),
+        "sha1": hashlib.sha1(payload).hexdigest(),
+    }
+
+
+def _serialize_recipe(recipe: Recipe) -> dict:
+    return {
+        "recipe_id": recipe.recipe_id,
+        "url_pattern": recipe.url_pattern,
+        "steps": [{"action": step.action, "selector": step.selector, "wait_for": step.wait_for} for step in recipe.steps],
+        "capture_points": [{"state": point.state} for point in recipe.capture_points],
+    }
+
+
+def _inputs_artifact_uri(domain: str, run_id: str, filename: str) -> str:
+    return f"gs://{BUCKET_NAME}/{domain}/{run_id}/inputs/{filename}"
+
+
+def ensure_run_start_inputs_snapshot(domain: str, run_id: str) -> dict:
+    """Create immutable planning snapshot artifacts under run-scoped inputs/."""
+    manifest_name = "inputs/inputs_manifest.json"
     try:
-        seed_payload = read_json_artifact(domain, "manual", "seed_urls.json")
-        validate_seed_urls_payload(seed_payload)
-        rows = [
-            {"url": str(row.get("url")), "recipe_ids": sorted({str(rid) for rid in row.get("recipe_ids", []) if str(rid)})}
-            for row in seed_payload.get("urls", [])
-            if isinstance(row, dict) and isinstance(row.get("url"), str)
-        ]
-        rows.sort(key=lambda r: r["url"])
-        if rows:
-            print(f"[Phase 1] Planning input: seed_urls ({len(rows)} URLs)")
-            return rows
+        existing_manifest = read_json_artifact(domain, run_id, manifest_name)
+        if not isinstance(existing_manifest, dict):
+            raise RuntimeError("inputs_manifest must be an object")
+        return existing_manifest
+    except Exception:
+        pass
+
+    seed_payload = read_json_artifact(domain, "manual", "seed_urls.json")
+    validate_seed_urls_payload(seed_payload)
+    planning_rows = _normalize_planning_rows(seed_payload)
+    if not planning_rows:
+        raise RuntimeError("No planning input available: valid seed_urls are required")
+
+    recipes = load_recipes_for_planner(domain)
+    active_recipe_ids = sorted({recipe_id for row in planning_rows for recipe_id in row.get("recipe_ids", [])})
+    missing_recipe_ids = [recipe_id for recipe_id in active_recipe_ids if recipe_id not in recipes]
+    if missing_recipe_ids:
+        raise RuntimeError(f"Planning rows reference unknown recipe_ids: {', '.join(missing_recipe_ids)}")
+    recipe_manifest = {
+        "domain": domain,
+        "active_recipe_ids": active_recipe_ids,
+        "recipes": [_serialize_recipe(recipes[recipe_id]) for recipe_id in active_recipe_ids],
+    }
+
+    seed_snapshot_name = "inputs/seed_urls.snapshot.json"
+    recipe_manifest_name = "inputs/recipes_manifest.json"
+    seed_uri = write_json_artifact(domain, run_id, seed_snapshot_name, seed_payload)
+    recipe_uri = write_json_artifact(domain, run_id, recipe_manifest_name, recipe_manifest)
+
+    seed_hashes = _hash_payload(seed_payload)
+    recipe_hashes = _hash_payload(recipe_manifest)
+    inputs_manifest = {
+        "schema_version": "v1.0",
+        "domain": domain,
+        "run_id": run_id,
+        "artifacts": {
+            "seed_urls_snapshot": {
+                "uri": seed_uri,
+                "sha256": seed_hashes["sha256"],
+                "sha1": seed_hashes["sha1"],
+            },
+            "recipes_manifest": {
+                "uri": recipe_uri,
+                "sha256": recipe_hashes["sha256"],
+                "sha1": recipe_hashes["sha1"],
+            },
+        },
+    }
+    write_json_artifact(domain, run_id, manifest_name, inputs_manifest)
+    return inputs_manifest
+
+
+def load_planning_rows(domain: str, run_id: str) -> list[dict]:
+    """Load planning rows only from run-scoped snapshot inputs."""
+    try:
+        inputs_manifest = read_json_artifact(domain, run_id, "inputs/inputs_manifest.json")
+        seed_payload = read_json_artifact(domain, run_id, "inputs/seed_urls.snapshot.json")
+        recipe_manifest = read_json_artifact(domain, run_id, "inputs/recipes_manifest.json")
     except Exception as exc:
-        print(f"[Phase 1] seed_urls unavailable or invalid: {exc}")
-    raise RuntimeError("No planning input available: valid seed_urls are required")
+        raise RuntimeError(f"Missing run input snapshot artifacts: {exc}") from exc
+
+    validate_seed_urls_payload(seed_payload)
+    rows = _normalize_planning_rows(seed_payload)
+    if not rows:
+        raise RuntimeError("No planning input available: valid seed_urls are required")
+
+    if not isinstance(inputs_manifest, dict):
+        raise RuntimeError("inputs_manifest must be an object")
+    manifest_seed = (inputs_manifest.get("artifacts") or {}).get("seed_urls_snapshot")
+    if not isinstance(manifest_seed, dict):
+        raise RuntimeError("inputs_manifest missing artifacts.seed_urls_snapshot")
+    hashes = _hash_payload(seed_payload)
+    if manifest_seed.get("sha256") != hashes["sha256"] or manifest_seed.get("sha1") != hashes["sha1"]:
+        raise RuntimeError("seed_urls snapshot hash mismatch with inputs_manifest")
+    expected_seed_uri = _inputs_artifact_uri(domain, run_id, "seed_urls.snapshot.json")
+    if manifest_seed.get("uri") != expected_seed_uri:
+        raise RuntimeError("seed_urls snapshot URI mismatch in inputs_manifest")
+    manifest_recipes = (inputs_manifest.get("artifacts") or {}).get("recipes_manifest")
+    if not isinstance(manifest_recipes, dict):
+        raise RuntimeError("inputs_manifest missing artifacts.recipes_manifest")
+    recipe_hashes = _hash_payload(recipe_manifest)
+    if manifest_recipes.get("sha256") != recipe_hashes["sha256"] or manifest_recipes.get("sha1") != recipe_hashes["sha1"]:
+        raise RuntimeError("recipes snapshot hash mismatch with inputs_manifest")
+    expected_recipe_uri = _inputs_artifact_uri(domain, run_id, "recipes_manifest.json")
+    if manifest_recipes.get("uri") != expected_recipe_uri:
+        raise RuntimeError("recipes snapshot URI mismatch in inputs_manifest")
+
+    print(f"[Phase 1] Planning input: run snapshot seed_urls ({len(rows)} URLs)")
+    return rows
+
+
+def load_snapshot_recipes(domain: str, run_id: str) -> dict[str, Recipe]:
+    try:
+        recipe_manifest = read_json_artifact(domain, run_id, "inputs/recipes_manifest.json")
+    except Exception as exc:
+        raise RuntimeError(f"Missing recipe snapshot artifact: {exc}") from exc
+    if not isinstance(recipe_manifest, dict):
+        raise RuntimeError("recipes_manifest must be an object")
+    raw_recipes = recipe_manifest.get("recipes", [])
+    if not isinstance(raw_recipes, list):
+        raise RuntimeError("recipes_manifest.recipes must be an array")
+
+    recipes: dict[str, Recipe] = {}
+    for raw in raw_recipes:
+        if not isinstance(raw, dict):
+            raise RuntimeError("recipes_manifest.recipes items must be objects")
+        recipe_id = str(raw.get("recipe_id", "")).strip()
+        if not recipe_id:
+            raise RuntimeError("recipes_manifest contains recipe without recipe_id")
+        steps = tuple(RecipeStep(**step) for step in raw.get("steps", []))
+        capture_points = tuple(CapturePoint(**cp) for cp in raw.get("capture_points", []))
+        recipes[recipe_id] = Recipe(
+            recipe_id=recipe_id,
+            url_pattern=str(raw.get("url_pattern", "")),
+            steps=steps,
+            capture_points=capture_points,
+        )
+    return recipes
 
 
 def load_planning_urls(domain: str, run_id: str) -> list[str]:
@@ -68,18 +217,60 @@ def build_planned_jobs(domain: str, planning_rows: list[dict], language: str, vi
     )
 
 
-def build_exact_context_job(domain: str, url: str, language: str, viewport_kind: str, state: str, user_tier: str | None) -> CaptureJob:
+def build_exact_context_job(
+    domain: str,
+    url: str,
+    language: str,
+    viewport_kind: str,
+    state: str,
+    user_tier: str | None,
+    recipe_id: str | None = None,
+    capture_point_id: str | None = None,
+) -> CaptureJob:
     recipes = load_recipes_for_planner(domain)
     recipe_ids: list[str] = []
+    resolved_state = state
+    resolved_recipe_id: str | None = None
+    resolved_capture_point_id: str | None = None
     if state != "baseline":
-        matching_recipe_ids = sorted(
-            recipe_id
-            for recipe_id, recipe in recipes.items()
-            if any(point.state == state for point in recipe.capture_points)
-        )
-        if not matching_recipe_ids:
-            raise RuntimeError(f"No recipe defines capture point state={state!r} for exact-context rerun")
-        recipe_ids = [matching_recipe_ids[0]]
+        if bool(recipe_id) != bool(capture_point_id):
+            raise RuntimeError("Exact-context rerun requires both recipe_id and capture_point_id together")
+        if recipe_id and capture_point_id:
+            if recipe_id not in recipes:
+                raise RuntimeError(f"Unknown recipe_id={recipe_id!r} for exact-context rerun")
+            recipe = recipes[recipe_id]
+            matching_points = [point for point in recipe.capture_points if point.capture_point_id == capture_point_id]
+            if not matching_points:
+                raise RuntimeError(f"No capture point found for recipe_id={recipe_id!r} capture_point_id={capture_point_id!r}")
+            if len(matching_points) > 1:
+                raise RuntimeError(f"Ambiguous capture_point_id={capture_point_id!r} within recipe_id={recipe_id!r}")
+            resolved_point = matching_points[0]
+            if state and resolved_point.state != state:
+                raise RuntimeError(
+                    f"State mismatch for recipe_id={recipe_id!r} capture_point_id={capture_point_id!r}: "
+                    f"expected {resolved_point.state!r}, got {state!r}"
+                )
+            resolved_recipe_id = recipe_id
+            resolved_state = resolved_point.state
+            resolved_capture_point_id = capture_point_id
+            recipe_ids = [resolved_recipe_id]
+        else:
+            # Compatibility path for legacy clients still sending only state.
+            candidates: list[tuple[str, CapturePoint]] = []
+            for candidate_recipe_id, recipe in recipes.items():
+                for point in recipe.capture_points:
+                    if point.state == state:
+                        candidates.append((candidate_recipe_id, point))
+            if not candidates:
+                raise RuntimeError("No recipe capture point matches exact-context resolver inputs")
+            if len(candidates) > 1:
+                raise RuntimeError(f"Ambiguous state={state!r}; provide recipe_id + capture_point_id")
+            resolved_recipe_id, resolved_point = candidates[0]
+            resolved_state = resolved_point.state
+            resolved_capture_point_id = resolved_point.capture_point_id
+            recipe_ids = [resolved_recipe_id]
+    elif recipe_id or capture_point_id:
+        raise RuntimeError("baseline context must not include recipe_id/capture_point_id")
 
     jobs = build_planned_jobs(
         domain=domain,
@@ -93,10 +284,11 @@ def build_exact_context_job(domain: str, url: str, language: str, viewport_kind:
         job for job in jobs
         if job.context.url == url
         and job.context.viewport_kind == viewport_kind
-        and job.context.state == state
+        and job.context.state == resolved_state
         and (job.context.user_tier or None) == (user_tier or None)
         and job.context.language == language
-        and (state == "baseline" or job.recipe_id == recipe_ids[0])
+        and (resolved_state == "baseline" or job.recipe_id == resolved_recipe_id)
+        and (resolved_state == "baseline" or job.capture_point_id == resolved_capture_point_id)
     ]
     if len(matching) != 1:
         raise RuntimeError(f"Exact-context rerun resolution failed: expected 1 job, got {len(matching)}")
@@ -137,11 +329,12 @@ def _capture_marker_state(step: RecipeStep) -> str | None:
     return marker or None
 
 
-async def _execute_recipe_until_state(page, recipe: Recipe, target_state: str) -> None:
+async def _execute_recipe_until_state(page, recipe: Recipe, target_state: str) -> list[dict[str, str | None]]:
     defined_states = [point.state for point in recipe.capture_points]
     if target_state not in defined_states:
         raise RuntimeError(f"Recipe {recipe.recipe_id} does not define capture state {target_state!r}")
 
+    executed_steps: list[dict[str, str | None]] = []
     marker_states = [state for state in (_capture_marker_state(step) for step in recipe.steps) if state is not None]
     if marker_states:
         if marker_states != defined_states:
@@ -152,16 +345,18 @@ async def _execute_recipe_until_state(page, recipe: Recipe, target_state: str) -
         for step in recipe.steps:
             marker_state = _capture_marker_state(step)
             if marker_state is not None:
+                executed_steps.append({"action": "capture_state", "selector": step.selector, "wait_for": step.wait_for, "marker_state": marker_state})
                 if marker_state == target_state:
                     reached = True
                     break
                 continue
             await execute_recipe_step(page, step.action, step.selector, step.wait_for)
+            executed_steps.append({"action": step.action, "selector": step.selector, "wait_for": step.wait_for, "marker_state": None})
         if not reached:
             raise RuntimeError(
                 f"Recipe {recipe.recipe_id} did not reach capture marker for state={target_state!r}"
             )
-        return
+        return executed_steps
 
     if len(defined_states) != 1:
         raise RuntimeError(
@@ -171,6 +366,8 @@ async def _execute_recipe_until_state(page, recipe: Recipe, target_state: str) -
         raise RuntimeError(f"Recipe {recipe.recipe_id} cannot produce state={target_state!r}")
     for step in recipe.steps:
         await execute_recipe_step(page, step.action, step.selector, step.wait_for)
+        executed_steps.append({"action": step.action, "selector": step.selector, "wait_for": step.wait_for, "marker_state": None})
+    return executed_steps
 
 
 def _is_non_fatal_not_found_error(exc: Exception) -> bool:
@@ -206,8 +403,20 @@ async def main(
     rerun_provenance: dict | None = None,
 ) -> None:
     print(f"[Phase 1] Starting data collection domain={domain} run_id={run_id} lang={language}")
+    planning_snapshot_provenance: dict[str, str] = {}
 
     if jobs_override is None:
+        # Freeze planning inputs once per run before planning expansion.
+        inputs_manifest = ensure_run_start_inputs_snapshot(domain, run_id)
+        seed_snapshot = ((inputs_manifest.get("artifacts") or {}).get("seed_urls_snapshot") or {})
+        recipe_snapshot = ((inputs_manifest.get("artifacts") or {}).get("recipes_manifest") or {})
+        planning_snapshot_provenance = {
+            "seed_payload_hash": str(seed_snapshot.get("sha256", "")),
+            "recipe_manifest_hash": str(recipe_snapshot.get("sha256", "")),
+            "seed_snapshot_uri": str(seed_snapshot.get("uri", "")),
+            "recipe_manifest_uri": str(recipe_snapshot.get("uri", "")),
+            "inputs_manifest_uri": _inputs_artifact_uri(domain, run_id, "inputs_manifest.json"),
+        }
         # Load planning URLs (seed_urls primary input for v1.0).
         try:
             planning_rows = load_planning_rows(domain, run_id)
@@ -219,7 +428,7 @@ async def main(
             print("[Phase 1] STOP: planning URL list is empty", file=sys.stderr)
             sys.exit(1)
 
-        recipes = load_recipes_for_planner(domain)
+        recipes = load_snapshot_recipes(domain, run_id)
         jobs = build_planned_jobs(domain, planning_rows, language, viewport_kind, user_tier, recipes)
     else:
         jobs = list(jobs_override)
@@ -233,6 +442,7 @@ async def main(
     all_items_by_url: dict[str, list[dict]] = {}
     representative_page_ids: dict[str, str] = {}
     error_records: list[dict] = []
+    rerun_provenance_payload = dict(rerun_provenance or {})
     run_context = RunContext(run_id=run_id, run_started_at=datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"))
     review_bucket = os.environ.get("REVIEW_BUCKET", BUCKET_NAME)
     artifact_writer = GCSArtifactWriter(_GCSConfigStore(), BUCKET_NAME, review_bucket)
@@ -271,7 +481,7 @@ async def main(
                         raise RuntimeError(f"Missing recipe for scripted capture: recipe_id={job.recipe_id!r}")
                     recipe = recipes[job.recipe_id]
                     await page.goto(url, timeout=30000)
-                    await _execute_recipe_until_state(page, recipe, job.context.state)
+                    trace_steps = await _execute_recipe_until_state(page, recipe, job.context.state)
                     page_screenshot, items, screenshot_bytes = await capture_current_page(
                         page=page,
                         url=url,
@@ -281,6 +491,8 @@ async def main(
                         user_tier=job.context.user_tier or None,
                         language=job.context.language,
                     )
+                if job.mode == "baseline":
+                    trace_steps = []
                 await page.close()
             except Exception as exc:
                 if rerun_provenance is not None and _is_non_fatal_not_found_error(exc):
@@ -331,7 +543,14 @@ async def main(
                 ),
                 writer=artifact_writer,
                 run_context=run_context,
+                recipe_id=job.recipe_id,
+                capture_point_id=job.capture_point_id,
+                interaction_trace_hash=compute_interaction_trace_hash(trace_steps),
             )
+            if rerun_provenance is not None:
+                rerun_provenance_payload["interaction_trace_hash"] = capture_result["page"].get("interaction_trace_hash")
+                rerun_provenance_payload["recipe_id"] = job.recipe_id
+                rerun_provenance_payload["capture_point_id"] = job.capture_point_id
 
             all_page_screenshots.append(capture_result["page"])
             all_collected_items.extend(capture_result["elements"])
@@ -402,14 +621,15 @@ async def main(
             "items": len(all_collected_items),
             "universal_sections": len(universal_sections),
         },
-        "provenance": {
-            "language": language,
-            "viewport_kind": viewport_kind,
-            "state": state,
-            "user_tier": user_tier,
-            "run_started_at": run_context.run_started_at,
-            "rerun": rerun_provenance or {},
-        },
+"provenance": {
+    "language": language,
+    "viewport_kind": viewport_kind,
+    "state": state,
+    "user_tier": user_tier,
+    "run_started_at": run_context.run_started_at,
+    **planning_snapshot_provenance,   # если эта переменная есть в файле
+    "rerun": rerun_provenance_payload,  # именно payload, не rerun_provenance or {}
+},
         "error_records": sorted(error_records, key=lambda r: (r.get("url", ""), r.get("state", ""))),
     }
     manifest_uri = write_phase_manifest(domain, run_id, "phase1", manifest)
@@ -441,8 +661,19 @@ def run_with_config(config: Phase1RuntimeConfig):
     return asyncio.run(main(config.domain, config.run_id, config.language, config.viewport_kind, config.state, config.user_tier))
 
 
-def run_exact_context(domain: str, run_id: str, url: str, viewport_kind: str, state: str, user_tier: str | None, language: str, original_context_id: str | None = None):
-    job = build_exact_context_job(domain, url, language, viewport_kind, state, user_tier)
+def run_exact_context(
+    domain: str,
+    run_id: str,
+    url: str,
+    viewport_kind: str,
+    state: str,
+    user_tier: str | None,
+    language: str,
+    original_context_id: str | None = None,
+    recipe_id: str | None = None,
+    capture_point_id: str | None = None,
+):
+    job = build_exact_context_job(domain, url, language, viewport_kind, state, user_tier, recipe_id=recipe_id, capture_point_id=capture_point_id)
     provenance = {
         "url": url,
         "viewport_kind": viewport_kind,
@@ -450,6 +681,7 @@ def run_exact_context(domain: str, run_id: str, url: str, viewport_kind: str, st
         "user_tier": user_tier,
         "original_capture_context_id": original_context_id,
         "recipe_id": job.recipe_id,
+        "capture_point_id": job.capture_point_id,
     }
     return asyncio.run(main(domain, run_id, language, viewport_kind, state, user_tier, jobs_override=[job], rerun_provenance=provenance))
 

@@ -1,5 +1,7 @@
 from unittest.mock import patch
 
+import pytest
+
 from pipeline.run_phase6 import run
 from pipeline.phase6_review import prepare_review_inputs
 
@@ -58,7 +60,7 @@ def test_review_class_mapping_and_rich_evidence_for_placeholder():
     with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
         "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
     ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
-        issues = run("example.com", "run-en", "run-fr")
+        issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
     assert len(issues) == 1
     issue = issues[0]
@@ -77,7 +79,7 @@ def test_ocr_metadata_applies_only_to_image_items():
     with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
         "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
     ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
-        issues = run("example.com", "run-en", "run-fr")
+        issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
     assert len(issues) == 1
     issue = issues[0]
@@ -103,7 +105,7 @@ def test_image_backed_review_prefers_good_ocr_text_over_unreliable_dom_text():
     with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
         "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
     ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
-        issues = run("example.com", "run-en", "run-fr")
+        issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
     spelling_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "SPELLING")
     assert spelling_issue["evidence"]["text_target"] == "teh translation"
@@ -125,7 +127,7 @@ def test_weak_ocr_falls_back_to_dom_for_canonical_comparison_text():
     with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
         "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
     ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
-        issues = run("example.com", "run-en", "run-fr")
+        issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
     spelling_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "SPELLING")
     assert spelling_issue["evidence"]["text_target"] == "teh translation"
@@ -149,7 +151,7 @@ def test_image_item_with_ocr_handoff_metadata_but_unusable_text_falls_back_to_do
     with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
         "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
     ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
-        issues = run("example.com", "run-en", "run-fr")
+        issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
     spelling_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "SPELLING")
     assert spelling_issue["evidence"]["text_target"] == "teh translation"
@@ -162,7 +164,7 @@ def test_non_image_items_do_not_receive_ocr_signals():
     with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
         "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
     ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
-        issues = run("example.com", "run-en", "run-fr")
+        issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
     assert issues == []
 
@@ -175,7 +177,7 @@ def test_provider_disabled_mode_is_deterministic_and_offline():
     ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"), patch.dict(
         "os.environ", {"PHASE6_REVIEW_PROVIDER": "disabled"}, clear=False
     ):
-        issues = run("example.com", "run-en", "run-fr")
+        issues = run("example.com", "run-en", "run-fr", review_mode="disabled")
 
     assert issues == []
 
@@ -186,12 +188,12 @@ def test_confidence_and_ordering_are_deterministic():
     with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
         "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
     ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
-        first = run("example.com", "run-en", "run-fr")
+        first = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
     with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
         "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
     ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
-        second = run("example.com", "run-en", "run-fr")
+        second = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
     assert len(first) == 1
     assert first == second
@@ -210,7 +212,7 @@ def test_missing_target_evidence_prefers_collected_page_id_for_storage_lookup():
     with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
         "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
     ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
-        issues = run("example.com", "run-en", "run-fr")
+        issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
     assert len(issues) == 1
     issue = issues[0]
@@ -301,7 +303,7 @@ def test_run_prefetch_warms_exact_finalized_pair_keys_for_reviews():
     ), patch("pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]), patch(
         "pipeline.run_phase6.write_json_artifact"
     ), patch("pipeline.run_phase6.write_phase_manifest"):
-        run("example.com", "run-en", "run-fr")
+        run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
     assert provider.misses == []
 
@@ -312,12 +314,17 @@ def test_provider_notes_are_not_mixed_into_signals():
     with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
         "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
     ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
-        issues = run("example.com", "run-en", "run-fr")
+        issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
     assert len(issues) >= 1
     spelling_issue = next(issue for issue in issues if issue["message"] == "Potential spelling issue in target text")
     assert "notes" not in spelling_issue["evidence"]["signals"]
     assert spelling_issue["evidence"]["provider_notes"] == ["spelling_marker_detected"]
+    assert spelling_issue["evidence"]["provider_meta"]["review_mode"] == "test-heuristic"
+    assert spelling_issue["evidence"]["provider_meta"]["confidence_provenance"] == "heuristic"
+    assert spelling_issue["evidence"]["provider_meta"]["origin"] == "deterministic_offline"
+    assert spelling_issue["evidence"]["review_mode"] == "test-heuristic"
+    assert spelling_issue["evidence"]["confidence_provenance"] == "heuristic"
 
 
 def test_fallback_weighted_pairing_reduces_false_missing_translation_on_item_id_drift():
@@ -355,7 +362,12 @@ def test_ai_mode_missing_key_falls_back_without_changing_category(monkeypatch):
     assert "ai_fallback_used" in spelling_issue["evidence"]["provider_notes"]
 
 
-def test_ai_mode_enriches_evidence_metadata_when_response_valid(monkeypatch):
+def test_llm_mode_missing_key_falls_back_without_changing_category(monkeypatch):
+    # Backward-compatible alias for branches that renamed the provider-mode test.
+    test_ai_mode_missing_key_falls_back_without_changing_category(monkeypatch)
+
+
+def test_llm_mode_enriches_evidence_metadata_when_response_valid(monkeypatch):
     artifacts = _base_artifacts({"text": "Acheter"})
 
     def fake_request(endpoint, api_key, timeout_s, payload):
@@ -369,7 +381,6 @@ def test_ai_mode_enriches_evidence_metadata_when_response_valid(monkeypatch):
             ]
         }
 
-    monkeypatch.setenv("PHASE6_REVIEW_PROVIDER", "ai")
     monkeypatch.setenv("PHASE6_REVIEW_API_KEY", "test-key")
 
     with patch("pipeline.phase6_providers.LLMReviewProvider._default_request", side_effect=fake_request), patch(
@@ -377,12 +388,16 @@ def test_ai_mode_enriches_evidence_metadata_when_response_valid(monkeypatch):
     ), patch("pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]), patch(
         "pipeline.run_phase6.write_json_artifact"
     ), patch("pipeline.run_phase6.write_phase_manifest"):
-        issues = run("example.com", "run-en", "run-fr")
+        issues = run("example.com", "run-en", "run-fr", review_mode="llm")
 
     spelling_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "SPELLING")
     assert spelling_issue["category"] == "TRANSLATION_MISMATCH"
     assert spelling_issue["evidence"]["provider_meta"]["model"] == "openrouter/free"
+    assert spelling_issue["evidence"]["provider_meta"]["review_mode"] == "llm"
+    assert spelling_issue["evidence"]["provider_meta"]["confidence_provenance"] == "llm"
     assert spelling_issue["evidence"]["provider_meta"]["fallback_used"] is False
+    assert spelling_issue["evidence"]["review_mode"] == "llm"
+    assert spelling_issue["evidence"]["confidence_provenance"] == "llm"
     assert spelling_issue["evidence"]["provider_meta"]["provider_score_summary"] == {
         "spelling_score": 0.82,
         "grammar_score": 0.1,
@@ -419,7 +434,7 @@ def test_good_ocr_allows_normal_meaning_review_for_image_items():
     ), patch("pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]), patch(
         "pipeline.run_phase6.write_json_artifact"
     ), patch("pipeline.run_phase6.write_phase_manifest"):
-        issues = run("example.com", "run-en", "run-fr")
+        issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
     meaning_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "MEANING")
     assert meaning_issue["category"] == "TRANSLATION_MISMATCH"
@@ -445,7 +460,7 @@ def test_weak_ocr_suppresses_strong_meaning_claims_and_adds_quality_evidence():
     ), patch("pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]), patch(
         "pipeline.run_phase6.write_json_artifact"
     ), patch("pipeline.run_phase6.write_phase_manifest"):
-        issues = run("example.com", "run-en", "run-fr")
+        issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
     assert not any(issue for issue in issues if issue["evidence"]["review_class"] == "MEANING")
     ocr_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "OCR_NOISE")
@@ -461,8 +476,19 @@ def test_nearly_empty_ocr_text_is_treated_as_weak_quality_noise():
     with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
         "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
     ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
-        issues = run("example.com", "run-en", "run-fr")
+        issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
     ocr_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "OCR_NOISE")
     assert ocr_issue["evidence"]["ocr_quality"]["trust_bucket"] == "weak"
     assert "ocr_missing_text" in ocr_issue["evidence"]["ocr_quality"]["flags"]
+
+
+def test_run_fails_fast_when_explicit_review_mode_required_and_omitted():
+    artifacts = _base_artifacts()
+
+    with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+    ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"), patch.dict(
+        "os.environ", {}, clear=True
+    ), pytest.raises(ValueError, match="must be set explicitly"):
+        run("example.com", "run-en", "run-fr", require_explicit_mode=True)
