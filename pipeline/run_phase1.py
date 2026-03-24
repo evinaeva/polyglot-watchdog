@@ -266,7 +266,11 @@ async def main(
     }.get(viewport_kind, {"width": 1280, "height": 800})
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(args=["--no-sandbox"])
+        try:
+            browser = await p.chromium.launch(args=["--no-sandbox"])
+        except TypeError:
+            # Backward-compatible for test doubles / older launch signatures.
+            browser = await p.chromium.launch()
         context = await browser.new_context(
             viewport=viewport_dims,
             user_agent="polyglot-watchdog/1.0",

@@ -579,8 +579,19 @@ def _upsert_job_status(domain: str, run_id: str, job_record: dict) -> None:
     normalized_job = dict(job_record)
     normalized_job.pop("display_name", None)
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    normalized_job["updated_at"] = now
-    normalized_job["created_at"] = str((prior_job or {}).get("created_at") or now)
+    inherited_created_at = str((prior_job or {}).get("created_at") or "").strip()
+    incoming_created_at = str(job_record.get("created_at") or "").strip()
+    if incoming_created_at:
+        normalized_job["created_at"] = incoming_created_at
+    elif inherited_created_at:
+        normalized_job["created_at"] = inherited_created_at
+
+    incoming_updated_at = str(job_record.get("updated_at") or "").strip()
+    inherited_updated_at = str((prior_job or {}).get("updated_at") or "").strip()
+    if incoming_updated_at:
+        normalized_job["updated_at"] = incoming_updated_at
+    elif inherited_updated_at or ("created_at" in normalized_job):
+        normalized_job["updated_at"] = now
     jobs = [j for j in run.get("jobs", []) if j.get("job_id") != normalized_job.get("job_id")]
     jobs.append(normalized_job)
     jobs.sort(key=lambda r: r.get("job_id", ""))

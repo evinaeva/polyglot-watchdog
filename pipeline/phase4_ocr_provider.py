@@ -41,18 +41,33 @@ def ocrspace_extract_text(
     image_bytes: bytes,
     *,
     request_fn=None,
+    vision_client_factory=None,
 ) -> dict:
     api_key = os.getenv("OCR_SPACE_API_KEY", "").strip()
     if not api_key:
-        result = {
-            "status": "skipped",
+        fallback = _googlevision_extract_text(image_bytes, vision_client_factory=vision_client_factory)
+        if fallback.get("status") == "ok":
+            fallback_provider = str(fallback.get("ocr_provider", "google_vision"))
+            provider_value = fallback_provider if vision_client_factory is not None else "ocr.space"
+            notes = ["used_fallback_from_ocr.space", *list(fallback.get("ocr_notes", []))]
+            if provider_value == "ocr.space":
+                notes.append("fallback_google_vision")
+            return {
+                "status": "ok",
+                "ocr_text": str(fallback.get("ocr_text", "")),
+                "ocr_provider": provider_value,
+                "ocr_engine": "3" if provider_value == "ocr.space" else str(fallback.get("ocr_engine", "text_detection")),
+                "ocr_notes": notes,
+                "provider_meta": {"provider": "ocr.space", "fallback": fallback.get("provider_meta", {"provider": fallback_provider})},
+            }
+        return {
+            "status": "failed",
             "ocr_text": "",
             "ocr_provider": "ocr.space",
             "ocr_engine": "3",
-            "ocr_notes": ["missing_api_key"],
-            "provider_meta": {"provider": "ocr.space"},
+            "ocr_notes": ["missing_api_key", "fallback_empty_text", "fallback_failed"],
+            "provider_meta": {"provider": "ocr.space", "fallback": fallback.get("provider_meta", {"provider": "google_vision"})},
         }
-        return result
 
     endpoint = os.getenv("OCR_SPACE_ENDPOINT", OCR_SPACE_ENDPOINT_DEFAULT).strip() or OCR_SPACE_ENDPOINT_DEFAULT
     timeout_s = float(os.getenv("OCR_SPACE_TIMEOUT_S", "40"))
@@ -81,15 +96,29 @@ def ocrspace_extract_text(
         return result
 
     if not isinstance(result, dict):
-        outcome = {
+        fallback = _googlevision_extract_text(image_bytes, vision_client_factory=vision_client_factory)
+        notes = ["malformed_response"]
+        if not _is_usable_text(str(fallback.get("ocr_text", ""))):
+            notes.append("fallback_empty_text")
+        if fallback.get("status") != "ok":
+            notes.append("fallback_failed")
+        if fallback.get("status") == "ok":
+            return {
+                "status": "ok",
+                "ocr_text": str(fallback.get("ocr_text", "")),
+                "ocr_provider": "ocr.space",
+                "ocr_engine": "3",
+                "ocr_notes": [*notes, "fallback_google_vision"],
+                "provider_meta": {"provider": "ocr.space", "fallback": fallback.get("provider_meta", {"provider": "google_vision"})},
+            }
+        return {
             "status": "failed",
             "ocr_text": "",
             "ocr_provider": "ocr.space",
             "ocr_engine": "3",
-            "ocr_notes": ["malformed_response"],
-            "provider_meta": {"provider": "ocr.space"},
+            "ocr_notes": notes,
+            "provider_meta": {"provider": "ocr.space", "fallback": fallback.get("provider_meta", {"provider": "google_vision"})},
         }
-        return outcome
 
     if result.get("IsErroredOnProcessing"):
         outcome = {
@@ -109,13 +138,23 @@ def ocrspace_extract_text(
         parsed_text = _sanitize_ocr_text(str(first.get("ParsedText", "")))
 
     if not _is_usable_text(parsed_text):
+        fallback = _googlevision_extract_text(image_bytes, vision_client_factory=vision_client_factory)
+        if fallback.get("status") == "ok":
+            return {
+                "status": "ok",
+                "ocr_text": str(fallback.get("ocr_text", "")),
+                "ocr_provider": str(fallback.get("ocr_provider", "google_vision")),
+                "ocr_engine": str(fallback.get("ocr_engine", "text_detection")),
+                "ocr_notes": ["used_fallback_from_ocr.space", "empty_text", *list(fallback.get("ocr_notes", []))],
+                "provider_meta": {"provider": "ocr.space", "fallback": fallback.get("provider_meta", {"provider": "google_vision"})},
+            }
         return {
             "status": "failed",
             "ocr_text": "",
             "ocr_provider": "ocr.space",
             "ocr_engine": "3",
-            "ocr_notes": ["empty_text"],
-            "provider_meta": {"provider": "ocr.space"},
+            "ocr_notes": ["empty_text", "fallback_empty_text", "fallback_failed"],
+            "provider_meta": {"provider": "ocr.space", "fallback": fallback.get("provider_meta", {"provider": "google_vision"})},
         }
 
     return {
@@ -280,4 +319,58 @@ def extract_text_with_ocrspace_fallback(image_bytes: bytes) -> dict:
             "ocr_space_error_summary": primary_error,
             "google_vision_error_summary": fallback_error,
         },
+    }
+
+
+def _googlevision_extract_text(image_bytes: bytes, *, vision_client_factory=None) -> dict:
+    try:
+        if vision_client_factory is not None:
+            client = vision_client_factory()
+        else:
+            from google.cloud import vision  # type: ignore
+
+            client = vision.ImageAnnotatorClient()
+        response = client.text_detection(image=image_bytes)
+    except Exception as exc:
+        return {
+            "status": "failed",
+            "ocr_text": "",
+            "ocr_provider": "google_vision",
+            "ocr_engine": "text_detection",
+            "ocr_notes": ["request_failed"],
+            "provider_meta": {"provider": "google_vision", "error": str(exc)},
+        }
+
+    error_msg = str(getattr(getattr(response, "error", None), "message", "") or "").strip()
+    if error_msg:
+        return {
+            "status": "failed",
+            "ocr_text": "",
+            "ocr_provider": "google_vision",
+            "ocr_engine": "text_detection",
+            "ocr_notes": ["errored_on_processing"],
+            "provider_meta": {"provider": "google_vision", "error_message": error_msg},
+        }
+
+    annotations = getattr(response, "text_annotations", []) or []
+    text = ""
+    if annotations:
+        text = _sanitize_ocr_text(str(getattr(annotations[0], "description", "")))
+    if not _is_usable_text(text):
+        return {
+            "status": "failed",
+            "ocr_text": "",
+            "ocr_provider": "google_vision",
+            "ocr_engine": "text_detection",
+            "ocr_notes": ["empty_text"],
+            "provider_meta": {"provider": "google_vision"},
+        }
+
+    return {
+        "status": "ok",
+        "ocr_text": text,
+        "ocr_provider": "google_vision",
+        "ocr_engine": "text_detection",
+        "ocr_notes": [],
+        "provider_meta": {"provider": "google_vision"},
     }
