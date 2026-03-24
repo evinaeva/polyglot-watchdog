@@ -967,3 +967,27 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c297164b2c832cb8328360059c80a3)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #112 — 2026-03-24T14:28:09Z
+
+- Title: Add UTC helper for default capture run display names
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/112
+- Author: evinaeva
+- Base branch: main
+- Head branch: 74y8gz-codex/add-_default_run_display_name-helper
+- Merge commit: 92e1d99b01c5dc26be92035b6a093f7017270975
+- Changed files:
+  - app/skeleton_server.py
+- Description:
+  ### Motivation
+  - Provide a deterministic UTC-based default display name for first-run captures that is stored only as run metadata and not used for `run_id` or storage keys.
+  
+  ### Description
+  - Added ` _default_run_display_name()` next to ` _en_standard_display_name_today` in `app/skeleton_server.py` which returns `First_run_HH:MM|DD.MM.YYYY` using `time.strftime('%H:%M|%d.%m.%Y', time.gmtime())`, and ensured `/api/workflow/start-capture` calls this helper only when `is_new_run` is true and no explicit or existing display name is provided while leaving `run_id` generation unchanged.
+  
+  ### Testing
+  - Ran `python -m py_compile app/skeleton_server.py` which succeeded.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c2972752e8832cbd17159befff5c81)
+- Notes: Auto-generated from merged PR metadata.
