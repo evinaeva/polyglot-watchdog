@@ -841,3 +841,35 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c297299d94832c9ee20cda9f592f56)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #111 — 2026-03-24T14:25:14Z
+
+- Title: Add Google Vision fallback and update OCR schema/metadata
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/111
+- Author: evinaeva
+- Base branch: main
+- Head branch: 6s0yfd-codex/enhance-fallback-metadata-handling
+- Merge commit: e2d60a13eede976094aee8be9ea81965d7af1a3a
+- Changed files:
+  - contract/schemas/phase4_ocr.schema.json
+  - pipeline/phase4_ocr.py
+  - pipeline/phase4_ocr_provider.py
+  - tests/test_phase4_ocr.py
+- Description:
+  ### Motivation
+  - Provide a resilient OCR pipeline by using Google Vision as a fallback when OCR.Space is unavailable or fails, and surface concise, deterministic metadata about primary and fallback attempts.
+  - Broaden the contract shape so phase4 OCR rows can record multiple providers and non-numeric engine identifiers.
+  
+  ### Description
+  - Updated the phase4 OCR JSON schema to allow `ocr_provider` to be either `ocr.space` or `google_vision` and relaxed `ocr_engine` to accept any non-empty string instead of a fixed value.
+  - Replaced direct calls to the OCR.Space extractor with a new `extract_text_with_ocrspace_fallback` orchestrator in `pipeline/phase4_ocr.py` and updated the run manifest to record `primary_provider` and `fallback_provider` information.
+  - Implemented `google_vision_extract_text`, a Google Vision request helper, `_default_google_request`, and `_short_error_from_meta` in `pipeline/phase4_ocr_provider.py`, and added `extract_text_with_ocrspace_fallback` which attempts OCR.Space first and then Google Vision, merging notes and concise error summaries into `provider_meta`.
+  - Added and updated unit tests in `tests/test_phase4_ocr.py` to cover fallback success, fallback failure metadata, short error summaries, and schema acceptance of Google Vision rows.
+  
+  ### Testing
+  - Ran the updated unit tests in `tests/test_phase4_ocr.py` (including new fallback tests) using `pytest`, and all tests passed.
+  - Validated phase4 OCR rows against the updated JSON schema via the test suite, and schema validations succeeded.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c297173018832ca3d489c96e231b15)
+- Notes: Auto-generated from merged PR metadata.
