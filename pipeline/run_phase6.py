@@ -26,7 +26,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from pipeline.phase6_providers import build_provider
-from pipeline.phase6_review import ReviewContext, overlay_blocked_issue, review_pair
+from pipeline.phase6_review import ReviewContext, overlay_blocked_issue, prepare_review_inputs, review_pair
 from pipeline.interactive_capture import CaptureContext, build_capture_context_id
 from pipeline.schema_validator import SchemaValidationError, validate
 from pipeline.storage import BUCKET_NAME, read_json_artifact, write_json_artifact, write_phase_manifest
@@ -167,6 +167,14 @@ def run(domain: str, en_run_id: str, target_run_id: str) -> list[dict]:
     target_language = next((str(item.get("language", "")).strip() for item in target_eligible if str(item.get("language", "")).strip() and str(item.get("language", "")).lower() != "en"), "")
     blocked_pages = _load_blocked_overlay_pages(domain, target_language, target_screens) if target_language else []
     provider = build_provider(mode=os.environ.get("PHASE6_REVIEW_PROVIDER", "offline"))
+    if hasattr(provider, "prefetch_reviews"):
+        prefetch_pairs = []
+        for item_id in sorted(en_by_item.keys()):
+            if item_id not in target_by_item:
+                continue
+            prepared = prepare_review_inputs(en_by_item[item_id], target_by_item[item_id])
+            prefetch_pairs.append((prepared.en_text, prepared.target_text))
+        provider.prefetch_reviews(prefetch_pairs, target_language)
 
     issues: list[dict] = []
 

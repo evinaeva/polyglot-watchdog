@@ -15,6 +15,8 @@ def test_build_provider_selection_modes(monkeypatch):
     monkeypatch.setenv("PHASE6_REVIEW_API_KEY", "test-key")
     provider = build_provider("ai")
     assert isinstance(provider, LLMReviewProvider)
+    assert provider._model == "openrouter/free"
+    assert provider._endpoint == "https://openrouter.ai/api/v1/chat/completions"
 
 
 def test_llm_provider_missing_api_key_uses_deterministic_fallback():
@@ -56,10 +58,15 @@ def test_llm_provider_malformed_response_degrades_safely_and_reuses_fallback_onc
 def test_llm_provider_parses_and_clamps_json_response():
     def good_request(endpoint, api_key, timeout_s, payload):
         response_payload = {
-            "spelling_score": 1.4,
-            "grammar_score": 0.42,
-            "meaning_mismatch_score": -2,
-            "notes": ["likely typo", "low context confidence"],
+            "results": [
+                {
+                    "item_id": "item_0",
+                    "spelling_score": 1.4,
+                    "grammar_score": 0.42,
+                    "meaning_mismatch_score": -2,
+                    "notes": ["likely typo", "low context confidence"],
+                }
+            ]
         }
         return {"choices": [{"message": {"content": json.dumps(response_payload)}}]}
 
@@ -92,10 +99,15 @@ def test_llm_provider_reuses_single_ai_request_for_same_pair():
         nonlocal attempts
         attempts += 1
         response_payload = {
-            "spelling_score": 0.2,
-            "grammar_score": 0.4,
-            "meaning_mismatch_score": 0.6,
-            "notes": ["single-call"],
+            "results": [
+                {
+                    "item_id": "item_0",
+                    "spelling_score": 0.2,
+                    "grammar_score": 0.4,
+                    "meaning_mismatch_score": 0.6,
+                    "notes": ["single-call"],
+                }
+            ]
         }
         return {"choices": [{"message": {"content": json.dumps(response_payload)}}]}
 
@@ -113,11 +125,20 @@ def test_llm_provider_cache_separates_different_pairs():
     def good_request(endpoint, api_key, timeout_s, payload):
         nonlocal attempts
         attempts += 1
+        user = json.loads(payload["messages"][1]["content"])
+        result_rows = []
+        for item in user["items"]:
+            result_rows.append(
+                {
+                    "item_id": item["item_id"],
+                    "spelling_score": 0.2,
+                    "grammar_score": 0.4,
+                    "meaning_mismatch_score": 0.6,
+                    "notes": [item["text_target"]],
+                }
+            )
         response_payload = {
-            "spelling_score": 0.2,
-            "grammar_score": 0.4,
-            "meaning_mismatch_score": 0.6,
-            "notes": [payload["messages"][1]["content"]],
+            "results": result_rows,
         }
         return {"choices": [{"message": {"content": json.dumps(response_payload)}}]}
 
@@ -128,3 +149,45 @@ def test_llm_provider_cache_separates_different_pairs():
 
     assert attempts == 2
     assert first.notes != second.notes
+
+
+def test_llm_provider_batch_prefetch_single_request_multiple_pairs():
+    attempts = 0
+
+    def good_request(endpoint, api_key, timeout_s, payload):
+        nonlocal attempts
+        attempts += 1
+        user = json.loads(payload["messages"][1]["content"])
+        assert "language" in user
+        assert len(user["items"]) == 2
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "results": [
+                                    {
+                                        "item_id": item["item_id"],
+                                        "spelling_score": 0.1,
+                                        "grammar_score": 0.2,
+                                        "meaning_mismatch_score": 0.3,
+                                        "notes": ["batched"],
+                                    }
+                                    for item in user["items"]
+                                ]
+                            }
+                        )
+                    }
+                }
+            ]
+        }
+
+    provider = LLMReviewProvider(api_key="k", request_fn=good_request)
+    provider.prefetch_reviews([("Hello", "Bonjour"), ("Buy now", "Acheter maintenant")], "fr")
+    first = provider.review_spelling_grammar("Hello", "Bonjour", "fr")
+    second = provider.review_meaning("Buy now", "Acheter maintenant", "fr")
+
+    assert attempts == 1
+    assert first.spelling_score == 0.1
+    assert second.meaning_mismatch_score == 0.3
