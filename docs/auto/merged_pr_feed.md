@@ -776,3 +776,39 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c297293574832c9dd4d5cdb090da8e)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #116 — 2026-03-24T14:24:47Z
+
+- Title: Validate and sanitize run_id across HTTP endpoints
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/116
+- Author: evinaeva
+- Base branch: main
+- Head branch: 73p8qz-codex/add-helper-for-run_id-validation
+- Merge commit: efa97c9eb92bffe79e1627ecfefce0d1a41bebd6
+- Changed files:
+  - app/skeleton_server.py
+- Description:
+  ### Motivation
+  - Ensure `run_id` values are normalized and safe to use as file/storage keys to prevent path-traversal and control-character issues.
+  - Centralize `run_id` validation to produce consistent 400 responses for invalid identifiers.
+  - Harden several API endpoints that accept `run_id` (query or payload) to avoid downstream errors caused by malformed IDs.
+  
+  ### Description
+  - Added a new helper function `
+  _validate_run_id
+  ` that trims the input and rejects empty strings, path-like segments (`/`, `\`, `..`) and control characters.
+  - Integrated `
+  _validate_run_id
+  ` across many request handlers and payload parsers including `
+  _parse_rerun_payload
+  `, `/api/page-screenshot`, `/api/pulls`, `/api/rules` (GET and POST flows), `/api/issues`, `/api/issues/detail`, capture context/review endpoints, workflow endpoints (`/api/workflow/status`, `/api/phase0/run`, `/api/phase1/run`, `/api/phase3/run`, `/api/workflow/start-capture`, `/api/workflow/generate-issues`, `/api/workflow/generate-eligible-dataset`, etc.), and the check-languages flow to validate `en_run_id`.
+  - Adjusted error handling so validation failures return `400` with an explanatory `error` message; preserved `artifact_invalid`/internal server error paths for other failures.
+  - Special-case change in `/api/rules` GET error handling to return `400` when the `run_id` validation fails and keep `artifact_invalid` for other `ValueError` causes.
+  
+  ### Testing
+  - Ran the existing unit test suite with `pytest -q`, and all tests completed successfully.
+  - Ran the project's automated test run that covers request handling to ensure endpoints return `400` for malformed `run_id` values and unchanged behavior for valid IDs.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c2972a6384832cb6371b8cbbb4d199)
+- Notes: Auto-generated from merged PR metadata.
