@@ -12,21 +12,6 @@ function contextSetStatus(message, cls = '') {
   contextsStatus.textContent = message;
 }
 
-async function saveReview(domain, runId, row, statusValue) {
-  const payload = {
-    domain,
-    run_id: runId,
-    capture_context_id: row.capture_context_id,
-    language: row.language || 'en',
-    status: statusValue,
-    reviewer: 'operator',
-    timestamp: new Date().toISOString(),
-  };
-  const response = await fetch('/api/capture/reviews', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-  const data = await safeReadPayload(response);
-  if (!response.ok) throw new Error(data.error || 'Failed to save review');
-}
-
 async function loadContexts() {
   const { domain, runId } = queryValues();
   document.getElementById('backToRunHub').href = `/workflow?${new URLSearchParams({ domain, run_id: runId }).toString()}`;
@@ -70,7 +55,7 @@ async function loadContexts() {
     if (reviewStatus) select.value = reviewStatus;
     button.addEventListener('click', async () => {
       try {
-        await saveReview(domain, runId, row, select.value);
+        await postCaptureReview(domain, runId, row, select.value);
         contextSetStatus(`Saved review for ${row.capture_context_id}`, 'ok');
         await loadContexts();
       } catch (err) {

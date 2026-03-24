@@ -235,6 +235,84 @@ def test_target_language_options_allow_first_non_english_run(api_env):
     assert '<option value="fr"' in body
 
 
+def test_get_check_languages_auto_selects_latest_successful_english_standard(api_env):
+    domain = "example.com"
+    _write("_system", "manual", "domains.json", {"domains": [domain]})
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {"run_id": "run-en-old", "created_at": "2026-03-10T00:00:00Z", "jobs": []},
+            {"run_id": "run-en-latest-ready", "created_at": "2026-03-12T00:00:00Z", "jobs": []},
+            {"run_id": "run-fr", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+    _seed_phase6_prereqs(domain, "run-en-old", "en")
+    _seed_phase6_prereqs(domain, "run-en-latest-ready", "en")
+    _seed_pages(domain, "run-fr", "fr")
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}")
+    assert status == HTTPStatus.OK
+    assert '<option value="run-en-latest-ready" selected="selected">' in body
+    assert "English reference run is required." not in body
+    assert "Target language is required." not in body
+
+
+def test_get_check_languages_auto_selects_en_standard_success_marker_when_not_ready(api_env):
+    domain = "example.com"
+    _write("_system", "manual", "domains.json", {"domains": [domain]})
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {
+                "run_id": "run-en-marker",
+                "created_at": "2026-03-12T00:00:00Z",
+                "metadata": {"en_standard_status": "succeeded"},
+                "jobs": [],
+            },
+            {"run_id": "run-fr", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+    _seed_pages(domain, "run-en-marker", "en")
+    _seed_pages(domain, "run-fr", "fr")
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&target_language=fr")
+    assert status == HTTPStatus.OK
+    assert '<option value="run-en-marker" selected="selected">' in body
+    assert "English reference run is not ready for comparison prerequisites." in body
+
+
+def test_get_check_languages_en_option_uses_metadata_display_label(api_env):
+    domain = "example.com"
+    _write("_system", "manual", "domains.json", {"domains": [domain]})
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "metadata": {"display_label": "EN Baseline (March 11)"}, "jobs": []},
+            {"run_id": "run-fr", "created_at": "2026-03-10T00:00:00Z", "jobs": []},
+        ]
+    })
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_pages(domain, "run-fr", "fr")
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}")
+    assert status == HTTPStatus.OK
+    assert '<option value="run-en" selected="selected">EN Baseline (March 11)</option>' in body
+
+
+def test_get_check_languages_en_option_uses_metadata_display_name(api_env):
+    domain = "example.com"
+    _write("_system", "manual", "domains.json", {"domains": [domain]})
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "metadata": {"display_name": "EN Baseline Display Name"}, "jobs": []},
+            {"run_id": "run-fr", "created_at": "2026-03-10T00:00:00Z", "jobs": []},
+        ]
+    })
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_pages(domain, "run-fr", "fr")
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}")
+    assert status == HTTPStatus.OK
+    assert '<option value="run-en" selected="selected">EN Baseline Display Name</option>' in body
+
+
 def test_post_rejects_when_english_reference_not_phase6_ready(api_env):
     domain = "example.com"
     _seed_runs(domain)
