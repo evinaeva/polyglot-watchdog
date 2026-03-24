@@ -9,9 +9,8 @@ const pullsWhitelistInput = document.getElementById('pullsWhitelistInput');
 const pullsWhitelistAdd = document.getElementById('pullsWhitelistAdd');
 const pullsWhitelistStatus = document.getElementById('pullsWhitelistStatus');
 const pullsWhitelistChips = document.getElementById('pullsWhitelistChips');
-const pullsEligibleControl = document.createElement('section');
-const pullsEligibleGenerateButton = document.createElement('button');
-const pullsEligibleGenerateMessage = document.createElement('p');
+const pullsEligibleGenerateButton = document.getElementById('pullsPrepareCapturedData');
+const pullsEligibleGenerateMessage = document.getElementById('pullsPrepareCapturedDataStatus');
 
 const pullsPreviewModal = document.getElementById('pullsPreviewModal');
 const pullsPreviewOverlay = document.getElementById('pullsPreviewOverlay');
@@ -147,18 +146,6 @@ async function triggerEligibleDatasetGeneration(domain, runId) {
   } finally {
     pullsEligibleGenerateButton.disabled = false;
     stopEligiblePolling();
-  }
-}
-
-function ensureEligibleDatasetControls() {
-  pullsEligibleControl.className = 'controls';
-  pullsEligibleGenerateButton.type = 'button';
-  pullsEligibleGenerateButton.textContent = 'Generate eligible dataset';
-  pullsEligibleGenerateMessage.className = 'muted';
-  if (!pullsEligibleControl.childElementCount) {
-    pullsEligibleControl.appendChild(pullsEligibleGenerateButton);
-    pullsEligibleControl.appendChild(pullsEligibleGenerateMessage);
-    pullsStatus.insertAdjacentElement('afterend', pullsEligibleControl);
   }
 }
 
@@ -759,7 +746,6 @@ function renderRows(domain, runId) {
 
 async function loadPulls() {
   const { domain, runId } = pullsQuery();
-  ensureEligibleDatasetControls();
   updateWorkflowSummary(domain, runId);
   const query = new URLSearchParams({ domain, run_id: runId }).toString();
 
@@ -819,27 +805,6 @@ pullsWhitelistAdd.addEventListener('click', async () => {
   setWhitelistStatus('Manual add by type is disabled. Use "Add to whitelist" on a concrete row.', 'warning');
 });
 
-pullsPrepareCapturedData.addEventListener('click', async () => {
-  const { domain, runId } = pullsQuery();
-  if (!domain || !runId) {
-    setPrepareCapturedDataStatus('Missing required query params: domain and run_id.', 'error');
-    return;
-  }
-
-  setPrepareCapturedDataStatus('Preparing captured data…', 'warning');
-  try {
-    const response = await fetch('/api/workflow/generate-eligible-dataset', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ domain, run_id: runId }),
-    });
-    const payload = await safeReadPayload(response);
-    if (!response.ok) throw new Error(payload.error || payload.message || `Failed to prepare captured data (${response.status})`);
-    setPrepareCapturedDataStatus('Captured data prepared successfully.', 'ok');
-  } catch (err) {
-    setPrepareCapturedDataStatus(err.message || 'Failed to prepare captured data.', 'error');
-  }
-});
 
 pullsPreviewClose.addEventListener('click', closePreview);
 pullsPreviewOverlay.addEventListener('click', closePreview);
