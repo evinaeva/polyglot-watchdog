@@ -1274,3 +1274,42 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c2cf3176fc832cb1fda53e481d3ca3)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #128 — 2026-03-24T18:21:34Z
+
+- Title: Add logical matching and rich element metadata to improve pairing and reduce false missing translations
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/128
+- Author: evinaeva
+- Base branch: main
+- Head branch: c9cl0l-codex/update-artifact-schemas-and-pairing-logic
+- Merge commit: 76303ef4812ff28b3423b1cd606ad531f75759b3
+- Changed files:
+  - contract/schemas/collected_items.schema.json
+  - contract/schemas/eligible_dataset.schema.json
+  - pipeline/interactive_capture.py
+  - pipeline/phase1_puller.py
+  - pipeline/phase2_annotator.py
+  - pipeline/phase6_review.py
+  - pipeline/run_phase1.py
+  - pipeline/run_phase6.py
+  - tests/test_phase6_review_pipeline.py
+  - tests/test_phase6_schema_compliance.py
+- Description:
+  ### Motivation
+  - Reduce false `MISSING_TRANSLATION` cases caused by stable `item_id` drift by introducing a logical matching fallback and richer element provenance. 
+  - Capture additional, deterministic element metadata during extraction so Phase 6 can more reliably pair EN ↔ target items across layout changes.
+  
+  ### Description
+  - Extended schemas `collected_items.schema.json` and `eligible_dataset.schema.json` with fields: `page_canonical_key`, `logical_match_key`, `role_hint`, `semantic_attrs`, `local_path_signature`, `container_signature`, and `stable_ordinal`.
+  - Added deterministic key generation helpers `compute_page_canonical_key` and `compute_logical_match_key` in `pipeline/interactive_capture.py` and used them when building captured elements.
+  - Enhanced page extraction JS in `pipeline/phase1_puller.py` to emit `role_hint`, `semantic_attrs`, `local_path_signature`, `container_signature`, and `stable_ordinal`, and to compute logical keys for Phase 1 items.
+  - Propagated new fields through the pipeline: `run_phase1.py` passes raw metadata into `capture_state`, `phase2_annotator.py` includes new fields in `eligible_dataset` rows, and `phase6_review.py` gains logic to canonicalize semantic attrs, derive/fallback `page_canonical_key`/`logical_match_key`, score candidate pairs, and pick exact or weighted fallback matches while recording pairing provenance.
+  - Updated `run_phase6.py` to prefetch review inputs using paired targets, avoid reusing target items, and emit pairing metadata into issue evidence.
+  
+  ### Testing
+  - Ran the Phase 6 unit tests including `tests/test_phase6_review_pipeline.py` and `tests/test_phase6_schema_compliance.py` with the new pairing scenarios and schema assertions, and all tests completed successfully.
+  - Added targeted tests `test_fallback_weighted_pairing_reduces_false_missing_translation_on_item_id_drift`, `test_phase6_weighted_fallback_avoids_false_missing_translation_when_item_id_drifted`, and `test_phase6_ambiguous_fallback_keeps_missing_translation_and_records_provenance` to validate pairing behavior, and they passed.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c2cf32cf0c832cb84ed5cf334036d9)
+- Notes: Auto-generated from merged PR metadata.
