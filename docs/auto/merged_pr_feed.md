@@ -1092,3 +1092,32 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c2a0562cfc832ca827bff00086eddb)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #122 — 2026-03-24T15:00:35Z
+
+- Title: Use 'Prepare Captured Data' control for eligible dataset generation and fix language link parameter
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/122
+- Author: evinaeva
+- Base branch: main
+- Head branch: 1v0bfr-codex/verify-ux-improvements-implementation
+- Merge commit: 8d17c8dc6e2cbf41779f66ae5620f852867d7d65
+- Changed files:
+  - web/static/pulls.js
+- Description:
+  ### Motivation
+  - Consolidate eligible dataset generation onto the existing `pullsPrepareCapturedData` control instead of separate generated elements, and surface status via the `setPrepareCapturedDataStatus` messages. 
+  - Fix the language-check navigation link to use the expected `en_run_id` query parameter for the language checker flow.
+  
+  ### Description
+  - Removed ad-hoc `pullsEligible*` DOM elements and rewired `triggerEligibleDatasetGeneration` to disable `pullsPrepareCapturedData` and update status via `setPrepareCapturedDataStatus` during generation. 
+  - Delegated the in-button fetch logic to `triggerEligibleDatasetGeneration` and updated the `pullsPrepareCapturedData` click handler to call that function. 
+  - Updated error/success messages produced by the generation flow to use `formatEnStandardDisplayName` when available. 
+  - Changed the `continueCheckLanguages` link to build its query with `en_run_id` instead of `run_id`. 
+  - Updated `loadPulls` to disable `pullsPrepareCapturedData` and set an appropriate status when required query params are missing.
+  
+  ### Testing
+  - No automated tests were run for this change.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c29fa2b4fc832caf006427039d071a)
+- Notes: Auto-generated from merged PR metadata.
