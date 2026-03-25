@@ -1562,3 +1562,40 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3a62b3588832ca5a6476690e9be33)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #143 — 2026-03-25T10:14:30Z
+
+- Title: Fix /urls saved-domain UX and /pulls readability for operators
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/143
+- Author: evinaeva
+- Base branch: main
+- Head branch: ag6hnk-codex/fix-operator-workflow-ui/ux-issues
+- Merge commit: 24030f5f0105cc6775d901a89f09c7c198ec0c1c
+- Changed files:
+  - app/seed_urls.py
+  - app/skeleton_server.py
+  - tests/test_operator_ui_runtime_regressions.py
+  - tests/test_seed_urls.py
+  - tests/test_stage_c_operator_workflow.py
+  - web/static/pulls.js
+  - web/static/styles.css
+  - web/static/urls.js
+  - web/templates/urls.html
+- Description:
+  ### Motivation
+  - Operators saw a malformed domain (`bhttps://...`) persisted and shown in the domain picker and the domain control visually resembled browser autofill instead of an app-owned saved-domain chooser.  The /pulls preview modal text was low-contrast on the light panel and the Advanced section exposed raw internal IDs and left empty `user_tier` values unreadable to operators.
+  
+  ### Description
+  - Replace the `<input list=datalist>` pattern on the `/urls` page with an explicit app-owned combo: editable input + `Saved domains` toggle and app-managed menu rendered by `web/static/urls.js` and styled in `web/static/styles.css`, preserving typing and keyboard accessibility. (`web/templates/urls.html`, `web/static/urls.js`, `web/static/styles.css`)
+  - Add a conservative malformed-domain guard to domain validation to reject obvious bad prefixes like `bhttp://` / `bhttps://` and filter those entries when loading persisted domains; also clean invalid `last_used_first_run_domain` on read. (`app/seed_urls.py`, `app/skeleton_server.py`)
+  - Improve the /pulls preview modal readability by applying modal-local high-contrast text rules so headings, helper/muted text, and details are readable on the modal panel. (`web/static/styles.css`)
+  - Replace raw internal IDs shown in the /pulls Advanced section with operator-friendly primary labels (capture context summary, page URL, viewport label, `User tier` defaulting to `Free`) while preserving raw IDs under a secondary “Technical IDs” disclosure. (`web/static/pulls.js`)
+  - Add/adjust focused runtime tests to assert malformed domain filtering, the saved-domain menu UX, the preview modal style hooks, readable Advanced labels, and `user_tier` defaulting to `Free`. (tests updated in `tests/test_seed_urls.py`, `tests/test_stage_c_operator_workflow.py`, `tests/test_operator_ui_runtime_regressions.py`)
+  
+  ### Testing
+  - Ran the focused test set with: `PYTHONPATH=. pytest -q tests/test_seed_urls.py tests/test_stage_c_operator_workflow.py tests/test_operator_ui_runtime_regressions.py` and confirmed all tests passed: `23 passed`. 
+  - Updated JS runtime tests validate the new saved-domain menu behavior and the readable Advanced labels in /pulls; the modal style hooks were asserted in the CSS unit checks.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3b0c8c238832c88110acd1e3312aa)
+- Notes: Auto-generated from merged PR metadata.
