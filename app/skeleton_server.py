@@ -3580,8 +3580,14 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         if length <= 0:
             return {}
         raw = self.rfile.read(length).decode("utf-8")
-        parsed = parse_qs(raw)
-        return {key: values[0] for key, values in parsed.items() if values}
+        parsed = parse_qs(raw, keep_blank_values=True)
+        payload: dict[str, str] = {}
+        for key, values in parsed.items():
+            if not values:
+                continue
+            chosen = next((value for value in reversed(values) if value != ""), values[-1])
+            payload[key] = chosen
+        return payload
 
     def log_message(self, format, *args):  # noqa: A002
         pass  # suppress default request logging for cleaner Cloud Run logs

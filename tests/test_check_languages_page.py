@@ -545,6 +545,25 @@ def test_post_preserves_selected_domain_and_language_and_shows_generated_target_
     assert "Target language is required." not in body
 
 
+def test_post_prefers_non_empty_target_language_when_duplicate_form_values(api_env, monkeypatch):
+    domain = SUPPORTED_TEST_DOMAIN
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_pages(domain, "run-fr-old", "fr")
+    monkeypatch.setattr("app.skeleton_server._run_check_languages_async", lambda *args, **kwargs: None)
+
+    form = "selected_domain=https%3A%2F%2Fevinaeva.github.io%2Fpolyglot-watchdog-testsite%2Fen%2Findex.html&en_run_id=run-en&target_language=&target_language=de"
+    status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
+    assert status_post == HTTPStatus.FOUND
+    assert "Target+language+is+required." not in location
+    assert "target_language=de" in location
+
+    status_get, body, _ = _request("GET", api_env, location)
+    assert status_get == HTTPStatus.OK
+    assert "Target language: <code>de</code>" in body
+    assert "Generated target URL: <code>https://evinaeva.github.io/polyglot-watchdog-testsite/de/index.html</code>" in body
+
+
 def test_replay_scope_helper_uses_reference_contexts(monkeypatch):
     pages = [
         {"url": "https://example.com/a", "language": "en", "viewport_kind": "desktop", "state": "baseline", "user_tier": "guest"},
