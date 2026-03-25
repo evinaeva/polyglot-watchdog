@@ -26,7 +26,7 @@ import uuid
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 # Ensure project root is on sys.path for pipeline imports
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -69,6 +69,13 @@ TARGET_LANGUAGE_ALIASES = {
     "jp": "ja",
     "kr": "ko",
 }
+
+SUPPORTED_CHECK_LANGUAGE_DOMAINS = [
+    "https://bongacams.com/",
+    "https://bongamodels.com/",
+    "https://bongacash.com/",
+    "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html",
+]
 
 
 # In-memory job status store (cleared on restart — for UI feedback only)
@@ -227,6 +234,54 @@ def _normalize_target_language(value: str) -> str:
     return TARGET_LANGUAGE_ALIASES.get(normalized, normalized)
 
 
+def _normalize_check_languages_domain(value: str) -> str:
+    return str(value or "").strip()
+
+
+def _resolve_check_languages_domain(payload: dict[str, str]) -> str:
+    return _normalize_check_languages_domain(str(payload.get("selected_domain", "")) or str(payload.get("domain", "")))
+
+
+def _build_check_languages_target_url(selected_domain: str, target_language: str) -> str:
+    if selected_domain == "https://bongacams.com/":
+        return f"https://{target_language}.bongacams.com/"
+    if selected_domain == "https://bongamodels.com/":
+        return f"https://{target_language}.bongamodels.com/"
+    if selected_domain == "https://bongacash.com/":
+        return f"https://{target_language}.bongacash.com/"
+    if selected_domain == "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html":
+        return f"https://evinaeva.github.io/polyglot-watchdog-testsite/{target_language}/index.html"
+    raise ValueError("Selected domain is unsupported.")
+
+
+def _target_capture_url_from_reference_url(reference_url: str, selected_domain: str, generated_target_url: str) -> str:
+    source = urlparse(reference_url)
+    if not source.scheme or not source.netloc:
+        raise ValueError("reference run scope contains invalid URL")
+
+    target = urlparse(generated_target_url)
+    if not target.scheme or not target.netloc:
+        raise ValueError("generated target URL is invalid")
+
+    if selected_domain in {
+        "https://bongacams.com/",
+        "https://bongamodels.com/",
+        "https://bongacash.com/",
+    }:
+        return urlunparse((target.scheme, target.netloc, source.path, source.params, source.query, source.fragment))
+
+    if selected_domain == "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html":
+        source_prefix = "/polyglot-watchdog-testsite/en/"
+        target_prefix = target.path.rsplit("/", 1)[0] + "/"
+        if source.path.startswith(source_prefix):
+            target_path = target_prefix + source.path[len(source_prefix):]
+        else:
+            target_path = target.path
+        return urlunparse((target.scheme, target.netloc, target_path, source.params, source.query, source.fragment))
+
+    raise ValueError("Selected domain is unsupported.")
+
+
 def _phase6_artifact_readiness(domain: str, run_id: str) -> dict:
     required = ["eligible_dataset.json", "collected_items.json", "page_screenshots.json"]
     missing: list[str] = []
@@ -348,7 +403,7 @@ def _latest_successful_en_standard_run_id(domain: str, en_candidates: list[dict]
     return ""
 
 
-def _replay_scope_from_reference_run(domain: str, en_run_id: str, target_language: str) -> list[dict]:
+def _replay_scope_from_reference_run(domain: str, en_run_id: str, target_language: str, target_url: str) -> list[dict]:
     from pipeline.run_phase1 import build_exact_context_job
 
     pages = _read_list_artifact_required(domain, en_run_id, "page_screenshots.json")
@@ -359,15 +414,16 @@ def _replay_scope_from_reference_run(domain: str, en_run_id: str, target_languag
         language = str(row.get("language", "")).strip()
         if not _is_english_language(language):
             continue
-        url = str(row.get("url", "")).strip()
+        reference_url = str(row.get("url", "")).strip()
         viewport_kind = str(row.get("viewport_kind", "")).strip()
         state = str(row.get("state", "")).strip()
         user_tier_raw = row.get("user_tier")
         user_tier = str(user_tier_raw).strip() if user_tier_raw not in (None, "") else None
         recipe_id = str(row.get("recipe_id", "")).strip() or None
         capture_point_id = str(row.get("capture_point_id", "")).strip() or None
-        if not url or not viewport_kind or not state:
+        if not reference_url or not viewport_kind or not state:
             raise ValueError("reference run scope is incomplete in page_screenshots.json")
+        url = _target_capture_url_from_reference_url(reference_url, domain, target_url)
         key = (url, viewport_kind, state, user_tier, recipe_id, capture_point_id)
         unique_contexts[key] = {
             "url": url,
@@ -1284,8 +1340,16 @@ def _run_phase6_async(job_id: str, domain: str, run_id: str, en_run_id: str) -> 
 
 
 
-def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_language: str, target_run_id: str) -> None:
-    _jobs[job_id] = {"status": "running", "phase": "check_languages", "domain": domain, "run_id": target_run_id, "en_run_id": en_run_id, "target_language": target_language}
+def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_language: str, target_run_id: str, target_url: str) -> None:
+    _jobs[job_id] = {
+        "status": "running",
+        "phase": "check_languages",
+        "domain": domain,
+        "run_id": target_run_id,
+        "en_run_id": en_run_id,
+        "target_language": target_language,
+        "target_url": target_url,
+    }
     from pipeline.run_phase1 import main as phase1_main
     from pipeline.run_phase3 import run as phase3_run
     from pipeline.run_phase6 import run as phase6_run
@@ -1298,8 +1362,9 @@ def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_
             "stage": "preparing_target_run",
             "en_run_id": en_run_id,
             "target_language": target_language,
+            "target_url": target_url,
         })
-        replay_jobs = _replay_scope_from_reference_run(domain, en_run_id, target_language)
+        replay_jobs = _replay_scope_from_reference_run(domain, en_run_id, target_language, target_url)
     except Exception as exc:
         _jobs[job_id]["status"] = "error"
         _jobs[job_id]["error"] = str(exc)
@@ -1310,6 +1375,7 @@ def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_
             "stage": "preparing_target_run_failed",
             "en_run_id": en_run_id,
             "target_language": target_language,
+            "target_url": target_url,
             "error": str(exc),
         })
         return
@@ -1322,6 +1388,7 @@ def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_
             "stage": "running_target_capture",
             "en_run_id": en_run_id,
             "target_language": target_language,
+            "target_url": target_url,
             "contexts": len(replay_jobs),
         })
         asyncio.run(phase1_main(domain, target_run_id, target_language, "desktop", "baseline", None, jobs_override=replay_jobs))
@@ -1335,6 +1402,7 @@ def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_
             "stage": "running_target_capture_failed",
             "en_run_id": en_run_id,
             "target_language": target_language,
+            "target_url": target_url,
             "error": str(exc),
         })
         return
@@ -1347,6 +1415,7 @@ def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_
             "stage": "running_comparison",
             "en_run_id": en_run_id,
             "target_language": target_language,
+            "target_url": target_url,
         })
         phase3_run(domain=domain, run_id=target_run_id)
         phase6_run(domain=domain, en_run_id=en_run_id, target_run_id=target_run_id)
@@ -1358,6 +1427,7 @@ def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_
             "stage": "completed",
             "en_run_id": en_run_id,
             "target_language": target_language,
+            "target_url": target_url,
         })
     except Exception as exc:
         _jobs[job_id]["status"] = "error"
@@ -1369,6 +1439,7 @@ def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_
             "stage": "running_comparison_failed",
             "en_run_id": en_run_id,
             "target_language": target_language,
+            "target_url": target_url,
             "error": str(exc),
         })
 
@@ -2929,11 +3000,13 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
 
     def _redirect_check_languages(self, payload: dict[str, str], *, message: str = "", level: str = "") -> None:
+        selected_domain = _resolve_check_languages_domain(payload)
         query = {
-            "domain": str(payload.get("domain", "")).strip(),
+            "selected_domain": selected_domain,
             "en_run_id": str(payload.get("en_run_id", "")).strip(),
             "target_language": _normalize_target_language(str(payload.get("target_language", ""))),
             "target_run_id": str(payload.get("target_run_id", "")).strip(),
+            "generated_target_url": str(payload.get("generated_target_url", "")).strip(),
         }
         if message:
             query["message"] = message
@@ -2945,7 +3018,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _start_check_languages(self, payload: dict[str, str]) -> None:
-        domain = str(payload.get("domain", "")).strip()
+        domain = _resolve_check_languages_domain(payload)
         en_run_id = str(payload.get("en_run_id", "")).strip()
         target_language = _normalize_target_language(str(payload.get("target_language", "")))
 
@@ -2969,6 +3042,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
 
         try:
             validate_domain(domain)
+            generated_target_url = _build_check_languages_target_url(domain, target_language)
         except ValueError as exc:
             self._redirect_check_languages(payload, message=str(exc), level="error")
             return
@@ -3009,20 +3083,24 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             "stage": "queued",
             "en_run_id": en_run_id,
             "target_language": target_language,
+            "target_url": generated_target_url,
         })
-        t = threading.Thread(target=_run_check_languages_async, args=(job_id, domain, en_run_id, target_language, target_run_id), daemon=True)
+        t = threading.Thread(target=_run_check_languages_async, args=(job_id, domain, en_run_id, target_language, target_run_id, generated_target_url), daemon=True)
         t.start()
 
         redirect_payload = dict(payload)
+        redirect_payload["selected_domain"] = domain
         redirect_payload["target_run_id"] = target_run_id
+        redirect_payload["generated_target_url"] = generated_target_url
         self._redirect_check_languages(redirect_payload, message="Language check started.", level="ok")
 
     def _serve_check_languages_page(self, query: dict[str, list[str]]) -> None:
-        domain = str(query.get("domain", [""])[0]).strip()
+        domain = _normalize_check_languages_domain(str(query.get("selected_domain", [""])[0]) or str(query.get("domain", [""])[0]))
         selected_en_run_id = str(query.get("en_run_id", [""])[0]).strip()
         en_run_id_from_query = bool(selected_en_run_id)
-        target_language = str(query.get("target_language", [""])[0]).strip().lower()
+        target_language = _normalize_target_language(str(query.get("target_language", [""])[0]))
         target_run_id = str(query.get("target_run_id", [""])[0]).strip()
+        generated_target_url = str(query.get("generated_target_url", [""])[0]).strip()
         message = str(query.get("message", [""])[0]).strip()
         level = str(query.get("level", [""])[0]).strip().lower()
         csrf_token = self._ensure_csrf_cookie()
@@ -3043,6 +3121,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         else:
             try:
                 validate_domain(domain)
+                if domain not in SUPPORTED_CHECK_LANGUAGE_DOMAINS:
+                    raise ValueError("Selected domain is unsupported.")
                 runs = _load_check_language_runs(domain)
             except ValueError as exc:
                 errors.append(str(exc))
@@ -3065,6 +3145,11 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 errors.append("Target language must be non-English.")
             elif target_language not in target_languages:
                 errors.append("Selected target language is invalid for this domain.")
+            elif not generated_target_url:
+                try:
+                    generated_target_url = _build_check_languages_target_url(domain, target_language)
+                except ValueError as exc:
+                    errors.append(str(exc))
 
         if selected_en_run_id and not en_readiness.get("ready") and not any("Selected English reference run is invalid" in e or "not English-only" in e for e in errors):
             errors.append("English reference run is not ready for comparison prerequisites.")
@@ -3154,6 +3239,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 f"<p>Stage: <strong>{_h(latest_job.get('stage', ''))}</strong></p>"
                 f"<p>English run: {_h(latest_job.get('en_run_id', ''))}</p>"
                 f"<p>Target language: {_h(latest_job.get('target_language', ''))}</p>"
+                f"<p>Target URL used: {_h(latest_job.get('target_url', generated_target_url))}</p>"
                 f"<p>Error: {_h(latest_job.get('error', '')) or '—'}</p>"
             )
 
@@ -3176,9 +3262,16 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             replacements={
                 "{{csrf_token}}": _h(csrf_token),
                 "{{domain}}": _h(domain),
+                "{{domain_options}}": "".join(
+                    [
+                        f'<option value="{_h(item)}"{" selected=\"selected\"" if item == domain else ""}>{_h(item)}</option>'
+                        for item in SUPPORTED_CHECK_LANGUAGE_DOMAINS
+                    ]
+                ),
                 "{{selected_en_run_id}}": _h(selected_en_run_id),
                 "{{target_language}}": _h(target_language),
                 "{{target_run_id}}": _h(target_run_id),
+                "{{generated_target_url}}": _h(generated_target_url),
                 "{{notices}}": notices_html,
                 "{{en_options}}": "".join(en_options),
                 "{{target_language_options}}": "".join(language_options),

@@ -25,7 +25,9 @@
         <div class="controls">
           <div>
             <label for="checkLanguagesDomain">Domain</label>
-            <input id="checkLanguagesDomain" name="domain" type="text" value="{{domain}}" />
+            <select id="checkLanguagesDomain" name="selected_domain">
+              {{domain_options}}
+            </select>
           </div>
           <div>
             <label for="checkLanguagesEnRunId">English reference run</label>
@@ -51,6 +53,7 @@
       <p>Current state: <strong id="checkLanguagesState">{{page_state}}</strong></p>
       <p>English run: <code>{{selected_en_run_id}}</code></p>
       <p>Target language: <code>{{target_language}}</code></p>
+      <p>Generated target URL: <code>{{generated_target_url}}</code></p>
       <p>Generated target run: <code>{{target_run_id}}</code></p>
       <p>issues.json artifact: <strong>{{issues_exists}}</strong></p>
     </section>
