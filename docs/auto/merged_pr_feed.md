@@ -1599,3 +1599,36 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3b0c8c238832c88110acd1e3312aa)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #144 — 2026-03-25T10:43:02Z
+
+- Title: Display timestamps in Europe/Tallinn (DST-aware)
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/144
+- Author: evinaeva
+- Base branch: main
+- Head branch: 1fx5la-codex/fix-time-display-to-tallinn-timezone
+- Merge commit: 82d22bc9e1a6db7e09027d817070663cb7075af1
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_operator_ui_runtime_regressions.py
+  - web/static/runs.js
+  - web/static/urls.js
+  - web/static/workflow.js
+- Description:
+  ### Motivation
+  - The UI was rendering stored UTC timestamps directly, causing user-visible times to appear in UTC rather than Estonia local time (Europe/Tallinn) with correct DST handling.
+  
+  ### Description
+  - Added DST-aware Tallinn display-time generation on the backend using `zoneinfo.ZoneInfo('Europe/Tallinn')` for run display-name helpers in `app/skeleton_server.py` without changing stored UTC timestamps.
+  - Introduced a deterministic, DST-aware formatter using `Intl.DateTimeFormat(..., { timeZone: 'Europe/Tallinn' })` and `formatToParts` to preserve the exact UI shape and applied it to run lists and workflow status in `web/static/runs.js` and `web/static/workflow.js` (outputs `YYYY-MM-DD HH:MM`).
+  - Replaced UTC date extraction in the seed-URLs updated-date formatter with a Tallinn-aware date formatter in `web/static/urls.js` (keeps `DD.MM.YYYY` format).
+  - Files changed: `app/skeleton_server.py`, `web/static/workflow.js`, `web/static/runs.js`, `web/static/urls.js`, and tests in `tests/test_operator_ui_runtime_regressions.py` were added/updated to cover conversions and regressions.
+  
+  ### Testing
+  - Ran the added runtime/unit checks in `tests/test_operator_ui_runtime_regressions.py` covering winter and summer conversions, sorting behavior, and storage timestamp preservation, and all executed tests passed; specifically `test_workflow_runtime_formats_utc_timestamps_in_tallinn_with_dst` (winter/summer assertions) passed.
+  - Verified `test_workflow_runtime_sorting_uses_raw_utc_timestamp_not_display_value` passed to ensure sorting still uses raw UTC timestamps and not formatted display values.
+  - Verified `test_upsert_job_status_keeps_utc_storage_timestamps` passed to ensure stored timestamps remain UTC-shaped and unchanged.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3b9e74680832c9afa9dc13a56800e)
+- Notes: Auto-generated from merged PR metadata.
