@@ -94,6 +94,7 @@ def test_review_persisted_and_joined_in_contexts(api_env):
 
     status_get, payload_get = _request("GET", api_env, f"/api/capture/contexts?domain={domain}&run_id={run_id}")
     assert status_get == HTTPStatus.OK
+    assert payload_get["contexts"][0]["screenshot_view_url"] == f"/api/page-screenshot?domain={domain}&run_id={run_id}&page_id=p1"
     capture_context_id = payload_get["contexts"][0]["capture_context_id"]
 
     status_post, payload_post = _request("POST", api_env, "/api/capture/reviews", {
