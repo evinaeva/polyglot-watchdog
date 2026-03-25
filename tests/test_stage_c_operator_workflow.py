@@ -261,3 +261,54 @@ def test_urls_domain_source_and_last_used_first_run_persistence(api_env):
     assert status_domains_after == HTTPStatus.OK
     assert new_domain in payload_domains_after["items"]
     assert payload_domains_after["last_used_first_run_domain"] == new_domain
+
+
+def test_workflow_normalizes_legacy_testsite_root_to_canonical_domain(api_env):
+    legacy_root = "https://evinaeva.github.io/"
+    canonical = "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html"
+
+    status_add, payload_add = _request(
+        "POST",
+        api_env,
+        "/api/seed-urls/add",
+        {"domain": legacy_root, "urls_multiline": f"{canonical}\nhttps://evinaeva.github.io/polyglot-watchdog-testsite/en/test.html"},
+    )
+    assert status_add == HTTPStatus.OK
+    assert payload_add["domain"] == canonical
+
+    status_start, payload_start = _request(
+        "POST",
+        api_env,
+        "/api/workflow/start-capture",
+        {"domain": legacy_root, "run_id": "run-testsite", "language": "en", "viewport_kind": "desktop", "state": "baseline"},
+    )
+    assert status_start == HTTPStatus.OK
+    assert payload_start["status"] == "started"
+
+    status_domains, payload_domains = _request("GET", api_env, "/api/domains")
+    assert status_domains == HTTPStatus.OK
+    assert legacy_root not in payload_domains["items"]
+    assert canonical in payload_domains["items"]
+    assert payload_domains["last_used_first_run_domain"] == canonical
+
+
+def test_domains_list_migrates_legacy_testsite_root_and_url_inventory_echoes_canonical(api_env):
+    legacy_root = "https://evinaeva.github.io/"
+    canonical = "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html"
+
+    _write("_system", "manual", "domains.json", {"domains": [legacy_root, canonical]})
+    _write(
+        canonical,
+        "manual",
+        "seed_urls.json",
+        {"domain": canonical, "updated_at": "2026-03-25T00:00:00Z", "urls": [{"url": canonical, "description": None, "recipe_ids": []}]},
+    )
+
+    status_domains, payload_domains = _request("GET", api_env, "/api/domains")
+    assert status_domains == HTTPStatus.OK
+    assert payload_domains["items"].count(canonical) == 1
+    assert legacy_root not in payload_domains["items"]
+
+    status_inventory, payload_inventory = _request("GET", api_env, f"/api/url-inventory?domain={legacy_root}")
+    assert status_inventory == HTTPStatus.OK
+    assert payload_inventory["domain"] == canonical

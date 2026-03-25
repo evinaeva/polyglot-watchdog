@@ -63,6 +63,9 @@ CANONICAL_TARGET_LANGUAGES = [
     "ar", "az", "bg", "cs", "da", "de", "el", "es", "et", "fi", "fr", "he", "hi", "hr", "hu", "hy", "it", "ja", "ka", "kk",
     "ko", "lt", "lv", "mk", "nl", "no", "pl", "pt", "ro", "ru", "sk", "sl", "sr", "sv", "tr", "uk", "zh",
 ]
+GITHUB_PAGES_TESTSITE_CANONICAL_DOMAIN = "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html"
+GITHUB_PAGES_TESTSITE_LEGACY_ROOT_DOMAIN = "https://evinaeva.github.io/"
+GITHUB_PAGES_TESTSITE_PROJECT_PREFIX = "/polyglot-watchdog-testsite"
 TARGET_LANGUAGE_ALIASES = {
     "cz": "cs",
     "dk": "da",
@@ -76,7 +79,7 @@ SUPPORTED_CHECK_LANGUAGE_DOMAINS = [
     "https://bongacams.com/",
     "https://bongamodels.com/",
     "https://bongacash.com/",
-    "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html",
+    GITHUB_PAGES_TESTSITE_CANONICAL_DOMAIN,
 ]
 
 
@@ -238,11 +241,34 @@ def _normalize_target_language(value: str) -> str:
 
 
 def _normalize_check_languages_domain(value: str) -> str:
-    return str(value or "").strip()
+    return _normalize_testsite_domain_key(str(value or "").strip())
 
 
 def _resolve_check_languages_domain(payload: dict[str, str]) -> str:
     return _normalize_check_languages_domain(str(payload.get("selected_domain", "")) or str(payload.get("domain", "")))
+
+
+def _is_github_pages_testsite_alias(value: str) -> bool:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return False
+    if normalized == GITHUB_PAGES_TESTSITE_LEGACY_ROOT_DOMAIN:
+        return True
+    parsed = urlparse(normalized)
+    if parsed.scheme != "https" or parsed.netloc != "evinaeva.github.io":
+        return False
+    if parsed.params or parsed.query or parsed.fragment:
+        return False
+    return (parsed.path or "").startswith(GITHUB_PAGES_TESTSITE_PROJECT_PREFIX)
+
+
+def _normalize_testsite_domain_key(value: str) -> str:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return ""
+    if _is_github_pages_testsite_alias(normalized):
+        return GITHUB_PAGES_TESTSITE_CANONICAL_DOMAIN
+    return normalized
 
 
 def _parse_github_pages_project_language_url(value: str) -> dict | None:
@@ -283,8 +309,12 @@ def _check_languages_run_domains(value: str) -> list[str]:
     domain = _normalize_check_languages_domain(value)
     family_key = _check_languages_site_family_key(domain)
     if family_key == domain:
+        if domain == GITHUB_PAGES_TESTSITE_CANONICAL_DOMAIN:
+            return [domain, GITHUB_PAGES_TESTSITE_LEGACY_ROOT_DOMAIN]
         return [domain]
     out = {domain}
+    if domain == GITHUB_PAGES_TESTSITE_CANONICAL_DOMAIN:
+        out.add(GITHUB_PAGES_TESTSITE_LEGACY_ROOT_DOMAIN)
     for item in _list_domains():
         if _check_languages_site_family_key(item) == family_key:
             out.add(item)
@@ -667,7 +697,7 @@ def _list_domains() -> list[str]:
     values = payload.get("domains") if isinstance(payload, dict) else []
     normalized: set[str] = set()
     for raw in values:
-        value = str(raw).strip()
+        value = _normalize_testsite_domain_key(str(raw).strip())
         if not value:
             continue
         try:
@@ -683,7 +713,7 @@ def _list_domains() -> list[str]:
 def _register_domain(domain: str) -> None:
     from pipeline.storage import write_json_artifact
 
-    domain = validate_domain(domain)
+    domain = validate_domain(_normalize_testsite_domain_key(domain))
     domains = set(_list_domains())
     domains.add(domain)
     write_json_artifact("_system", "manual", "domains.json", {"domains": sorted(domains)})
@@ -700,7 +730,7 @@ def _last_used_first_run_domain() -> str:
     from pipeline.storage import write_json_artifact
 
     payload = _read_urls_page_state()
-    raw_value = str(payload.get("last_used_first_run_domain", "")).strip()
+    raw_value = _normalize_testsite_domain_key(str(payload.get("last_used_first_run_domain", "")).strip())
     try:
         return validate_domain(raw_value)
     except ValueError:
@@ -713,7 +743,7 @@ def _last_used_first_run_domain() -> str:
 def _set_last_used_first_run_domain(domain: str) -> None:
     from pipeline.storage import write_json_artifact
 
-    valid_domain = validate_domain(domain)
+    valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
     payload = _read_urls_page_state()
     payload["last_used_first_run_domain"] = valid_domain
     write_json_artifact("_system", "manual", "urls_page_state.json", payload)
@@ -1894,12 +1924,13 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 return
             domain = parse_qs(parsed.query).get("domain", [""])[0]
             try:
-                payload = read_seed_urls(validate_domain(domain))
+                valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
+                payload = read_seed_urls(valid_domain)
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                 return
             urls = [row.get("url", "") for row in payload.get("urls", []) if isinstance(row, dict)]
-            self._json_response({"domain": domain, "urls": sorted(urls)})
+            self._json_response({"domain": valid_domain, "urls": sorted(urls)})
             return
         if parsed.path == "/api/page-screenshot":
             if not self._require_auth(api=True):
@@ -2224,7 +2255,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 return
             domain = parse_qs(parsed.query).get("domain", [""])[0]
             try:
-                valid_domain = validate_domain(domain)
+                valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                 return
@@ -2245,7 +2276,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 return
             domain = parse_qs(parsed.query).get("domain", [""])[0]
             try:
-                valid_domain = validate_domain(domain)
+                valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
                 self._json_response({"recipes": list_recipes(valid_domain)})
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -2256,7 +2287,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 return
             domain = parse_qs(parsed.query).get("domain", [""])[0]
             try:
-                runs_payload = _load_runs(validate_domain(domain))
+                runs_payload = _load_runs(validate_domain(_normalize_testsite_domain_key(domain)))
                 runs = runs_payload.get("runs", []) if isinstance(runs_payload, dict) else []
                 normalized_runs = []
                 for run in runs:
@@ -2402,7 +2433,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             domain = str(payload.get("domain", ""))
             urls_multiline = str(payload.get("urls_multiline", ""))
             try:
-                valid_domain = validate_domain(domain)
+                valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
                 parsed_urls = parse_seed_urls_with_errors(urls_multiline)
                 saved = write_seed_urls(valid_domain, parsed_urls["urls"])
                 saved["validation_errors"] = parsed_urls["errors"]
@@ -2516,7 +2547,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             domain = str(payload.get("domain", ""))
             urls_multiline = str(payload.get("urls_multiline", ""))
             try:
-                valid_domain = validate_domain(domain)
+                valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
                 parsed_urls = parse_seed_urls_with_errors(urls_multiline)
                 incoming = parsed_urls["urls"]
                 existing = read_seed_urls(valid_domain)
@@ -2538,7 +2569,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             payload = self._read_json_payload()
             domain = str(payload.get("domain", ""))
             try:
-                valid_domain = validate_domain(domain)
+                valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
                 normalized = normalize_seed_url(str(payload.get("url", "")))
                 if normalized is None:
                     raise ValueError("url is required")
@@ -2563,7 +2594,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             payload = self._read_json_payload()
             domain = str(payload.get("domain", ""))
             try:
-                valid_domain = validate_domain(domain)
+                valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
                 saved = write_seed_urls(valid_domain, [])
                 _register_domain(valid_domain)
             except ValueError as exc:
@@ -2581,7 +2612,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             domain = str(payload.get("domain", ""))
             recipe = payload.get("recipe")
             try:
-                valid_domain = validate_domain(domain)
+                valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
                 if not isinstance(recipe, dict):
                     raise ValueError("recipe object is required")
                 saved = upsert_recipe(valid_domain, recipe)
@@ -2620,7 +2651,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             domain = str(payload.get("domain", ""))
             recipe_id = str(payload.get("recipe_id", "")).strip()
             try:
-                valid_domain = validate_domain(domain)
+                valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
                 if not recipe_id:
                     raise ValueError("recipe_id is required")
                 recipes = delete_recipe(valid_domain, recipe_id)
@@ -2658,7 +2689,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             domain = str(payload.get("domain", ""))
             row = payload.get("row")
             try:
-                valid_domain = validate_domain(domain)
+                valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
                 if not isinstance(row, dict):
                     raise ValueError("row object is required")
                 existing = read_seed_urls(valid_domain)
@@ -2707,7 +2738,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         if self.path == "/api/capture/plan":
             payload = self._read_json_payload()
             try:
-                domain = validate_domain(str(payload.get("domain", "")).strip())
+                domain = validate_domain(_normalize_testsite_domain_key(str(payload.get("domain", "")).strip()))
                 languages = sorted({str(v).strip() for v in payload.get("languages", []) if str(v).strip()})
                 viewports = sorted({str(v).strip() for v in payload.get("viewports", []) if str(v).strip()})
                 tiers = sorted({str(v).strip() for v in payload.get("user_tiers", []) if str(v).strip()}) or [""]
@@ -2746,7 +2777,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             runtime_payload = {"domain": domain, "run_id": run_id, "language": language, "viewport_kind": viewport_kind, "state": state, "user_tier": user_tier}
             try:
                 load_phase1_runtime_config(runtime_payload)
-                valid_domain = validate_domain(domain)
+                valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
                 _register_domain(valid_domain)
                 _set_last_used_first_run_domain(valid_domain)
                 job_id = f"phase1-{run_id}-{language}-{viewport_kind}-{state}"
@@ -2809,7 +2840,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self._json_response({"status": "error", "message": "domain is required"}, status=HTTPStatus.BAD_REQUEST)
                 return
             try:
-                domain = validate_domain(domain)
+                domain = validate_domain(_normalize_testsite_domain_key(domain))
                 if self.path.endswith("/remove"):
                     signature_key = str(payload.get("signature_key", "")).strip()
                     if not signature_key:
@@ -2975,7 +3006,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             runtime_payload = {"domain": domain, "run_id": run_id, "language": language, "viewport_kind": viewport_kind, "state": state, "user_tier": user_tier}
             try:
                 load_phase1_runtime_config(runtime_payload)
-                valid_domain = validate_domain(domain)
+                valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
                 _register_domain(valid_domain)
                 _set_last_used_first_run_domain(valid_domain)
                 existing_run = next((row for row in _load_runs(valid_domain).get("runs", []) if str(row.get("run_id", "")).strip() == run_id), None)
@@ -3173,7 +3204,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            validate_domain(domain)
+            validate_domain(_normalize_testsite_domain_key(domain))
             generated_target_url = _build_check_languages_target_url(domain, target_language)
         except ValueError as exc:
             self._redirect_check_languages(payload, message=str(exc), level="error")
@@ -3253,7 +3284,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             errors.append("Domain is required.")
         else:
             try:
-                validate_domain(domain)
+                validate_domain(_normalize_testsite_domain_key(domain))
                 if not _is_supported_check_languages_domain(domain):
                     raise ValueError("Selected domain is unsupported.")
                 runs = _load_check_language_runs(domain)
