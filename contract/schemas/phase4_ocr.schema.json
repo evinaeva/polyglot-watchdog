@@ -21,7 +21,12 @@
       "ocr_engine",
       "ocr_notes",
       "provider_meta",
-      "status"
+      "status",
+      "asset_hash",
+      "src",
+      "alt",
+      "is_svg",
+      "svg_text"
     ],
     "properties": {
       "item_id": {
@@ -93,6 +98,22 @@
           "failed"
         ],
         "description": "ok: OCR produced usable normalized text; skipped: OCR intentionally not attempted for a non-error reason; failed: OCR attempted/expected but no valid text could be produced."
+      },
+      "asset_hash": {
+        "type": "string",
+        "minLength": 1
+      },
+      "src": {
+        "type": "string"
+      },
+      "alt": {
+        "type": "string"
+      },
+      "is_svg": {
+        "type": "boolean"
+      },
+      "svg_text": {
+        "type": "string"
       }
     },
     "allOf": [

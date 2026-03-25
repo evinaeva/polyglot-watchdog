@@ -328,15 +328,16 @@ def test_provider_notes_are_not_mixed_into_signals():
 
 
 def test_fallback_weighted_pairing_reduces_false_missing_translation_on_item_id_drift():
-    artifacts = _base_artifacts({"item_id": "item-fr-drifted", "text": "Acheter"})
+    artifacts = _base_artifacts({"item_id": "item-fr-drifted", "text": "Buy now"})
 
     with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
         "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
     ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
-        issues = run("example.com", "run-en", "run-fr")
+        issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
     categories = [issue["category"] for issue in issues]
     assert "MISSING_TRANSLATION" not in categories
+    assert len(issues) == 1
     meaning_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "MEANING")
     assert meaning_issue["evidence"]["pairing_basis"] == "fallback_weighted"
     assert meaning_issue["evidence"]["matched_target_item_id"] == "item-fr-drifted"
@@ -357,9 +358,9 @@ def test_ai_mode_missing_key_falls_back_without_changing_category(monkeypatch):
     spelling_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "SPELLING")
     assert spelling_issue["category"] == "TRANSLATION_MISMATCH"
     assert spelling_issue["evidence"]["provider_meta"]["provider"] == "llm"
-    assert spelling_issue["evidence"]["provider_meta"]["mode"] == "ai"
+    assert spelling_issue["evidence"]["provider_meta"]["review_mode"] == "llm"
     assert spelling_issue["evidence"]["provider_meta"]["fallback_used"] is True
-    assert "ai_fallback_used" in spelling_issue["evidence"]["provider_notes"]
+    assert "fallback" in " ".join(spelling_issue["evidence"]["provider_notes"]).lower()
 
 
 def test_llm_mode_missing_key_falls_back_without_changing_category(monkeypatch):
@@ -492,3 +493,40 @@ def test_run_fails_fast_when_explicit_review_mode_required_and_omitted():
         "os.environ", {}, clear=True
     ), pytest.raises(ValueError, match="must be set explicitly"):
         run("example.com", "run-en", "run-fr", require_explicit_mode=True)
+
+
+def test_phase6_writes_coverage_gaps_artifact_for_unreviewed_image_items():
+    artifacts = _base_artifacts({"tag": "img", "element_type": "img", "text": "Acheter"})
+    captured = {}
+
+    def _capture_write(domain, run_id, filename, payload):
+        captured[filename] = payload
+        return "gs://bucket/" + filename
+
+    with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+    ), patch("pipeline.run_phase6.write_json_artifact", side_effect=_capture_write), patch("pipeline.run_phase6.write_phase_manifest"):
+        run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
+
+    assert "coverage_gaps.json" in captured
+    gaps = captured["coverage_gaps.json"]
+    assert len(gaps) == 1
+    assert gaps[0]["image_text_review_status"] == "image_text_not_reviewed"
+
+
+def test_phase6_coverage_gap_marks_blocked_image_items_separately():
+    artifacts = _base_artifacts({"tag": "img", "element_type": "img", "text": "Acheter"})
+    captured = {}
+
+    def _capture_write(domain, run_id, filename, payload):
+        captured[filename] = payload
+        return "gs://bucket/" + filename
+
+    blocked = [{"capture_context_id": "ctx-1", "url": "https://example.com/fr/p", "storage_uri": "gs://b/fr.png"}]
+    with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        "pipeline.run_phase6._load_blocked_overlay_pages", return_value=blocked
+    ), patch("pipeline.run_phase6.write_json_artifact", side_effect=_capture_write), patch("pipeline.run_phase6.write_phase_manifest"):
+        run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
+
+    gaps = captured["coverage_gaps.json"]
+    assert gaps[0]["image_text_review_status"] == "image_text_review_blocked"

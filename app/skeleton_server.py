@@ -1273,7 +1273,10 @@ def _run_phase6_async(job_id: str, domain: str, run_id: str, en_run_id: str) -> 
     try:
         from pipeline.run_phase6 import run as phase6_run
 
-        phase6_run(domain=domain, en_run_id=en_run_id, target_run_id=run_id)
+        review_mode = os.environ.get("PHASE6_REVIEW_PROVIDER", "").strip()
+        if not review_mode:
+            raise ValueError("PHASE6_REVIEW_PROVIDER is required for Phase 6 execution")
+        phase6_run(domain=domain, en_run_id=en_run_id, target_run_id=run_id, review_mode=review_mode)
         _jobs[job_id]["status"] = "done"
         _upsert_job_status(domain, run_id, {"job_id": job_id, "status": "succeeded", "phase": "6", "en_run_id": en_run_id})
     except Exception as exc:
@@ -1349,7 +1352,10 @@ def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_
             "target_language": target_language,
         })
         phase3_run(domain=domain, run_id=target_run_id)
-        phase6_run(domain=domain, en_run_id=en_run_id, target_run_id=target_run_id)
+        review_mode = os.environ.get("PHASE6_REVIEW_PROVIDER", "").strip()
+        if not review_mode:
+            raise ValueError("PHASE6_REVIEW_PROVIDER is required for check-languages Phase 6 execution")
+        phase6_run(domain=domain, en_run_id=en_run_id, target_run_id=target_run_id, review_mode=review_mode)
         _jobs[job_id]["status"] = "done"
         _upsert_job_status(domain, target_run_id, {
             "job_id": job_id,

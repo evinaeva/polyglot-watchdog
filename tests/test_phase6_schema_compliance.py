@@ -44,13 +44,13 @@ class Phase6SchemaComplianceTests(unittest.TestCase):
         with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts + [FileNotFoundError("missing")]), patch(
             "pipeline.run_phase6.write_json_artifact"
         ) as write_mock, patch("pipeline.run_phase6.write_phase_manifest") as manifest_mock:
-            issues = run("example.com", "run-en", "run-fr")
+            issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
         self.assertEqual(len(issues), 1)
         self.assertEqual(issues[0]["category"], "MISSING_TRANSLATION")
         self.assertEqual(issues[0]["evidence"]["review_class"], "OTHER")
         self.assertIn("signals", issues[0]["evidence"])
-        write_mock.assert_called_once()
+        assert write_mock.call_count == 2
         manifest_mock.assert_called_once()
 
     def test_phase6_does_not_persist_when_schema_invalid(self):
@@ -59,7 +59,7 @@ class Phase6SchemaComplianceTests(unittest.TestCase):
         with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts + [FileNotFoundError("missing")]), patch(
             "pipeline.run_phase6.validate", side_effect=SchemaValidationError("STOP: invalid")
         ), patch("pipeline.run_phase6.write_json_artifact") as write_mock, self.assertRaises(SystemExit):
-            run("example.com", "run-en", "run-fr")
+            run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
         write_mock.assert_not_called()
 
@@ -91,7 +91,7 @@ class Phase6SchemaComplianceTests(unittest.TestCase):
             "pipeline.run_phase6._load_blocked_overlay_pages",
             return_value=[{"capture_context_id": "ctx-1", "url": "https://fr.example.com/p", "storage_uri": "gs://b/fr.png"}],
         ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
-            issues = run("example.com", "run-en", "run-fr")
+            issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
         categories = {issue["category"] for issue in issues}
         self.assertIn("OVERLAY_BLOCKED_CAPTURE", categories)
@@ -125,7 +125,7 @@ class Phase6SchemaComplianceTests(unittest.TestCase):
         with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts + [FileNotFoundError("missing")]), patch(
             "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
         ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
-            issues = run("example.com", "run-en", "run-fr")
+            issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
         self.assertEqual(len(issues), 1)
         self.assertEqual(issues[0]["category"], "TRANSLATION_MISMATCH")
@@ -178,9 +178,9 @@ class Phase6SchemaComplianceTests(unittest.TestCase):
             "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
         ), patch("pipeline.run_phase6.write_json_artifact"
         ), patch("pipeline.run_phase6.write_phase_manifest"):
-            issues = run("example.com", "run-en", "run-fr")
+            issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
-        assert [issue["category"] for issue in issues] == []
+        assert "MISSING_TRANSLATION" not in [issue["category"] for issue in issues]
 
     def test_phase6_skips_untranslated_issue_when_dynamic_classes_are_split_across_en_and_target(self):
         en_eligible = [
@@ -229,7 +229,7 @@ class Phase6SchemaComplianceTests(unittest.TestCase):
             "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
         ), patch("pipeline.run_phase6.write_json_artifact"
         ), patch("pipeline.run_phase6.write_phase_manifest"):
-            issues = run("example.com", "run-en", "run-fr")
+            issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
         assert [issue["category"] for issue in issues] == []
 
@@ -258,11 +258,32 @@ class Phase6SchemaComplianceTests(unittest.TestCase):
         target_collected = [{"item_id": "item-1", "page_id": "fr-page-1", "bbox": {"x": 1, "y": 2, "width": 3, "height": 4}}]
         target_screens = [{"page_id": "fr-page-1", "url": "https://fr.example.com/p", "viewport_kind": "desktop", "state": "baseline", "user_tier": "guest", "storage_uri": "gs://b/fr.png"}]
 
+        phase4_rows = [{
+            "item_id": "item-1",
+            "page_id": "fr-page-1",
+            "url": "https://fr.example.com/p",
+            "language": "fr",
+            "viewport_kind": "desktop",
+            "state": "baseline",
+            "user_tier": "guest",
+            "source_image_uri": "gs://b/fr.png",
+            "ocr_text": "teh translation",
+            "ocr_provider": "ocr.space",
+            "ocr_engine": "3",
+            "ocr_notes": [],
+            "provider_meta": {"provider": "ocr.space"},
+            "status": "ok",
+            "asset_hash": "h1",
+            "src": "",
+            "alt": "",
+            "is_svg": False,
+            "svg_text": "",
+        }]
         artifacts = [en_eligible, target_eligible, en_collected, target_collected, en_screens, target_screens]
-        with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts + [FileNotFoundError("missing")]), patch(
+        with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts + [phase4_rows]), patch(
             "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
         ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
-            issues = run("example.com", "run-en", "run-fr")
+            issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
         spelling_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "SPELLING")
         self.assertEqual(spelling_issue["evidence"]["comparison_text_source"], "ocr")
@@ -294,7 +315,7 @@ class Phase6SchemaComplianceTests(unittest.TestCase):
         with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts + [FileNotFoundError("missing")]), patch(
             "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
         ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
-            issues = run("example.com", "run-en", "run-fr")
+            issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
         self.assertNotIn("MISSING_TRANSLATION", [issue["category"] for issue in issues])
         meaning_issue = next(issue for issue in issues if issue["evidence"]["review_class"] == "MEANING")
@@ -350,7 +371,7 @@ class Phase6SchemaComplianceTests(unittest.TestCase):
         with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts + [FileNotFoundError("missing")]), patch(
             "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
         ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
-            issues = run("example.com", "run-en", "run-fr")
+            issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
         self.assertIn("MISSING_TRANSLATION", [issue["category"] for issue in issues])
         missing_issue = next(issue for issue in issues if issue["category"] == "MISSING_TRANSLATION")

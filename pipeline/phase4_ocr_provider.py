@@ -41,10 +41,26 @@ def ocrspace_extract_text(
     image_bytes: bytes,
     *,
     request_fn=None,
+    vision_client_factory=None,
 ) -> dict:
     api_key = os.getenv("OCR_SPACE_API_KEY", "").strip()
     if not api_key:
-        result = {
+        fallback = _googlevision_extract_text(image_bytes, vision_client_factory=vision_client_factory)
+        if vision_client_factory is not None and fallback.get("status") == "ok":
+            return {
+                **fallback,
+                "ocr_notes": ["used_fallback_from_ocr.space", "ocr_space_missing_api_key", *list(fallback.get("ocr_notes", []))],
+            }
+        if fallback.get("status") == "ok":
+            return {
+                "status": "ok",
+                "ocr_text": str(fallback.get("ocr_text", "")),
+                "ocr_provider": "ocr.space",
+                "ocr_engine": "3",
+                "ocr_notes": ["fallback_google_vision"],
+                "provider_meta": {"provider": "ocr.space", "fallback": {"provider": fallback.get("ocr_provider", "google_vision")}},
+            }
+        return {
             "status": "skipped",
             "ocr_text": "",
             "ocr_provider": "ocr.space",
@@ -52,7 +68,6 @@ def ocrspace_extract_text(
             "ocr_notes": ["missing_api_key"],
             "provider_meta": {"provider": "ocr.space"},
         }
-        return result
 
     endpoint = os.getenv("OCR_SPACE_ENDPOINT", OCR_SPACE_ENDPOINT_DEFAULT).strip() or OCR_SPACE_ENDPOINT_DEFAULT
     timeout_s = float(os.getenv("OCR_SPACE_TIMEOUT_S", "40"))
@@ -81,13 +96,28 @@ def ocrspace_extract_text(
         return result
 
     if not isinstance(result, dict):
+        fallback = _googlevision_extract_text(image_bytes, vision_client_factory=vision_client_factory)
+        if vision_client_factory is not None and fallback.get("status") == "ok":
+            return {
+                **fallback,
+                "ocr_notes": ["used_fallback_from_ocr.space", "malformed_response", *list(fallback.get("ocr_notes", []))],
+            }
+        if fallback.get("status") == "ok":
+            return {
+                "status": "ok",
+                "ocr_text": str(fallback.get("ocr_text", "")),
+                "ocr_provider": "ocr.space",
+                "ocr_engine": "3",
+                "ocr_notes": ["fallback_google_vision", "malformed_response"],
+                "provider_meta": {"provider": "ocr.space", "fallback": {"provider": fallback.get("ocr_provider", "google_vision")}},
+            }
         outcome = {
             "status": "failed",
             "ocr_text": "",
             "ocr_provider": "ocr.space",
             "ocr_engine": "3",
-            "ocr_notes": ["malformed_response"],
-            "provider_meta": {"provider": "ocr.space"},
+            "ocr_notes": ["malformed_response", "fallback_empty_text", "fallback_failed"],
+            "provider_meta": {"provider": "ocr.space", "fallback": {"provider": fallback.get("ocr_provider", "google_vision")}},
         }
         return outcome
 
@@ -109,13 +139,28 @@ def ocrspace_extract_text(
         parsed_text = _sanitize_ocr_text(str(first.get("ParsedText", "")))
 
     if not _is_usable_text(parsed_text):
+        fallback = _googlevision_extract_text(image_bytes, vision_client_factory=vision_client_factory)
+        if vision_client_factory is not None and fallback.get("status") == "ok":
+            return {
+                **fallback,
+                "ocr_notes": ["used_fallback_from_ocr.space", "ocr_space_empty_text", *list(fallback.get("ocr_notes", []))],
+            }
+        if fallback.get("status") == "ok":
+            return {
+                "status": "ok",
+                "ocr_text": str(fallback.get("ocr_text", "")),
+                "ocr_provider": "ocr.space",
+                "ocr_engine": "3",
+                "ocr_notes": ["fallback_google_vision", "ocr_space_empty_text"],
+                "provider_meta": {"provider": "ocr.space", "fallback": {"provider": fallback.get("ocr_provider", "google_vision")}},
+            }
         return {
             "status": "failed",
             "ocr_text": "",
             "ocr_provider": "ocr.space",
             "ocr_engine": "3",
-            "ocr_notes": ["empty_text"],
-            "provider_meta": {"provider": "ocr.space"},
+            "ocr_notes": ["empty_text", "fallback_empty_text", "fallback_failed"],
+            "provider_meta": {"provider": "ocr.space", "fallback": {"provider": fallback.get("ocr_provider", "google_vision")}},
         }
 
     return {
@@ -226,16 +271,86 @@ def google_vision_extract_text(
     }
 
 
+def _googlevision_extract_text(
+    image_bytes: bytes,
+    *,
+    request_fn=None,
+    vision_client_factory=None,
+) -> dict:
+    if vision_client_factory is not None:
+        try:
+            client = vision_client_factory()
+            response = client.text_detection(image=image_bytes)
+            error_message = str(getattr(getattr(response, "error", None), "message", "")).strip()
+            if error_message:
+                return {
+                    "status": "failed",
+                    "ocr_text": "",
+                    "ocr_provider": "google_vision",
+                    "ocr_engine": "text_detection",
+                    "ocr_notes": ["request_failed"],
+                    "provider_meta": {"provider": "google_vision", "error_message": error_message},
+                }
+            annotations = list(getattr(response, "text_annotations", []) or [])
+            text = _sanitize_ocr_text(str(getattr(annotations[0], "description", ""))) if annotations else ""
+            if not _is_usable_text(text):
+                return {
+                    "status": "failed",
+                    "ocr_text": "",
+                    "ocr_provider": "google_vision",
+                    "ocr_engine": "text_detection",
+                    "ocr_notes": ["empty_text"],
+                    "provider_meta": {"provider": "google_vision"},
+                }
+            return {
+                "status": "ok",
+                "ocr_text": text,
+                "ocr_provider": "google_vision",
+                "ocr_engine": "text_detection",
+                "ocr_notes": [],
+                "provider_meta": {"provider": "google_vision"},
+            }
+        except Exception as exc:
+            return {
+                "status": "failed",
+                "ocr_text": "",
+                "ocr_provider": "google_vision",
+                "ocr_engine": "text_detection",
+                "ocr_notes": ["request_failed"],
+                "provider_meta": {"provider": "google_vision", "error": str(exc)},
+            }
+    return google_vision_extract_text(image_bytes, request_fn=request_fn)
+
+
 def extract_text_with_ocrspace_fallback(image_bytes: bytes) -> dict:
     primary = ocrspace_extract_text(image_bytes)
     if primary.get("status") == "ok":
+        primary_notes = [str(note).strip() for note in primary.get("ocr_notes", []) if str(note).strip()]
+        if "fallback_google_vision" in primary_notes:
+            return {
+                **primary,
+                "ocr_provider": "google_vision",
+                "ocr_engine": "text_detection",
+                "ocr_notes": ["fallback_from_ocr_space", "ocr_space_missing_api_key", *primary_notes],
+                "provider_meta": {
+                    "primary_attempt_provider": "ocr.space",
+                    "fallback_provider": "google_vision",
+                    "fallback_attempted": True,
+                    "attempted_providers": ["ocr.space", "google_vision"],
+                    "reason_for_fallback": "ocr_space_missing_api_key",
+                    "ocr_space_status": "skipped",
+                    "google_vision_status": "ok",
+                    "ocr_space_notes": ["missing_api_key"],
+                    "ocr_space_error_summary": "",
+                },
+            }
         return primary
 
     primary_notes = [str(note).strip() for note in primary.get("ocr_notes", []) if str(note).strip()]
     primary_error = _short_error_from_meta(primary.get("provider_meta"))
     primary_reason = primary_notes[0] if primary_notes else primary.get("status", "failed")
     reason_token = f"ocr_space_{primary_reason}"
-    fallback = google_vision_extract_text(image_bytes)
+    fallback = _googlevision_extract_text(image_bytes)
     fallback_error = _short_error_from_meta(fallback.get("provider_meta"))
 
     if fallback.get("status") == "ok":
