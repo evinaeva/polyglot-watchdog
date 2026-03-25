@@ -1371,3 +1371,36 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c38c1a8310832c9b9d2cbda88a71c3)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #137 — 2026-03-25T07:51:31Z
+
+- Title: Add domain selection and target-URL generation for check-languages flow
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/137
+- Author: evinaeva
+- Base branch: main
+- Head branch: vhz8k5-codex/fix-/check-languages-operator-flow
+- Merge commit: 923049eae936bd099c896affd4758aaebf5fd7af
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+  - web/templates/check-languages.html
+- Description:
+  ### Motivation
+  
+  - Allow the "Check Languages" workflow to target multiple supported domains and generate appropriate per-language target URLs for replay/capture.
+  
+  ### Description
+  
+  - Introduce `SUPPORTED_CHECK_LANGUAGE_DOMAINS` and wire a domain selection UI instead of a free-text domain input. 
+  - Add helpers `_normalize_check_languages_domain`, `_resolve_check_languages_domain`, `_build_check_languages_target_url`, and `_target_capture_url_from_reference_url` to generate target run URLs and to compose replay capture URLs from English reference pages. 
+  - Thread the generated `target_url` through the orchestration: `_replay_scope_from_reference_run` now accepts a `target_url`, and `_run_check_languages_async` and its queued job metadata carry `target_url`. 
+  - Update the `check-languages.html` template to render a domain `<select>` and show the generated target URL. 
+  - Update and extend `tests/test_check_languages_page.py` to cover supported domains, URL generation, preservation of selected domain and generated URL, and to adapt existing tests for the new `selected_domain` parameter.
+  
+  ### Testing
+  
+  - Ran the updated test module with `pytest -q tests/test_check_languages_page.py`, and all tests in that file passed.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c38e8f3c20832c94235d2c61ac6b42)
+- Notes: Auto-generated from merged PR metadata.
