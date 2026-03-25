@@ -242,6 +242,52 @@ def _resolve_check_languages_domain(payload: dict[str, str]) -> str:
     return _normalize_check_languages_domain(str(payload.get("selected_domain", "")) or str(payload.get("domain", "")))
 
 
+def _parse_github_pages_project_language_url(value: str) -> dict | None:
+    parsed = urlparse(str(value or "").strip())
+    if parsed.scheme != "https" or parsed.netloc != "evinaeva.github.io":
+        return None
+    if parsed.params or parsed.query or parsed.fragment:
+        return None
+    match = re.match(r"^(/[^/]+)/([a-z]{2}(?:-[a-z]{2})?)/(.*)$", parsed.path or "", flags=re.IGNORECASE)
+    if not match:
+        return None
+    project_prefix, language, page_tail = match.groups()
+    if not page_tail:
+        return None
+    return {
+        "scheme": parsed.scheme,
+        "host": parsed.netloc,
+        "project_prefix": project_prefix,
+        "language": _normalize_target_language(language),
+        "page_tail": page_tail,
+    }
+
+
+def _is_supported_check_languages_domain(value: str) -> bool:
+    domain = _normalize_check_languages_domain(value)
+    return domain in SUPPORTED_CHECK_LANGUAGE_DOMAINS or _parse_github_pages_project_language_url(domain) is not None
+
+
+def _check_languages_site_family_key(value: str) -> str:
+    domain = _normalize_check_languages_domain(value)
+    github_pages = _parse_github_pages_project_language_url(domain)
+    if github_pages is None:
+        return domain
+    return f"{github_pages['scheme']}://{github_pages['host']}{github_pages['project_prefix']}"
+
+
+def _check_languages_run_domains(value: str) -> list[str]:
+    domain = _normalize_check_languages_domain(value)
+    family_key = _check_languages_site_family_key(domain)
+    if family_key == domain:
+        return [domain]
+    out = {domain}
+    for item in _list_domains():
+        if _check_languages_site_family_key(item) == family_key:
+            out.add(item)
+    return sorted(out)
+
+
 def _build_check_languages_target_url(selected_domain: str, target_language: str) -> str:
     if selected_domain == "https://bongacams.com/":
         return f"https://{target_language}.bongacams.com/"
@@ -249,8 +295,9 @@ def _build_check_languages_target_url(selected_domain: str, target_language: str
         return f"https://{target_language}.bongamodels.com/"
     if selected_domain == "https://bongacash.com/":
         return f"https://{target_language}.bongacash.com/"
-    if selected_domain == "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html":
-        return f"https://evinaeva.github.io/polyglot-watchdog-testsite/{target_language}/index.html"
+    github_pages = _parse_github_pages_project_language_url(selected_domain)
+    if github_pages is not None:
+        return f"{github_pages['scheme']}://{github_pages['host']}{github_pages['project_prefix']}/{target_language}/{github_pages['page_tail']}"
     raise ValueError("Selected domain is unsupported.")
 
 
@@ -270,13 +317,16 @@ def _target_capture_url_from_reference_url(reference_url: str, selected_domain: 
     }:
         return urlunparse((target.scheme, target.netloc, source.path, source.params, source.query, source.fragment))
 
-    if selected_domain == "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html":
-        source_prefix = "/polyglot-watchdog-testsite/en/"
-        target_prefix = target.path.rsplit("/", 1)[0] + "/"
-        if source.path.startswith(source_prefix):
-            target_path = target_prefix + source.path[len(source_prefix):]
-        else:
-            target_path = target.path
+    github_pages = _parse_github_pages_project_language_url(selected_domain)
+    if github_pages is not None:
+        target_parts = _parse_github_pages_project_language_url(generated_target_url)
+        if target_parts is None:
+            raise ValueError("generated target URL is invalid")
+        source_parts = _parse_github_pages_project_language_url(urlunparse((source.scheme, source.netloc, source.path, "", "", "")))
+        page_tail = github_pages["page_tail"]
+        if source_parts is not None and source_parts["project_prefix"] == github_pages["project_prefix"]:
+            page_tail = source_parts["page_tail"]
+        target_path = f"{github_pages['project_prefix']}/{target_parts['language']}/{page_tail}"
         return urlunparse((target.scheme, target.netloc, target_path, source.params, source.query, source.fragment))
 
     raise ValueError("Selected domain is unsupported.")
@@ -323,28 +373,35 @@ def _run_languages(domain: str, run_id: str) -> set[str]:
 
 
 def _load_check_language_runs(domain: str) -> list[dict]:
-    runs_payload = _load_runs(domain)
-    runs = runs_payload.get("runs", []) if isinstance(runs_payload, dict) else []
-    out: list[dict] = []
-    for row in runs:
-        if not isinstance(row, dict):
-            continue
-        run_id = str(row.get("run_id", "")).strip()
-        if not run_id:
-            continue
-        languages = sorted(_run_languages(domain, run_id))
-        has_english = any(_is_english_language(lang) for lang in languages)
-        has_non_english = any(not _is_english_language(lang) for lang in languages)
-        out.append({
-            "run_id": run_id,
-            "created_at": str(row.get("created_at", "")).strip(),
-            "display_name": _normalize_optional_string(row.get("display_name")) or "",
-            "en_standard_display_name": _normalize_optional_string(row.get("en_standard_display_name")) or "",
-            "metadata": row.get("metadata") if isinstance(row.get("metadata"), dict) else {},
-            "languages": languages,
-            "has_english": has_english,
-            "has_non_english": has_non_english,
-        })
+    out_map: dict[tuple[str, str], dict] = {}
+    for run_domain in _check_languages_run_domains(domain):
+        runs_payload = _load_runs(run_domain)
+        runs = runs_payload.get("runs", []) if isinstance(runs_payload, dict) else []
+        for row in runs:
+            if not isinstance(row, dict):
+                continue
+            run_id = str(row.get("run_id", "")).strip()
+            if not run_id:
+                continue
+            key = (run_domain, run_id)
+            if key in out_map:
+                continue
+            languages = sorted(_run_languages(run_domain, run_id))
+            has_english = any(_is_english_language(lang) for lang in languages)
+            has_non_english = any(not _is_english_language(lang) for lang in languages)
+            out_map[key] = {
+                "domain": run_domain,
+                "site_family_key": _check_languages_site_family_key(run_domain),
+                "run_id": run_id,
+                "created_at": str(row.get("created_at", "")).strip(),
+                "display_name": _normalize_optional_string(row.get("display_name")) or "",
+                "en_standard_display_name": _normalize_optional_string(row.get("en_standard_display_name")) or "",
+                "metadata": row.get("metadata") if isinstance(row.get("metadata"), dict) else {},
+                "languages": languages,
+                "has_english": has_english,
+                "has_non_english": has_non_english,
+            }
+    out = list(out_map.values())
     out.sort(key=lambda run: (run.get("created_at", ""), run.get("run_id", "")), reverse=True)
     return out
 
@@ -397,7 +454,8 @@ def _latest_successful_en_standard_run_id(domain: str, en_candidates: list[dict]
         run_id = str(run.get("run_id", "")).strip()
         if not run_id:
             continue
-        readiness = _phase6_artifact_readiness(domain, run_id)
+        run_domain = str(run.get("domain", "")).strip() or domain
+        readiness = _phase6_artifact_readiness(run_domain, run_id)
         if readiness.get("ready") or _run_has_en_standard_success_marker(run):
             return run_id
     return ""
@@ -456,8 +514,10 @@ def _replay_scope_from_reference_run(domain: str, en_run_id: str, target_languag
 
 
 def _generate_target_run_id(domain: str, en_run_id: str, target_language: str) -> str:
-    runs = _load_runs(domain).get("runs", [])
-    existing = {str(row.get("run_id", "")).strip() for row in runs if isinstance(row, dict)}
+    existing: set[str] = set()
+    for run_domain in _check_languages_run_domains(domain):
+        runs = _load_runs(run_domain).get("runs", [])
+        existing.update({str(row.get("run_id", "")).strip() for row in runs if isinstance(row, dict)})
     base = f"{en_run_id}-check-{target_language}"
     candidate = base
     suffix = 1
@@ -468,36 +528,46 @@ def _generate_target_run_id(domain: str, en_run_id: str, target_language: str) -
 
 
 def _find_in_progress_check_languages_job(domain: str, en_run_id: str, target_language: str) -> dict | None:
-    runs = _load_runs(domain).get("runs", [])
-    for run in runs:
-        if not isinstance(run, dict):
-            continue
-        for job in run.get("jobs", []):
-            if not isinstance(job, dict):
+    for run_domain in _check_languages_run_domains(domain):
+        runs = _load_runs(run_domain).get("runs", [])
+        for run in runs:
+            if not isinstance(run, dict):
                 continue
-            status = str(job.get("status", "")).strip().lower()
-            if status not in {"running", "queued"}:
-                continue
-            if str(job.get("type", "")).strip() != "check_languages":
-                continue
-            if str(job.get("en_run_id", "")).strip() != en_run_id:
-                continue
-            if _normalize_target_language(str(job.get("target_language", ""))) != target_language:
-                continue
-            return dict(job)
+            for job in run.get("jobs", []):
+                if not isinstance(job, dict):
+                    continue
+                status = str(job.get("status", "")).strip().lower()
+                if status not in {"running", "queued"}:
+                    continue
+                if str(job.get("type", "")).strip() != "check_languages":
+                    continue
+                if str(job.get("en_run_id", "")).strip() != en_run_id:
+                    continue
+                if _normalize_target_language(str(job.get("target_language", ""))) != target_language:
+                    continue
+                found = dict(job)
+                found["domain"] = run_domain
+                return found
     return None
 
 
 def _latest_check_languages_job(domain: str, run_id: str) -> dict | None:
-    runs = _load_runs(domain).get("runs", [])
-    run = next((row for row in runs if isinstance(row, dict) and str(row.get("run_id", "")).strip() == run_id), None)
-    if not isinstance(run, dict):
+    candidates: list[dict] = []
+    for run_domain in _check_languages_run_domains(domain):
+        runs = _load_runs(run_domain).get("runs", [])
+        run = next((row for row in runs if isinstance(row, dict) and str(row.get("run_id", "")).strip() == run_id), None)
+        if not isinstance(run, dict):
+            continue
+        for job in run.get("jobs", []):
+            if not isinstance(job, dict) or str(job.get("type", "")).strip() != "check_languages":
+                continue
+            item = dict(job)
+            item["domain"] = run_domain
+            candidates.append(item)
+    if not candidates:
         return None
-    jobs = [dict(job) for job in run.get("jobs", []) if isinstance(job, dict) and str(job.get("type", "")).strip() == "check_languages"]
-    if not jobs:
-        return None
-    jobs.sort(key=lambda row: (str(row.get("updated_at", "")), str(row.get("created_at", "")), str(row.get("job_id", ""))))
-    return jobs[-1]
+    candidates.sort(key=lambda row: (str(row.get("updated_at", "")), str(row.get("created_at", "")), str(row.get("job_id", ""))))
+    return candidates[-1]
 
 
 def _latest_phase6_job(domain: str, run_id: str) -> dict | None:
@@ -3090,8 +3160,9 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         if not _run_is_english_only(en_run):
             self._redirect_check_languages(payload, message="Selected reference run is not English-only.", level="error")
             return
+        run_domain = str(en_run.get("domain", "")).strip() or domain
 
-        en_readiness = _phase6_artifact_readiness(domain, en_run_id)
+        en_readiness = _phase6_artifact_readiness(run_domain, en_run_id)
         if not en_readiness.get("ready"):
             self._redirect_check_languages(payload, message="English reference run is not ready for comparison prerequisites.", level="error")
             return
@@ -3101,16 +3172,16 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             self._redirect_check_languages(payload, message="Selected target language is invalid for this domain.", level="error")
             return
 
-        in_progress = _find_in_progress_check_languages_job(domain, en_run_id, target_language)
+        in_progress = _find_in_progress_check_languages_job(run_domain, en_run_id, target_language)
         if in_progress:
             existing_payload = dict(payload)
             existing_payload["target_run_id"] = str(in_progress.get("run_id", ""))
             self._redirect_check_languages(existing_payload, message="Language check is already in progress for this selection.", level="warning")
             return
 
-        target_run_id = _generate_target_run_id(domain, en_run_id, target_language)
+        target_run_id = _generate_target_run_id(run_domain, en_run_id, target_language)
         job_id = f"check-languages-{target_run_id}-{int(time.time())}"
-        _upsert_job_status(domain, target_run_id, {
+        _upsert_job_status(run_domain, target_run_id, {
             "job_id": job_id,
             "status": "queued",
             "type": "check_languages",
@@ -3119,7 +3190,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             "target_language": target_language,
             "target_url": generated_target_url,
         })
-        t = threading.Thread(target=_run_check_languages_async, args=(job_id, domain, en_run_id, target_language, target_run_id, generated_target_url), daemon=True)
+        t = threading.Thread(target=_run_check_languages_async, args=(job_id, run_domain, en_run_id, target_language, target_run_id, generated_target_url), daemon=True)
         t.start()
 
         redirect_payload = dict(payload)
@@ -3155,7 +3226,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         else:
             try:
                 validate_domain(domain)
-                if domain not in SUPPORTED_CHECK_LANGUAGE_DOMAINS:
+                if not _is_supported_check_languages_domain(domain):
                     raise ValueError("Selected domain is unsupported.")
                 runs = _load_check_language_runs(domain)
             except ValueError as exc:
@@ -3172,7 +3243,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         elif selected_en_run_id and selected_en_run_id in run_map and not _run_is_english_only(run_map[selected_en_run_id]):
             errors.append("Selected reference run is not English-only.")
         elif selected_en_run_id and selected_en_run_id in run_map:
-            en_readiness = _phase6_artifact_readiness(domain, selected_en_run_id)
+            en_run_domain = str(run_map[selected_en_run_id].get("domain", "")).strip() or domain
+            en_readiness = _phase6_artifact_readiness(en_run_domain, selected_en_run_id)
 
         if target_language:
             if _is_english_language(target_language):
@@ -3200,9 +3272,10 @@ class SkeletonHandler(BaseHTTPRequestHandler):
 
         if selected_en_run_id and target_language and target_run_id and not errors:
             latest_job = _latest_check_languages_job(domain, target_run_id)
-            issues_exists = _artifact_exists(domain, target_run_id, "issues.json")
+            target_run_domain = str((run_map.get(target_run_id) or {}).get("domain", "")).strip() or str((latest_job or {}).get("domain", "")).strip() or domain
+            issues_exists = _artifact_exists(target_run_domain, target_run_id, "issues.json")
             if issues_exists:
-                issues_payload = _read_json_safe(domain, target_run_id, "issues.json", None)
+                issues_payload = _read_json_safe(target_run_domain, target_run_id, "issues.json", None)
                 if isinstance(issues_payload, list):
                     issues_summary = _summarize_issues_payload(issues_payload)
                 else:
@@ -3299,7 +3372,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 "{{domain_options}}": "".join(
                     [
                         f'<option value="{_h(item)}"{" selected=\"selected\"" if item == domain else ""}>{_h(item)}</option>'
-                        for item in SUPPORTED_CHECK_LANGUAGE_DOMAINS
+                        for item in (SUPPORTED_CHECK_LANGUAGE_DOMAINS if not domain or domain in SUPPORTED_CHECK_LANGUAGE_DOMAINS else [*SUPPORTED_CHECK_LANGUAGE_DOMAINS, domain])
                     ]
                 ),
                 "{{selected_en_run_id}}": _h(selected_en_run_id),

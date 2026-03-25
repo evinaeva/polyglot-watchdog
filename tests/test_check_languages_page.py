@@ -12,6 +12,7 @@ from pipeline import storage
 
 SUPPORTED_MAIN_DOMAIN = "https://bongacams.com/"
 SUPPORTED_TEST_DOMAIN = "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html"
+SUPPORTED_TEST_DOMAIN_TEST_PAGE = "https://evinaeva.github.io/polyglot-watchdog-testsite/en/test.html"
 
 
 class _BlobMeta:
@@ -366,6 +367,11 @@ def test_queued_state_is_rendered_as_queued(api_env):
             "de",
             "https://evinaeva.github.io/polyglot-watchdog-testsite/de/index.html",
         ),
+        (
+            "https://evinaeva.github.io/polyglot-watchdog-testsite/en/test.html",
+            "de",
+            "https://evinaeva.github.io/polyglot-watchdog-testsite/de/test.html",
+        ),
     ],
 )
 def test_target_url_generation_for_supported_domains(selected_domain, language, expected):
@@ -390,6 +396,54 @@ def test_post_rejects_unsupported_domain(api_env):
     assert "Selected+domain+is+unsupported." in location
 
 
+def test_get_accepts_github_pages_project_site_domain_pattern(api_env):
+    domain = SUPPORTED_TEST_DOMAIN_TEST_PAGE
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_pages(domain, "run-fr-old", "fr")
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=de")
+    assert status == HTTPStatus.OK
+    assert "Selected domain is unsupported." not in body
+    assert "Selected English reference run is invalid for this domain." not in body
+    assert '<option value="de" selected="selected">' in body
+
+
+def test_en_run_under_index_visible_when_opening_test_page(api_env):
+    _seed_runs(SUPPORTED_TEST_DOMAIN)
+    _seed_phase6_prereqs(SUPPORTED_TEST_DOMAIN, "run-en", "en")
+    _seed_pages(SUPPORTED_TEST_DOMAIN, "run-fr-old", "fr")
+    _write("_system", "manual", "domains.json", {"domains": [SUPPORTED_TEST_DOMAIN, SUPPORTED_TEST_DOMAIN_TEST_PAGE]})
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={SUPPORTED_TEST_DOMAIN_TEST_PAGE}")
+    assert status == HTTPStatus.OK
+    assert '<option value="run-en"' in body
+    assert "Selected English reference run is invalid for this domain." not in body
+
+
+def test_en_run_under_test_page_visible_when_opening_index_page(api_env):
+    _seed_runs(SUPPORTED_TEST_DOMAIN_TEST_PAGE)
+    _seed_phase6_prereqs(SUPPORTED_TEST_DOMAIN_TEST_PAGE, "run-en", "en")
+    _seed_pages(SUPPORTED_TEST_DOMAIN_TEST_PAGE, "run-fr-old", "fr")
+    _write("_system", "manual", "domains.json", {"domains": [SUPPORTED_TEST_DOMAIN, SUPPORTED_TEST_DOMAIN_TEST_PAGE]})
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={SUPPORTED_TEST_DOMAIN}")
+    assert status == HTTPStatus.OK
+    assert '<option value="run-en"' in body
+    assert "Selected English reference run is invalid for this domain." not in body
+
+
+def test_legacy_domains_remain_exact_match_for_run_discovery(api_env):
+    _seed_runs("https://bongacams.com/")
+    _seed_phase6_prereqs("https://bongacams.com/", "run-en", "en")
+    _seed_pages("https://bongacams.com/", "run-fr-old", "fr")
+    _write("_system", "manual", "domains.json", {"domains": ["https://bongacams.com/", "https://bongamodels.com/"]})
+
+    status, body, _ = _request("GET", api_env, "/check-languages?domain=https%3A%2F%2Fbongamodels.com%2F")
+    assert status == HTTPStatus.OK
+    assert '<option value="run-en"' not in body
+
+
 @pytest.mark.parametrize(
     ("selected_domain", "expected_target_url"),
     [
@@ -399,6 +453,10 @@ def test_post_rejects_unsupported_domain(api_env):
         (
             "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html",
             "https://evinaeva.github.io/polyglot-watchdog-testsite/de/index.html",
+        ),
+        (
+            "https://evinaeva.github.io/polyglot-watchdog-testsite/en/test.html",
+            "https://evinaeva.github.io/polyglot-watchdog-testsite/de/test.html",
         ),
     ],
 )
@@ -469,6 +527,37 @@ def test_replay_scope_helper_uses_reference_contexts(monkeypatch):
     assert calls == [
         ("https://bongacams.com/", "https://ja.bongacams.com/a", "ja", "desktop", "baseline", "guest"),
         ("https://bongacams.com/", "https://ja.bongacams.com/a", "ja", "desktop", "checkout", "pro"),
+    ]
+
+
+def test_replay_scope_helper_rewrites_github_pages_language_segment_only(monkeypatch):
+    domain = "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html"
+    pages = [
+        {"url": "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html", "language": "en", "viewport_kind": "desktop", "state": "baseline", "user_tier": "guest"},
+        {"url": "https://evinaeva.github.io/polyglot-watchdog-testsite/en/test.html", "language": "en", "viewport_kind": "desktop", "state": "checkout", "user_tier": "pro"},
+    ]
+    monkeypatch.setattr("app.skeleton_server._read_list_artifact_required", lambda _domain, _run_id, _filename: pages)
+
+    calls = []
+
+    def _fake_build(domain, url, language, viewport_kind, state, user_tier):
+        calls.append((domain, url, language, viewport_kind, state, user_tier))
+        return {"ctx": (url, viewport_kind, state, user_tier)}
+
+    monkeypatch.setattr("pipeline.run_phase1.build_exact_context_job", _fake_build)
+
+    from app.skeleton_server import _replay_scope_from_reference_run
+
+    jobs = _replay_scope_from_reference_run(
+        domain,
+        "run-en",
+        "de",
+        "https://evinaeva.github.io/polyglot-watchdog-testsite/de/index.html",
+    )
+    assert len(jobs) == 2
+    assert calls == [
+        (domain, "https://evinaeva.github.io/polyglot-watchdog-testsite/de/index.html", "de", "desktop", "baseline", "guest"),
+        (domain, "https://evinaeva.github.io/polyglot-watchdog-testsite/de/test.html", "de", "desktop", "checkout", "pro"),
     ]
 
 
