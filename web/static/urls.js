@@ -381,8 +381,8 @@ async function maybeLoadDomains() {
   try {
     const response = await fetch('/api/domains');
     const payload = await safeReadPayload(response);
-    if (!response.ok || !Array.isArray(payload.items) || !payload.items.length) return;
-    const selected = selectedDomain() || 'bongacams.com';
+    if (!response.ok || !Array.isArray(payload.items)) return;
+    const lastUsedFirstRunDomain = String(payload.last_used_first_run_domain || '').trim();
     const known = new Set();
     if (domainSuggestions) domainSuggestions.innerHTML = '';
     for (const domain of payload.items) {
@@ -395,9 +395,19 @@ async function maybeLoadDomains() {
         domainSuggestions.appendChild(option);
       }
     }
-    domainInput.value = selected;
+    const domains = Array.from(known);
+    if (lastUsedFirstRunDomain && !known.has(lastUsedFirstRunDomain)) {
+      const option = document.createElement('option');
+      option.value = lastUsedFirstRunDomain;
+      domains.push(lastUsedFirstRunDomain);
+      if (domainSuggestions) domainSuggestions.appendChild(option);
+    }
+    const preferredDefault = lastUsedFirstRunDomain || domains[0] || '';
+    if (domainInput && !selectedDomain()) {
+      domainInput.value = preferredDefault;
+    }
   } catch (_error) {
-    // fallback to default domain suggestions in HTML
+    // keep typed/empty domain value when domains list is unavailable
   }
 }
 
@@ -486,5 +496,7 @@ if (domainInput) {
 document.addEventListener('pw:i18n:ready', async () => {
   await maybeLoadDomains();
   syncContinueLink();
-  await load();
+  if (selectedDomain()) {
+    await load();
+  }
 });

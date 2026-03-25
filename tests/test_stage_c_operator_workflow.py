@@ -215,3 +215,43 @@ def test_stage_c_readme_status_is_not_outdated():
     content = Path("README.md").read_text(encoding="utf-8")
     assert "full visible operator workflow is not fully integrated end-to-end" not in content
     assert "operator workflow pages are now visibly linked via global navigation" in content
+
+
+def test_urls_domain_source_and_last_used_first_run_persistence(api_env):
+    _write("_system", "manual", "domains.json", {"domains": ["bongacams.com", "alpha.example", "alpha.example"]})
+    _write("_system", "manual", "urls_page_state.json", {"last_used_first_run_domain": "alpha.example"})
+
+    status_domains, payload_domains = _request("GET", api_env, "/api/domains")
+    assert status_domains == HTTPStatus.OK
+    assert payload_domains["items"] == ["alpha.example", "bongacams.com"]
+    assert payload_domains["last_used_first_run_domain"] == "alpha.example"
+
+    status_urls, body_urls = _request("GET", api_env, "/urls")
+    assert status_urls == HTTPStatus.OK
+    assert 'value="bongacams.com"' not in body_urls
+    assert '<option value="bongacams.com"></option>' not in body_urls
+
+    new_domain = "typed.example"
+    status_add, payload_add = _request(
+        "POST",
+        api_env,
+        "/api/seed-urls/add",
+        {"domain": new_domain, "urls_multiline": "https://typed.example/a"},
+    )
+    assert status_add == HTTPStatus.OK
+    assert payload_add["domain"] == new_domain
+    assert any(str(row.get("url", "")).startswith("https://typed.example/") for row in payload_add.get("urls", []))
+
+    status_start, payload_start = _request(
+        "POST",
+        api_env,
+        "/api/workflow/start-capture",
+        {"domain": new_domain, "run_id": "run-new-domain", "language": "en", "viewport_kind": "desktop", "state": "baseline"},
+    )
+    assert status_start == HTTPStatus.OK
+    assert payload_start["status"] == "started"
+
+    status_domains_after, payload_domains_after = _request("GET", api_env, "/api/domains")
+    assert status_domains_after == HTTPStatus.OK
+    assert new_domain in payload_domains_after["items"]
+    assert payload_domains_after["last_used_first_run_domain"] == new_domain
