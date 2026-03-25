@@ -17,6 +17,12 @@ let savedDomains = [];
 const SAVE_SUCCESS_TIMEOUT_MS = 2000;
 const ACTIVATION_TIMEOUT_MS = 1200;
 const saveStateTimers = new WeakMap();
+const tallinnDateFormatter = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Europe/Tallinn',
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+});
 
 function formatUpdatedAt(value) {
   if (typeof value !== 'string') return '—';
@@ -24,10 +30,9 @@ function formatUpdatedAt(value) {
   if (!trimmed) return '—';
   const parsed = new Date(trimmed);
   if (Number.isNaN(parsed.getTime())) return '—';
-  const day = String(parsed.getUTCDate()).padStart(2, '0');
-  const month = String(parsed.getUTCMonth() + 1).padStart(2, '0');
-  const year = String(parsed.getUTCFullYear());
-  return `${day}.${month}.${year}`;
+  const parts = tallinnDateFormatter.formatToParts(parsed);
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${map.day}.${map.month}.${map.year}`;
 }
 
 function t(key, fallback) {

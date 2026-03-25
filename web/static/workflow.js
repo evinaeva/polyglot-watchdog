@@ -20,6 +20,25 @@ let lastPayload = null;
 let activeRunId = '';
 let pollTimer = null;
 let availableRuns = [];
+const tallinnDateTimeFormatter = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Europe/Tallinn',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+
+function formatUtcTimestampForUi(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw;
+  const parts = tallinnDateTimeFormatter.formatToParts(parsed);
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${map.year}-${map.month}-${map.day} ${map.hour}:${map.minute}`;
+}
 
 function normalizeDisplayName(value) {
   const raw = String(value ?? '').trim();
@@ -87,7 +106,7 @@ function renderStatus(payload) {
   ];
 
   const updatedAt = capture.updated_at || run.updated_at || payload.updated_at || capture.last_update || run.last_update || payload.last_update || capture.last_updated_at || run.last_updated_at || payload.last_updated_at || capture.timestamp || run.timestamp || payload.timestamp;
-  if (updatedAt) rows.push(['Last update', updatedAt]);
+  if (updatedAt) rows.push(['Last update', formatUtcTimestampForUi(updatedAt)]);
 
   wfStatusSummary.innerHTML = rows.map(([label, value]) => `<dt>${label}</dt><dd>${value}</dd>`).join('');
 }
@@ -240,7 +259,7 @@ function renderExistingRuns() {
     const option = document.createElement('option');
     option.value = runId;
     const runLabel = formatRunLabel(runId, (run || {}).display_name);
-    const createdAt = String((run || {}).created_at || '').trim() || 'created time unknown';
+    const createdAt = formatUtcTimestampForUi((run || {}).created_at) || 'created time unknown';
     const jobsCount = Array.isArray((run || {}).jobs) ? run.jobs.length : 0;
     option.textContent = `${runLabel} (${deriveRunState(run)} · jobs: ${jobsCount} · ${createdAt})`;
     wfExistingRuns.appendChild(option);
