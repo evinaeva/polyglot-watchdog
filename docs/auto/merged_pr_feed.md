@@ -1852,3 +1852,34 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3f2ab29e8832c94c00631856f70f2)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #152 — 2026-03-25T15:10:29Z
+
+- Title: Add LLM review telemetry display to Check Languages page
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/152
+- Author: evinaeva
+- Base branch: main
+- Head branch: a39rdt-codex/extend-/check-languages-handler-for-llm-review-stats
+- Merge commit: 8fddb09263bc2f983e5d1cf38eaa8407ecbd509c
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+  - web/templates/check-languages.html
+- Description:
+  ### Motivation
+  - Surface LLM review telemetry and summaries on the Check Languages admin page so operators can see whether an LLM was requested, fallback behavior, token counts, and cost information for a selected target run.
+  
+  ### Description
+  - Added utility converters and helpers: ` _as_int`, `_as_float`, `_as_bool`, `_first_present`, and `_coalesce` to normalize telemetry fields in `skeleton_server.py`.
+  - Implemented `_llm_review_display` to interpret `llm_review_stats.json` (and job state) into a stable displayable summary and fields such as `fallback_state`, token counts, provider/model info, and `cost_display`.
+  - Updated the Check Languages handler to read `llm_review_stats.json` when present, generate `llm_review_block` HTML (with a placeholder when telemetry is absent or malformed), and pass `{{llm_review}}` into the template context.
+  - Updated `web/templates/check-languages.html` to render a new "LLM Review" section showing the telemetry block.
+  - Kept behavior robust to missing/malformed telemetry and in-progress/completed job stages.
+  
+  ### Testing
+  - Ran the Check Languages page tests in `tests/test_check_languages_page.py`, including the three new tests `test_llm_review_state_missing_telemetry_in_progress`, `test_llm_review_state_missing_telemetry_completed`, and `test_llm_review_telemetry_renders_request_and_cost_priority`, and they passed.
+  - Existing related test `test_stale_check_languages_job_is_rendered_as_failed` was exercised and continued to pass.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3f49e221c832c84a5ee01b996e30a)
+- Notes: Auto-generated from merged PR metadata.
