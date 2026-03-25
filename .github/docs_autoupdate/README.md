@@ -3,23 +3,25 @@
 This subsystem records merged-PR context and performs scheduled AI-driven docs synchronization with strict patch-only safety checks.
 
 ## Workflows
-- `.github/workflows/docs-pr-feed.yml` calls `.github/scripts/update_merged_pr_feed.py` after PR merges to append feed entries.
-- `.github/workflows/docs-ai-sync.yml` calls `.github/scripts/docs_ai_sync.py` and `.github/scripts/validate_docs_diff.py` for scheduled/manual sync.
+- `.github/workflows/docs-pr-feed.yml` calls `.github/docs_autoupdate/scripts/update_merged_pr_feed.py` after PR merges to append feed entries to `docs/auto/merged_pr_feed.md`.
+- `.github/workflows/docs-ai-sync.yml` calls `.github/docs_autoupdate/scripts/docs_ai_sync.py` and `.github/docs_autoupdate/scripts/validate_docs_diff.py` on schedule/manual trigger to process feed delta and current allowlisted docs snapshot.
 
 ## Canonical config
-- Single source of truth: `.github/scripts/config.json`
-- Workflow YAML files should stay thin wrappers; repo/operator settings should be changed in `config.json`.
+- This subsystem uses constants and defaults in `.github/docs_autoupdate/scripts/*.py` plus workflow env/paths in `.github/workflows/docs-*.yml`.
 
 ## What to customize when copying to another repo
-Update `config.json` values for:
+Update script constants/workflow values for:
 - workflow branches and cron metadata
 - feed/state/prompt/runtime paths
 - allowlist, machine-managed paths, blacklist, runtime ignore prefixes
-- Claude defaults (model, timeout, token/temperature limits)
+- AI defaults (model, timeout, token/temperature limits)
 - processing limits and commit message templates
 - expected GitHub environment variable names
 
 ## Required GitHub configuration
-- **Secret**: `ANTHROPIC_API_KEY` (or the name configured in `ai.api_key_env`).
-- **Optional Variable**: `ANTHROPIC_MODEL` (or the name configured in `ai.model_env`) to override the default model.
-- `GITHUB_TOKEN`, `GITHUB_EVENT_PATH`, `GITHUB_REPOSITORY`, and `GITHUB_OUTPUT` are provided by GitHub Actions and referenced via config.
+- **Secret**: `AI_API_KEY`.
+- **Optional Variable**: `AI_MODEL` to override the default model (`gemini-2.5-flash-lite`).
+- `GITHUB_TOKEN`, `GITHUB_EVENT_PATH`, `GITHUB_REPOSITORY`, and `GITHUB_OUTPUT` are provided by GitHub Actions.
+
+## Incremental sync state
+- The sync cursor/state is stored at `docs/auto/docs_sync_state.json` on the `DOCS_AUTOUPDATE` branch.

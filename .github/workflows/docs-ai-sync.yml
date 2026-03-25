@@ -2,7 +2,7 @@ name: Docs AI Sync
 
 on:
   schedule:
-    - cron: '0 5 * * *'
+    - cron: '0 3 * * *'
   workflow_dispatch:
 
 permissions:
@@ -43,19 +43,19 @@ jobs:
           github.event_name == 'workflow_dispatch' ||
           (github.event_name == 'schedule' && steps.pr_guard.outputs.should_run == 'true')
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
         run: |
-          if [ -n "${{ vars.ANTHROPIC_MODEL }}" ]; then
-            export ANTHROPIC_MODEL="${{ vars.ANTHROPIC_MODEL }}"
+          if [ -n "${{ vars.AI_MODEL }}" ]; then
+            export AI_MODEL="${{ vars.AI_MODEL }}"
           fi
           python .github/docs_autoupdate/scripts/docs_ai_sync.py --github-output "$GITHUB_OUTPUT"
 
-      - name: Upload Claude raw response on sync failure
-        if: failure() && steps.sync.outcome == 'failure' && hashFiles('.github/tmp/claude_raw_response.txt') != ''
+      - name: Upload AI raw response on sync failure
+        if: failure() && steps.sync.outcome == 'failure' && hashFiles('.github/tmp/ai_raw_response.txt') != ''
         uses: actions/upload-artifact@v4
         with:
-          name: claude-raw-response
-          path: .github/tmp/claude_raw_response.txt
+          name: ai-raw-response
+          path: .github/tmp/ai_raw_response.txt
           if-no-files-found: ignore
 
       - name: Validate documentation diff scope

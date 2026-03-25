@@ -25,12 +25,12 @@ BLACKLIST = {
     "cloudbuild.yaml",
     "requirements.txt",
 }
-DEFAULT_MODEL = "claude-3-5-sonnet-20241022"
+DEFAULT_MODEL = "gemini-2.5-flash-lite"
 MAX_DOC_FILES = 80
 MAX_DOC_CHARS = 300_000
 MAX_FILE_CHARS = 20_000
-CLAUDE_RAW_RESPONSE_DEBUG_PATH = Path(".github/tmp/claude_raw_response.txt")
-CLAUDE_PARSE_PREVIEW_CHARS = 1000
+AI_RAW_RESPONSE_DEBUG_PATH = Path(".github/tmp/ai_raw_response.txt")
+AI_PARSE_PREVIEW_CHARS = 1000
 def git_show(ref_path: str) -> str:
     res = subprocess.run(["git", "show", ref_path], capture_output=True, text=True)
     if res.returncode != 0:
@@ -162,27 +162,29 @@ def extract_json(text: str) -> dict[str, Any]:
         if not match:
             raise
         return json.loads(match.group(0))
-def call_claude(prompt: str, model: str, api_key: str) -> str:
+def call_ai_model(prompt: str, model: str, api_key: str) -> str:
     payload = {
-        "model": model,
-        "max_tokens": 12000,
-        "temperature": 0,
-        "messages": [{"role": "user", "content": prompt}],
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0,
+            "maxOutputTokens": 12000,
+        },
     }
     req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages",
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}",
         data=json.dumps(payload).encode("utf-8"),
         headers={
-            "x-api-key": api_key,
-            "anthropic-version": "2023-06-01",
             "content-type": "application/json",
         },
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=120) as resp:
         body = json.loads(resp.read().decode("utf-8"))
-    parts = body.get("content", [])
-    text_parts = [p.get("text", "") for p in parts if p.get("type") == "text"]
+    candidates = body.get("candidates", [])
+    if not candidates:
+        return ""
+    parts = candidates[0].get("content", {}).get("parts", [])
+    text_parts = [p.get("text", "") for p in parts if isinstance(p, dict)]
     return "\n".join(text_parts).strip()
 def resolve_model(raw_model: str | None) -> str:
     if raw_model is None:
@@ -192,11 +194,11 @@ def resolve_model(raw_model: str | None) -> str:
         return DEFAULT_MODEL
     if "=" in model:
         raise ValueError(
-            "Invalid ANTHROPIC_MODEL: expected a model id (for example 'claude-3-5-sonnet-20241022'), "
+            "Invalid AI_MODEL: expected a model id (for example 'gemini-2.5-flash-lite'), "
             "but got an assignment-like value containing '='."
         )
     if any(ch.isspace() for ch in model):
-        raise ValueError("Invalid ANTHROPIC_MODEL: model id must not contain whitespace.")
+        raise ValueError("Invalid AI_MODEL: model id must not contain whitespace.")
     return model
 def write_output(path: str | None, key: str, value: str) -> None:
     if not path:
@@ -287,12 +289,12 @@ def main() -> int:
     if not new_entries:
         print("No new feed entries to process.")
         return 0
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    api_key = os.environ.get("AI_API_KEY", "")
     if not api_key:
-        print("ANTHROPIC_API_KEY is required.", file=sys.stderr)
+        print("AI_API_KEY is required.", file=sys.stderr)
         return 1
     try:
-        model = resolve_model(os.environ.get("ANTHROPIC_MODEL"))
+        model = resolve_model(os.environ.get("AI_MODEL"))
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -315,24 +317,24 @@ def main() -> int:
         "docs_snapshot_meta": snapshot_meta,
     }
     prompt = f"{prompt_template}\n\nINPUT_JSON:\n{json.dumps(payload, ensure_ascii=False)}"
-    response_text = call_claude(prompt, model, api_key)
+    response_text = call_ai_model(prompt, model, api_key)
     try:
         response_json = extract_json(response_text)
     except Exception as exc:
-        CLAUDE_RAW_RESPONSE_DEBUG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        CLAUDE_RAW_RESPONSE_DEBUG_PATH.write_text(response_text, encoding="utf-8")
-        response_preview = response_text[:CLAUDE_PARSE_PREVIEW_CHARS]
-        preview_suffix = "..." if len(response_text) > CLAUDE_PARSE_PREVIEW_CHARS else ""
+        AI_RAW_RESPONSE_DEBUG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        AI_RAW_RESPONSE_DEBUG_PATH.write_text(response_text, encoding="utf-8")
+        response_preview = response_text[:AI_PARSE_PREVIEW_CHARS]
+        preview_suffix = "..." if len(response_text) > AI_PARSE_PREVIEW_CHARS else ""
         print(
-            "Failed to parse Claude JSON response: "
-            f"{exc}. Saved raw response to {CLAUDE_RAW_RESPONSE_DEBUG_PATH}. "
-            f"Preview (first {CLAUDE_PARSE_PREVIEW_CHARS} chars): {response_preview!r}{preview_suffix}",
+            "Failed to parse AI JSON response: "
+            f"{exc}. Saved raw response to {AI_RAW_RESPONSE_DEBUG_PATH}. "
+            f"Preview (first {AI_PARSE_PREVIEW_CHARS} chars): {response_preview!r}{preview_suffix}",
             file=sys.stderr,
         )
         return 1
     updates = response_json.get("updates")
     if not isinstance(updates, list):
-        print("Claude response missing 'updates' list.", file=sys.stderr)
+        print("AI response missing 'updates' list.", file=sys.stderr)
         return 1
     docs_changed = False
     virtual_contents: dict[str, str] = {}
