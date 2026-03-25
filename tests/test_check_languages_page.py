@@ -251,6 +251,81 @@ def test_target_language_options_allow_first_non_english_run(api_env):
     assert '<option value="fr"' in body
 
 
+
+
+def test_get_check_languages_default_selects_latest_first_run_display_name(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    _write("_system", "manual", "domains.json", {"domains": [domain]})
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {"run_id": "run-en-latest", "created_at": "2026-03-13T00:00:00Z", "display_name": "Nightly EN", "jobs": []},
+            {"run_id": "run-en-first", "created_at": "2026-03-12T00:00:00Z", "display_name": "First_run_10:00|12.03.2026", "jobs": []},
+            {"run_id": "run-en-first-old", "created_at": "2026-03-11T00:00:00Z", "display_name": "First_run_10:00|11.03.2026", "jobs": []},
+        ]
+    })
+    _seed_phase6_prereqs(domain, "run-en-first", "en")
+    _seed_phase6_prereqs(domain, "run-en-latest", "en")
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}")
+    assert status == HTTPStatus.OK
+    assert '<option value="run-en-first" selected="selected">First_run_10:00|12.03.2026</option>' in body
+
+
+def test_get_check_languages_en_dropdown_excludes_mixed_language_runs(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    _write("_system", "manual", "domains.json", {"domains": [domain]})
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {"run_id": "run-mixed", "created_at": "2026-03-12T00:00:00Z", "display_name": "First_run_10:00|12.03.2026", "jobs": []},
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "display_name": "First_run_10:00|11.03.2026", "jobs": []},
+            {"run_id": "run-fr", "created_at": "2026-03-10T00:00:00Z", "jobs": []},
+        ]
+    })
+    _seed_pages(domain, "run-mixed", rows=[
+        {"page_id": "p1", "language": "en", "url": "https://example.com/en", "viewport_kind": "desktop", "state": "baseline"},
+        {"page_id": "p2", "language": "fr", "url": "https://example.com/fr", "viewport_kind": "desktop", "state": "baseline"},
+    ], language="en")
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_pages(domain, "run-fr", "fr")
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}")
+    assert status == HTTPStatus.OK
+    assert '<option value="run-mixed"' not in body
+    assert '<option value="run-en" selected="selected">First_run_10:00|11.03.2026</option>' in body
+
+
+def test_get_check_languages_en_dropdown_shows_no_runs_placeholder(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    _write("_system", "manual", "domains.json", {"domains": [domain]})
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {"run_id": "run-fr", "created_at": "2026-03-10T00:00:00Z", "jobs": []},
+        ]
+    })
+    _seed_pages(domain, "run-fr", "fr")
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}")
+    assert status == HTTPStatus.OK
+    assert '<option value="">No English runs found</option>' in body
+
+
+
+def test_get_check_languages_default_prefers_latest_explicit_en_standard(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    _write("_system", "manual", "domains.json", {"domains": [domain]})
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {"run_id": "run-first-newer", "created_at": "2026-03-13T00:00:00Z", "display_name": "First_run_10:00|13.03.2026", "jobs": []},
+            {"run_id": "run-en-standard", "created_at": "2026-03-12T00:00:00Z", "en_standard_display_name": "EN Standard (Mar 12)", "jobs": []},
+        ]
+    })
+    _seed_phase6_prereqs(domain, "run-first-newer", "en")
+    _seed_phase6_prereqs(domain, "run-en-standard", "en")
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}")
+    assert status == HTTPStatus.OK
+    assert '<option value="run-en-standard" selected="selected">EN Standard (Mar 12)</option>' in body
+
 def test_get_check_languages_auto_selects_latest_successful_english_standard(api_env):
     domain = SUPPORTED_MAIN_DOMAIN
     _write("_system", "manual", "domains.json", {"domains": [domain]})

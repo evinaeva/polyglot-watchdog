@@ -449,6 +449,35 @@ def _run_is_english_only(run: dict) -> bool:
     return bool(languages) and all(_is_english_language(language) for language in languages)
 
 
+def _run_is_explicit_en_reference(run: dict) -> bool:
+    metadata = run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
+    if _normalize_optional_string(run.get("en_standard_display_name")):
+        return True
+    if isinstance(metadata, dict) and _normalize_optional_string(metadata.get("en_standard_display_name")):
+        return True
+    return _run_has_en_standard_success_marker(run)
+
+
+def _run_is_en_reference_candidate(run: dict) -> bool:
+    return _run_is_explicit_en_reference(run) or _run_is_english_only(run)
+
+
+def _default_english_reference_run_id(en_candidates: list[dict]) -> str:
+    ordered = sorted(en_candidates, key=lambda row: (row.get("created_at", ""), row.get("run_id", "")), reverse=True)
+    explicit = [run for run in ordered if _run_is_explicit_en_reference(run)]
+    if explicit:
+        return str(explicit[0].get("run_id", "")).strip()
+    first_run_english = [
+        run
+        for run in ordered
+        if _run_is_english_only(run) and (_normalize_optional_string(run.get("display_name")) or "").startswith("First_run_")
+    ]
+    if first_run_english:
+        return str(first_run_english[0].get("run_id", "")).strip()
+    english_only = [run for run in ordered if _run_is_english_only(run)]
+    return str((english_only[0] or {}).get("run_id", "")).strip() if english_only else ""
+
+
 def _run_display_label(run: dict) -> str:
     metadata = run.get("metadata") if isinstance(run.get("metadata"), dict) else {}
     display = ""
@@ -3216,8 +3245,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         if en_run is None:
             self._redirect_check_languages(payload, message="Selected English reference run is invalid for this domain.", level="error")
             return
-        if not _run_is_english_only(en_run):
-            self._redirect_check_languages(payload, message="Selected reference run is not English-only.", level="error")
+        if not _run_is_en_reference_candidate(en_run):
+            self._redirect_check_languages(payload, message="Selected reference run is not a valid English baseline.", level="error")
             return
         run_domain = str(en_run.get("domain", "")).strip() or domain
 
@@ -3292,15 +3321,15 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 errors.append(str(exc))
 
         run_map = {str(row.get("run_id", "")): row for row in runs}
-        en_candidates = [row for row in runs if _run_is_english_only(row)]
+        en_candidates = [row for row in runs if _run_is_en_reference_candidate(row)]
         target_languages = _load_target_languages(runs)
         if not selected_en_run_id:
-            selected_en_run_id = _latest_successful_en_standard_run_id(domain, en_candidates)
+            selected_en_run_id = _default_english_reference_run_id(en_candidates)
 
         if selected_en_run_id and selected_en_run_id not in run_map:
             errors.append("Selected English reference run is invalid for this domain.")
-        elif selected_en_run_id and selected_en_run_id in run_map and not _run_is_english_only(run_map[selected_en_run_id]):
-            errors.append("Selected reference run is not English-only.")
+        elif selected_en_run_id and selected_en_run_id in run_map and not _run_is_en_reference_candidate(run_map[selected_en_run_id]):
+            errors.append("Selected reference run is not a valid English baseline.")
         elif selected_en_run_id and selected_en_run_id in run_map:
             en_run_domain = str(run_map[selected_en_run_id].get("domain", "")).strip() or domain
             en_readiness = _phase6_artifact_readiness(en_run_domain, selected_en_run_id)
@@ -3316,7 +3345,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 except ValueError as exc:
                     errors.append(str(exc))
 
-        if selected_en_run_id and not en_readiness.get("ready") and not any("Selected English reference run is invalid" in e or "not English-only" in e for e in errors):
+        if selected_en_run_id and not en_readiness.get("ready") and not any("Selected English reference run is invalid" in e or "not a valid English baseline" in e for e in errors):
             errors.append("English reference run is not ready for comparison prerequisites.")
 
         if selected_en_run_id and target_language and not target_run_id:
@@ -3376,7 +3405,10 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             selected_attr = ' selected="selected"' if selected else ""
             return f'<option value="{_h(language)}"{selected_attr}>{_h(language)}</option>'
 
-        en_options = ['<option value="">Select English reference run</option>'] + [_run_option(run, str(run.get("run_id", "")) == selected_en_run_id) for run in sorted(en_candidates, key=lambda row: (row.get("created_at", ""), row.get("run_id", "")), reverse=True)]
+        if en_candidates:
+            en_options = ['<option value="">Select English reference run</option>'] + [_run_option(run, str(run.get("run_id", "")) == selected_en_run_id) for run in sorted(en_candidates, key=lambda row: (row.get("created_at", ""), row.get("run_id", "")), reverse=True)]
+        else:
+            en_options = ['<option value="">No English runs found</option>']
         language_options = ['<option value="">Select target language</option>'] + [_language_option(language, language == target_language) for language in target_languages]
 
         issue_summary_block = "<p>Issues output: missing.</p>"
