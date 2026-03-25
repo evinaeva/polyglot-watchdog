@@ -2117,6 +2117,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                     "language": str(page.get("language", "")),
                     "user_tier": _normalize_optional_string(page.get("user_tier")),
                     "storage_uri": str(page.get("storage_uri", "")),
+                    "screenshot_view_url": _page_screenshot_view_url(domain, run_id, str(page.get("page_id", ""))) if str(page.get("page_id", "")) else "",
                     "elements_count": by_page.get(page.get("page_id"), 0),
                 })
             reviews_by_key = _load_review_statuses_for_contexts(domain, contexts, language=language_filter)
