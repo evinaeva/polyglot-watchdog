@@ -13,6 +13,7 @@ from pipeline import storage
 SUPPORTED_MAIN_DOMAIN = "https://bongacams.com/"
 SUPPORTED_TEST_DOMAIN = "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html"
 SUPPORTED_TEST_DOMAIN_TEST_PAGE = "https://evinaeva.github.io/polyglot-watchdog-testsite/en/test.html"
+LEGACY_TESTSITE_ROOT_DOMAIN = "https://evinaeva.github.io/"
 
 
 class _BlobMeta:
@@ -372,6 +373,11 @@ def test_queued_state_is_rendered_as_queued(api_env):
             "de",
             "https://evinaeva.github.io/polyglot-watchdog-testsite/de/test.html",
         ),
+        (
+            "https://evinaeva.github.io/polyglot-watchdog-testsite/en/pricing.html",
+            "ru",
+            "https://evinaeva.github.io/polyglot-watchdog-testsite/ru/pricing.html",
+        ),
     ],
 )
 def test_target_url_generation_for_supported_domains(selected_domain, language, expected):
@@ -385,6 +391,12 @@ def test_target_url_generation_rejects_unsupported_domain():
 
     with pytest.raises(ValueError, match="unsupported"):
         _build_check_languages_target_url("https://unsupported.example/", "de")
+
+
+def test_testsite_root_alias_normalizes_to_canonical():
+    from app.skeleton_server import _normalize_check_languages_domain
+
+    assert _normalize_check_languages_domain(LEGACY_TESTSITE_ROOT_DOMAIN) == SUPPORTED_TEST_DOMAIN
 
 
 def test_post_rejects_unsupported_domain(api_env):
@@ -407,6 +419,38 @@ def test_get_accepts_github_pages_project_site_domain_pattern(api_env):
     assert "Selected domain is unsupported." not in body
     assert "Selected English reference run is invalid for this domain." not in body
     assert '<option value="de" selected="selected">' in body
+
+
+def test_post_with_legacy_root_writes_under_canonical_domain(api_env, monkeypatch):
+    _seed_runs(SUPPORTED_TEST_DOMAIN)
+    _seed_phase6_prereqs(SUPPORTED_TEST_DOMAIN, "run-en", "en")
+
+    started = {}
+
+    def _fake_run(job_id, domain, en_run_id, target_language, target_run_id, target_url):
+        started["args"] = (job_id, domain, en_run_id, target_language, target_run_id, target_url)
+
+    monkeypatch.setattr("app.skeleton_server._run_check_languages_async", _fake_run)
+
+    form = _query({"selected_domain": LEGACY_TESTSITE_ROOT_DOMAIN, "en_run_id": "run-en", "target_language": "de"})
+    status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
+    assert status_post == HTTPStatus.FOUND
+    parsed = parse_qs(urlparse(location).query)
+    assert parsed["selected_domain"][0] == SUPPORTED_TEST_DOMAIN
+    assert started["args"][1] == SUPPORTED_TEST_DOMAIN
+    runs = storage.read_json_artifact(SUPPORTED_TEST_DOMAIN, "manual", "capture_runs.json")
+    assert any(str(row.get("run_id", "")).startswith("run-en-check-de") for row in runs["runs"])
+
+
+def test_check_languages_discovers_legacy_runs_from_canonical_testsite_domain(api_env):
+    _write("_system", "manual", "domains.json", {"domains": [SUPPORTED_TEST_DOMAIN, LEGACY_TESTSITE_ROOT_DOMAIN]})
+    _write(LEGACY_TESTSITE_ROOT_DOMAIN, "manual", "capture_runs.json", {"runs": [{"run_id": "run-en-legacy", "created_at": "2026-03-01T00:00:00Z", "jobs": []}]})
+    _seed_phase6_prereqs(LEGACY_TESTSITE_ROOT_DOMAIN, "run-en-legacy", "en")
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={SUPPORTED_TEST_DOMAIN}")
+    assert status == HTTPStatus.OK
+    assert "Selected domain is unsupported." not in body
+    assert '<option value="run-en-legacy"' in body
 
 
 def test_en_run_under_index_visible_when_opening_test_page(api_env):
@@ -454,13 +498,11 @@ def test_legacy_domains_remain_exact_match_for_run_discovery(api_env):
             "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html",
             "https://evinaeva.github.io/polyglot-watchdog-testsite/de/index.html",
         ),
-        (
-            "https://evinaeva.github.io/polyglot-watchdog-testsite/en/test.html",
-            "https://evinaeva.github.io/polyglot-watchdog-testsite/de/test.html",
-        ),
     ],
 )
 def test_post_passes_generated_target_url_into_runtime_execution(api_env, monkeypatch, selected_domain, expected_target_url):
+    from app.skeleton_server import _normalize_check_languages_domain
+
     _seed_runs(selected_domain)
     _seed_phase6_prereqs(selected_domain, "run-en", "en")
     _seed_pages(selected_domain, "run-fr-old", "fr")
@@ -475,7 +517,7 @@ def test_post_passes_generated_target_url_into_runtime_execution(api_env, monkey
     form = _query({"selected_domain": selected_domain, "en_run_id": "run-en", "target_language": "de"})
     status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
     assert status_post == HTTPStatus.FOUND
-    assert started["args"][1] == selected_domain
+    assert started["args"][1] == _normalize_check_languages_domain(selected_domain)
     assert started["args"][2] == "run-en"
     assert started["args"][3] == "de"
     assert started["args"][5] == expected_target_url
