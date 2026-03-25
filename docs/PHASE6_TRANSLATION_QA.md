@@ -265,6 +265,10 @@ Phase 6 normalizes dynamic counters (e.g., "1 item", "2 items") to a canonical f
 
 This prevents false positives when the same content appears with different numeric values across languages.
 
+### 12.2a Interaction trace hashing
+
+When a screenshot is captured as part of a scripted recipe execution, the executed recipe steps are hashed to produce an `interaction_trace_hash` (SHA-1). This hash is persisted in the `page_screenshots` artifact and allows reruns to be correlated with the original scripted interactions.
+
 ### 12.3 Prepared review inputs and OCR selection
 
 Phase 6 centralizes DOM/OCR text preparation through `prepare_review_inputs`, which:

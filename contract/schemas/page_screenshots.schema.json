@@ -109,7 +109,8 @@
           "string",
           "null"
         ],
-        "pattern": "^[a-f0-9]{40}$"
+        "pattern": "^[a-f0-9]{40}$",
+        "description": "SHA-1 hash of the executed recipe interaction steps. Present only when the screenshot was captured as part of a scripted recipe execution."
       }
     }
   }

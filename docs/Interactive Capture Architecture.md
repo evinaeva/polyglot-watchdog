@@ -327,6 +327,8 @@ Steps perform actions.
 
 Capture points define states.
 
+Each capture point may optionally include a `capture_point_id` for stable identification. When omitted, a deterministic ID is derived from the recipe and state. Duplicate `capture_point_id` values within a recipe are rejected.
+
 Example conceptual recipe:
 
 navigate /profile

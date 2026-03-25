@@ -61,7 +61,8 @@
               "string",
               "null"
             ],
-            "minLength": 1
+            "minLength": 1,
+            "description": "Optional stable identifier for this capture point. When omitted, a deterministic ID is derived from the recipe and state. Duplicate capture_point_ids within a recipe are rejected."
           },
           "state": {
             "type": "string",

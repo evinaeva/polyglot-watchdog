@@ -79,7 +79,7 @@ state
 
 recipe_id if applicable
 
-capture point identifier if applicable
+capture_point_id if applicable (stable identifier for the capture point within the recipe)
 
 2.3 Playwright Session Runner
 
@@ -201,6 +201,8 @@ collect page artifact
 collect elements artifact
 
 capture one full-page screenshot
+
+Each capture point may optionally include a stable `capture_point_id` for precise identification and rerun targeting. When omitted, a deterministic ID is derived from the recipe and state. Duplicate `capture_point_id` values within a recipe must be rejected.
 
 The recipe runner should not treat capture points as optional logs. A capture point is a first-class pipeline output boundary.
 
@@ -496,6 +498,8 @@ user_tier
 state
 
 recipe_id or baseline mode
+
+capture_point_id if applicable (for precise exact-context rerun targeting)
 
 The rerun must execute the same path that produced the original capture.
 
