@@ -1783,3 +1783,37 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3e572425c832ca68237d84d8b4e0c)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #150 — 2026-03-25T14:12:03Z
+
+- Title: Fix check-languages terminalization and stale job handling
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/150
+- Author: evinaeva
+- Base branch: main
+- Head branch: 3cybh0-codex/investigate-and-fix-/check-languages-flow-issues
+- Merge commit: 1f64e0a1215735498a842717afa431f4df538e28
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  - Prevent `/check-languages` from getting stuck in non-terminal states by ensuring stale background jobs are treated as failures and orchestration does not advance when required artifacts are missing.
+  - Surface provider/configuration errors (e.g. missing Phase 6 provider) as terminal failures instead of leaving the UI showing a running stage.
+  
+  ### Description
+  - Normalize stale `check_languages` jobs to failed when reading latest status and when checking for duplicate in-progress jobs by applying `_as_stale_failed_job` / `_is_stale_running_job` in `_find_in_progress_check_languages_job` and `_latest_check_languages_job`.
+  - Harden `_run_check_languages_async(...)` with explicit artifact gates: require `page_screenshots.json` and `collected_items.json` after Phase 1, require `eligible_dataset.json` after Phase 3, and require `issues.json` after Phase 6 so missing outputs terminalize the job at the correct stage.
+  - Change UI page-state precedence so a failed `status` wins over stale `stage` values when rendering `/check-languages` status.
+  - Add/adjust targeted tests in `tests/test_check_languages_page.py` to cover capture failure terminalization, missing artifacts after Phase 1, success path preservation, missing Phase 6 provider surfacing, duplicate-start guard ignoring stale running jobs, and stale job readback in the UI.
+  - Files changed: `app/skeleton_server.py`, `tests/test_check_languages_page.py`.
+  
+  ### Testing
+  - Ran focused regression tests with `PYTHONPATH=. pytest -q tests/test_check_languages_page.py -k "orchestrator or duplicate_guard or stale_check_languages_job or queued_state"`, which exercised the modified orchestration paths and the new/updated assertions; the targeted subset passed (all tests in that subset succeeded).
+  - Ran the full module `PYTHONPATH=. pytest -q tests/test_check_languages_page.py`; the suite exposed several existing expectations in unrelated tests (UI content/fixtures) that remain failing in this environment and were not changed by this patch, so the full module run produced multiple failures not caused by these fixes.
+  - Per-change unit tests added/updated in `tests/test_check_languages_page.py` run as part of the above and validate the fixes described.
+  
+  Note: A live AI provider probe was attempted through the repo provider abstraction, but it was blocked by missing runtime configuration (`PHASE6_REVIEW_PROVIDER` unset) so no external AI call was executed.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3eab968e4832c8e0c4aa98c35f201)
+- Notes: Auto-generated from merged PR metadata.
