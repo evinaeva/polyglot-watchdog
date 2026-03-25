@@ -1404,3 +1404,57 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c38e8f3c20832c94235d2c61ac6b42)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #138 — 2026-03-25T08:15:43Z
+
+- Title: Require explicit Phase 6 review mode; add image coverage reporting, SVG prepass, OCR fallback, schema, tests and CI
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/138
+- Author: evinaeva
+- Base branch: main
+- Head branch: p61ek0-codex/conduct-compliance-audit-for-changes
+- Merge commit: 9992439c4862d7bcad4f1c50584c4602df97b4f1
+- Changed files:
+  - .github/workflows/pytest.yml
+  - README.md
+  - app/skeleton_server.py
+  - contract/schemas/coverage_gaps.schema.json
+  - contract/schemas/phase4_ocr.schema.json
+  - docs/Implementation Playbook.md
+  - docs/PHASE6_TRANSLATION_QA.md
+  - docs/PRODUCT_TRUTHSET.md
+  - pipeline/phase4_ocr.py
+  - pipeline/phase4_ocr_provider.py
+  - pipeline/run_phase6.py
+  - pipeline/schema_validator.py
+  - tests/test_phase4_ocr.py
+  - tests/test_phase6_image_coverage.py
+  - tests/test_phase6_pairing_adversarial.py
+  - tests/test_phase6_review_pipeline.py
+  - tests/test_phase6_schema_compliance.py
+- Description:
+  ### Motivation
+  
+  - Ensure Phase 6 runtime mode is explicit and fail-fast when missing, and track image-text review coverage separately from issues.
+  - Improve OCR pipeline robustness by adding SVG deterministic prepass and a Google Vision fallback when OCR.Space is unavailable or returns empty.
+  - Emit a new `coverage_gaps.json` artifact and surface coverage counters in the phase manifest for operational visibility.
+  
+  ### Description
+  
+  - Enforce explicit Phase 6 review mode: add checks in `skeleton_server._run_phase6`, `_run_check_languages_async`, and make `run_phase6.run` require an explicit `review_mode` (via `--review-mode` or `PHASE6_REVIEW_PROVIDER`) and fail fast when omitted by default.
+  - Add image coverage reporting: introduce `contract/schemas/coverage_gaps.schema.json`, wire it into `pipeline/schema_validator.py`, build `coverage_gaps.json` rows in `pipeline/run_phase6.py` via a new `_build_coverage_gaps` helper, and include coverage URIs and counters in the phase manifest.
+  - Improve OCR handling: update `pipeline/phase4_ocr.py` to perform a deterministic SVG text prepass (`_safe_svg_text_from_src`), compute `asset_hash`, and emit `src`, `alt`, `is_svg`, and `svg_text` fields; skip raster OCR when SVG text is extracted.
+  - Add fallback logic in `pipeline/phase4_ocr_provider.py` to attempt Google Vision when OCR.Space is unavailable or returns empty/malformed results, add `_googlevision_extract_text` helper and optional `vision_client_factory` support, and adjust return semantics and notes to preserve provenance.
+  - Improve pairing heuristics in `pipeline/run_phase6.py` by adding an `item_id` hint weight and relaxing the minimum viable pairing threshold for single-candidate cases, plus deterministic pairing and provenance capture used by coverage rows.
+  - Update documentation and README to declare explicit review modes and the `coverage_gaps.json` reporting contract.
+  - Add CI workflow `/.github/workflows/pytest.yml` to run a deterministic subset of tests on push/pull requests.
+  - Tests: update and add unit tests to cover the new behaviors and schemas, including `tests/test_phase4_ocr.py` updates, and new tests `tests/test_phase6_image_coverage.py` and `tests/test_phase6_pairing_adversarial.py`, plus numerous `phase6` test updates to pass `review_mode` through.
+  
+  ### Testing
+  
+  - Ran the updated unit test subset locally and via the new CI workflow: `tests/test_phase4_ocr.py`, `tests/test_review_and_rerun.py`, `tests/test_recipes_crud.py`, `tests/test_phase4_ocr.py`, `tests/test_phase6_review_pipeline.py`, `tests/test_phase6_schema_compliance.py`, `tests/test_phase6_image_coverage.py`, `tests/test_phase6_pairing_adversarial.py`; all tests passed.
+  - Validated emitted artifacts against the revised schemas using `pipeline.schema_validator.validate` in unit tests; schema validation succeeded for `phase4_ocr` and the new `coverage_gaps` artifact.
+  - Exercised Phase 6 paths that require `review_mode` and confirmed the process fails fast when the mode is not supplied in tests (expected `ValueError`).
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c38edf87c0832cb9bac7996d599e89)
+- Notes: Auto-generated from merged PR metadata.
