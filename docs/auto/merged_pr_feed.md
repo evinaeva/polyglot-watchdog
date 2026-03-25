@@ -1345,3 +1345,29 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c2dd4e8cb4832cbf829ce8ec65f0e9)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #136 — 2026-03-25T07:26:39Z
+
+- Title: Include canonical screenshot_view_url in /api/capture/contexts response
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/136
+- Author: evinaeva
+- Base branch: main
+- Head branch: n0tb8d-codex/fix-missing-screenshot-link-after-first-run
+- Merge commit: aa2305490fd5654baa74c068e5983f2ed5cd254f
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_stage_b_operator_flow_api.py
+- Description:
+  ### Motivation
+  - Workflow contexts were not providing a canonical, clickable screenshot link after the first run because the contexts payload only returned `storage_uri` and the UI expects a `screenshot_view_url` pointing at the `/api/page-screenshot` endpoint.
+  
+  ### Description
+  - Add `screenshot_view_url` to each context row in the `/api/capture/contexts` response using `_page_screenshot_view_url(domain, run_id, page_id)` so the UI can render the canonical screenshot link.
+  - Add an API-level assertion in `tests/test_stage_b_operator_flow_api.py` to lock the contract by checking the new `screenshot_view_url` field is present and correctly formed.
+  
+  ### Testing
+  - Installed dependencies with `pip install -q -r requirements.txt` and ran `PYTHONPATH=. pytest -q tests/test_stage_b_operator_flow_api.py::test_review_persisted_and_joined_in_contexts tests/test_operator_ui_runtime_regressions.py::test_workflow_runtime_uses_canonical_screenshot_view_url_and_safe_empty_state_and_run_label`, and both tests passed (2 passed).
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c38c1a8310832c9b9d2cbda88a71c3)
+- Notes: Auto-generated from merged PR metadata.
