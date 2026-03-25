@@ -598,16 +598,17 @@ def _find_in_progress_check_languages_job(domain: str, en_run_id: str, target_la
             for job in run.get("jobs", []):
                 if not isinstance(job, dict):
                     continue
-                status = str(job.get("status", "")).strip().lower()
+                effective_job = _as_stale_failed_job(job) if _is_stale_running_job(job) else dict(job)
+                status = str(effective_job.get("status", "")).strip().lower()
                 if status not in {"running", "queued"}:
                     continue
-                if str(job.get("type", "")).strip() != "check_languages":
+                if str(effective_job.get("type", "")).strip() != "check_languages":
                     continue
-                if str(job.get("en_run_id", "")).strip() != en_run_id:
+                if str(effective_job.get("en_run_id", "")).strip() != en_run_id:
                     continue
-                if _normalize_target_language(str(job.get("target_language", ""))) != target_language:
+                if _normalize_target_language(str(effective_job.get("target_language", ""))) != target_language:
                     continue
-                found = dict(job)
+                found = dict(effective_job)
                 found["domain"] = run_domain
                 return found
     return None
@@ -623,7 +624,7 @@ def _latest_check_languages_job(domain: str, run_id: str) -> dict | None:
         for job in run.get("jobs", []):
             if not isinstance(job, dict) or str(job.get("type", "")).strip() != "check_languages":
                 continue
-            item = dict(job)
+            item = _as_stale_failed_job(job) if _is_stale_running_job(job) else dict(job)
             item["domain"] = run_domain
             candidates.append(item)
     if not candidates:
@@ -1574,6 +1575,8 @@ def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_
             "contexts": len(replay_jobs),
         })
         asyncio.run(phase1_main(domain, target_run_id, target_language, "desktop", "baseline", None, jobs_override=replay_jobs))
+        _require_artifact_exists(domain, target_run_id, "page_screenshots.json")
+        _require_artifact_exists(domain, target_run_id, "collected_items.json")
     except Exception as exc:
         _jobs[job_id]["status"] = "error"
         _jobs[job_id]["error"] = str(exc)
@@ -1600,10 +1603,12 @@ def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_
             "target_url": target_url,
         })
         phase3_run(domain=domain, run_id=target_run_id)
+        _require_artifact_exists(domain, target_run_id, "eligible_dataset.json")
         review_mode = os.environ.get("PHASE6_REVIEW_PROVIDER", "").strip()
         if not review_mode:
             raise ValueError("PHASE6_REVIEW_PROVIDER is required for check-languages Phase 6 execution")
         phase6_run(domain=domain, en_run_id=en_run_id, target_run_id=target_run_id, review_mode=review_mode)
+        _require_artifact_exists(domain, target_run_id, "issues.json")
         _jobs[job_id]["status"] = "done"
         _upsert_job_status(domain, target_run_id, {
             "job_id": job_id,
@@ -3371,7 +3376,9 @@ class SkeletonHandler(BaseHTTPRequestHandler):
 
             latest_status = str((latest_job or {}).get("status", "")).strip().lower()
             stage = str((latest_job or {}).get("stage", "")).strip().lower()
-            if latest_status in {"queued"} or stage == "queued":
+            if latest_status in {"failed", "error"}:
+                page_state = "failed"
+            elif latest_status in {"queued"} or stage == "queued":
                 page_state = "queued"
             elif stage == "preparing_target_run":
                 page_state = "preparing_target_run"
@@ -3379,8 +3386,6 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 page_state = "running_target_capture"
             elif stage == "running_comparison":
                 page_state = "running_comparison"
-            elif latest_status in {"failed", "error"}:
-                page_state = "failed"
             elif issues_summary is not None:
                 page_state = "completed_with_zero_issues" if issues_summary["total"] == 0 else "completed_with_issues"
             elif latest_status == "succeeded":
