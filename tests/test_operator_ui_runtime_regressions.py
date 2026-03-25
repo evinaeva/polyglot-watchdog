@@ -244,6 +244,127 @@ def test_workflow_runtime_uses_canonical_screenshot_view_url_and_safe_empty_stat
     assert 'open</a>' not in out["secondHtml"]
 
 
+def test_workflow_runtime_formats_utc_timestamps_in_tallinn_with_dst():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function makeElement(id='') {
+          return {
+            id,
+            value: '',
+            href: '',
+            innerHTML: '',
+            textContent: '',
+            className: '',
+            dataset: {},
+            disabled: false,
+            classList: { add(){}, remove(){}, toggle(){} },
+            setAttribute(){},
+            appendChild(){},
+            addEventListener(){},
+            querySelector(){ return makeElement('qs'); },
+          };
+        }
+
+        const ids = ['wfDomain','wfRefreshUrls','wfSavedUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
+        const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
+        const sandbox = {
+          console,
+          URLSearchParams,
+          window: { location: { search: '' }, history: { replaceState(){} } },
+          document: { getElementById: (id) => els[id], createElement: () => makeElement('created') },
+          fetch: async () => ({ ok: true, json: async () => ({ runs: [], items: [], contexts: [], capture: { status: 'not_started' }, run: {} }) }),
+          setInterval: () => 1,
+          clearInterval: () => {},
+          safeReadPayload: async (response) => response.json(),
+        };
+
+        vm.createContext(sandbox);
+        vm.runInContext(fs.readFileSync('web/static/workflow.js', 'utf8'), sandbox);
+
+        console.log(JSON.stringify({
+          winter: sandbox.formatUtcTimestampForUi('2026-01-15T10:00:00Z'),
+          summer: sandbox.formatUtcTimestampForUi('2026-07-15T10:00:00Z'),
+        }));
+        """
+    )
+    out = _run_node_json(script)
+    assert out["winter"] == "2026-01-15 12:00"
+    assert out["summer"] == "2026-07-15 13:00"
+
+
+def test_workflow_runtime_sorting_uses_raw_utc_timestamp_not_display_value():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+        function makeElement(id='') {
+          return {
+            id, value: '', href: '', innerHTML: '', textContent: '', className: '', dataset: {}, disabled: false,
+            classList: { add(){}, remove(){}, toggle(){} }, setAttribute(){}, appendChild(){}, addEventListener(){},
+            querySelector(){ return makeElement('qs'); },
+          };
+        }
+        const ids = ['wfDomain','wfRefreshUrls','wfSavedUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
+        const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
+        const sandbox = {
+          console,
+          URLSearchParams,
+          window: { location: { search: '' }, history: { replaceState(){} } },
+          document: { getElementById: (id) => els[id], createElement: () => makeElement('created') },
+          fetch: async () => ({ ok: true, json: async () => ({ runs: [], items: [], contexts: [], capture: { status: 'not_started' }, run: {} }) }),
+          setInterval: () => 1,
+          clearInterval: () => {},
+          safeReadPayload: async (response) => response.json(),
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(fs.readFileSync('web/static/workflow.js', 'utf8'), sandbox);
+        const out = sandbox.sortRunsNewestFirst([
+          { run_id: 'older', created_at: '2026-01-15T10:00:00Z' },
+          { run_id: 'newer', created_at: '2026-01-15T11:00:00Z' },
+        ]);
+        console.log(JSON.stringify({ first: out[0].run_id, second: out[1].run_id }));
+        """
+    )
+    out = _run_node_json(script)
+    assert out["first"] == "newer"
+    assert out["second"] == "older"
+
+
+def test_upsert_job_status_keeps_utc_storage_timestamps(monkeypatch):
+    repo_root = Path(__file__).resolve().parents[1]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+    sys.modules.setdefault(
+        "jsonschema",
+        types.SimpleNamespace(validate=lambda *_a, **_k: None, ValidationError=Exception, Draft7Validator=object),
+    )
+    from app.skeleton_server import _upsert_job_status
+
+    state = {"runs": []}
+
+    def fake_load(_domain):
+        return state
+
+    def fake_save(_domain, payload):
+        state.clear()
+        state.update(payload)
+
+    monkeypatch.setattr("app.skeleton_server._load_runs", fake_load)
+    monkeypatch.setattr("app.skeleton_server._save_runs", fake_save)
+    monkeypatch.setattr("app.skeleton_server.time.strftime", lambda *_args, **_kwargs: "2026-01-15T10:00:00Z")
+
+    _upsert_job_status("example.com", "r1", {"job_id": "j1", "status": "queued"})
+
+    run = state["runs"][0]
+    job = run["jobs"][0]
+    assert run["created_at"] == "2026-01-15T10:00:00Z"
+    assert job["created_at"] == "2026-01-15T10:00:00Z"
+    assert job["updated_at"] == "2026-01-15T10:00:00Z"
+
+
 def test_en_standard_helper_and_pulls_success_message_runtime_flow():
     repo_root = Path(__file__).resolve().parents[1]
     if str(repo_root) not in sys.path:

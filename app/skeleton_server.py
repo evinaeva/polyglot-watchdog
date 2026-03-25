@@ -9,6 +9,7 @@ AUTH_MODE = "ON"
 from __future__ import annotations
 
 import csv
+import datetime
 import html
 import io
 import json
@@ -27,6 +28,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+from zoneinfo import ZoneInfo
 
 # Ensure project root is on sys.path for pipeline imports
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -81,6 +83,7 @@ SUPPORTED_CHECK_LANGUAGE_DOMAINS = [
 # In-memory job status store (cleared on restart — for UI feedback only)
 _jobs: dict[str, dict] = {}
 _template_cache: dict[Path, tuple[int, str]] = {}
+_TALLINN_TZ = ZoneInfo("Europe/Tallinn")
 
 
 def _read_json_safe(domain: str, run_id: str, filename: str, default):
@@ -731,11 +734,13 @@ def _save_runs(domain: str, payload: dict) -> None:
 
 
 def _en_standard_display_name_today() -> str:
-    return f"EN_standard_{time.strftime('%H:%M|%d.%m.%Y', time.gmtime())}"
+    now_tallinn = datetime.datetime.now(datetime.UTC).astimezone(_TALLINN_TZ)
+    return f"EN_standard_{now_tallinn.strftime('%H:%M|%d.%m.%Y')}"
 
 
 def _default_run_display_name() -> str:
-    return f"First_run_{time.strftime('%H:%M|%d.%m.%Y', time.gmtime())}"
+    now_tallinn = datetime.datetime.now(datetime.UTC).astimezone(_TALLINN_TZ)
+    return f"First_run_{now_tallinn.strftime('%H:%M|%d.%m.%Y')}"
 
 
 def _upsert_run_metadata(domain: str, run_id: str, metadata: dict) -> None:

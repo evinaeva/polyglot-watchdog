@@ -8,6 +8,25 @@ const selectedOpenContexts = document.getElementById('selectedOpenContexts');
 const selectedOpenPulls = document.getElementById('selectedOpenPulls');
 const selectedOpenIssues = document.getElementById('selectedOpenIssues');
 const selectedExportCsv = document.getElementById('selectedExportCsv');
+const tallinnDateTimeFormatter = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Europe/Tallinn',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+
+function formatUtcTimestampForUi(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw;
+  const parts = tallinnDateTimeFormatter.formatToParts(parsed);
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${map.year}-${map.month}-${map.day} ${map.hour}:${map.minute}`;
+}
 
 function runHubSetError(message) {
   runHubError.textContent = message || '';
@@ -81,7 +100,7 @@ async function loadRuns() {
   for (const run of runs) {
     const runId = String(run.run_id || '');
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${runId}</td><td>${run.created_at || ''}</td><td>${(run.jobs || []).length}</td><td></td>`;
+    tr.innerHTML = `<td>${runId}</td><td>${formatUtcTimestampForUi(run.created_at)}</td><td>${(run.jobs || []).length}</td><td></td>`;
     const actions = document.createElement('div');
     actions.innerHTML = [
       `<button type="button" data-run-select="${runId}">Select</button>`,
