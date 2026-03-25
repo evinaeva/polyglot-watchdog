@@ -10,6 +10,9 @@ import pytest
 from app.skeleton_server import SkeletonHandler
 from pipeline import storage
 
+SUPPORTED_MAIN_DOMAIN = "https://bongacams.com/"
+SUPPORTED_TEST_DOMAIN = "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html"
+
 
 class _BlobMeta:
     def __init__(self, name: str):
@@ -102,6 +105,12 @@ def _seed_runs(domain: str):
     })
 
 
+def _query(params: dict[str, str]) -> str:
+    from urllib.parse import urlencode
+
+    return urlencode(params)
+
+
 def _seed_pages(domain: str, run_id: str, language: str, rows: list[dict] | None = None):
     if rows is None:
         rows = [{"page_id": "p1", "language": language, "url": "https://example.com", "viewport_kind": "desktop", "state": "baseline", "user_tier": "guest"}]
@@ -117,7 +126,7 @@ def _seed_phase6_prereqs(domain: str, run_id: str, language: str = "en"):
 
 
 def test_get_check_languages_renders_new_inputs(api_env):
-    domain = "example.com"
+    domain = SUPPORTED_MAIN_DOMAIN
     _seed_runs(domain)
     _seed_pages(domain, "run-en", "en")
     _seed_pages(domain, "run-fr-old", "fr")
@@ -126,6 +135,11 @@ def test_get_check_languages_renders_new_inputs(api_env):
     assert status == HTTPStatus.OK
     assert 'name="en_run_id"' in body
     assert 'name="target_language"' in body
+    assert 'name="selected_domain"' in body
+    assert '<option value="https://bongacams.com/"' in body
+    assert '<option value="https://bongamodels.com/"' in body
+    assert '<option value="https://bongacash.com/"' in body
+    assert '<option value="https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html"' in body
     assert 'name="run_id"' not in body
 
 
@@ -133,58 +147,58 @@ def test_get_check_languages_renders_new_inputs(api_env):
     ("path", "expected"),
     [
         ("/check-languages", "Domain is required."),
-        ("/check-languages?domain=example.com&target_language=fr", "English reference run is required."),
-        ("/check-languages?domain=example.com&en_run_id=run-en", "Target language is required."),
+        ("/check-languages?selected_domain=https%3A%2F%2Fbongacams.com%2F&target_language=fr", "English reference run is required."),
+        ("/check-languages?selected_domain=https%3A%2F%2Fbongacams.com%2F&en_run_id=run-en", "Target language is required."),
     ],
 )
 def test_get_check_languages_missing_input_validation(api_env, path, expected):
-    _seed_runs("example.com")
-    _seed_pages("example.com", "run-en", "en")
+    _seed_runs(SUPPORTED_MAIN_DOMAIN)
+    _seed_pages(SUPPORTED_MAIN_DOMAIN, "run-en", "en")
     status, body, _ = _request("GET", api_env, path)
     assert status == HTTPStatus.OK
     assert expected in body
 
 
 def test_post_rejects_non_english_reference(api_env):
-    domain = "example.com"
+    domain = SUPPORTED_MAIN_DOMAIN
     _seed_runs(domain)
     _seed_pages(domain, "run-en", "en")
     _seed_pages(domain, "run-fr-old", "fr")
 
-    form = "domain=example.com&en_run_id=run-fr-old&target_language=ja"
+    form = _query({"selected_domain": domain, "en_run_id": "run-fr-old", "target_language": "ja"})
     status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
     assert status_post == HTTPStatus.FOUND
     assert "not+English-only" in location
 
 
 def test_post_starts_composed_async_workflow(api_env, monkeypatch):
-    domain = "example.com"
+    domain = SUPPORTED_MAIN_DOMAIN
     _seed_runs(domain)
     _seed_phase6_prereqs(domain, "run-en", "en")
     _seed_pages(domain, "run-fr-old", "fr")
 
     started = {}
 
-    def _fake_run(job_id, domain, en_run_id, target_language, target_run_id):
-        started["args"] = (job_id, domain, en_run_id, target_language, target_run_id)
+    def _fake_run(job_id, domain, en_run_id, target_language, target_run_id, target_url):
+        started["args"] = (job_id, domain, en_run_id, target_language, target_run_id, target_url)
 
     monkeypatch.setattr("app.skeleton_server._run_check_languages_async", _fake_run)
 
-    form = "domain=example.com&en_run_id=run-en&target_language=fr"
+    form = _query({"selected_domain": domain, "en_run_id": "run-en", "target_language": "fr"})
     status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
     assert status_post == HTTPStatus.FOUND
     parsed = parse_qs(urlparse(location).query)
     assert parsed["message"][0] == "Language check started."
     assert parsed["target_run_id"][0].startswith("run-en-check-fr")
-    assert started["args"][1:] == ("example.com", "run-en", "fr", parsed["target_run_id"][0])
+    assert started["args"][1:] == (domain, "run-en", "fr", parsed["target_run_id"][0], "https://fr.bongacams.com/")
 
     runs = storage.read_json_artifact(domain, "manual", "capture_runs.json")
     run = next(row for row in runs["runs"] if row["run_id"] == parsed["target_run_id"][0])
-    assert any(job.get("type") == "check_languages" and job.get("status") == "queued" for job in run["jobs"])
+    assert any(job.get("type") == "check_languages" and job.get("status") == "queued" and job.get("target_url") == "https://fr.bongacams.com/" for job in run["jobs"])
 
 
 def test_duplicate_in_progress_guard(api_env):
-    domain = "example.com"
+    domain = SUPPORTED_MAIN_DOMAIN
     _seed_runs(domain)
     _seed_phase6_prereqs(domain, "run-en", "en")
     _seed_pages(domain, "run-fr-old", "fr")
@@ -196,14 +210,14 @@ def test_duplicate_in_progress_guard(api_env):
         ]
     })
 
-    form = "domain=example.com&en_run_id=run-en&target_language=fr"
+    form = _query({"selected_domain": domain, "en_run_id": "run-en", "target_language": "fr"})
     status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
     assert status_post == HTTPStatus.FOUND
     assert "already+in+progress" in location
 
 
 def test_completed_state_shows_target_run_and_summary(api_env):
-    domain = "example.com"
+    domain = SUPPORTED_MAIN_DOMAIN
     _seed_runs(domain)
     _seed_phase6_prereqs(domain, "run-en", "en")
     target_run_id = "run-en-check-fr"
@@ -226,7 +240,7 @@ def test_completed_state_shows_target_run_and_summary(api_env):
 
 
 def test_target_language_options_allow_first_non_english_run(api_env):
-    domain = "example.com"
+    domain = SUPPORTED_MAIN_DOMAIN
     _seed_runs(domain)
     _seed_pages(domain, "run-en", "en")
 
@@ -236,7 +250,7 @@ def test_target_language_options_allow_first_non_english_run(api_env):
 
 
 def test_get_check_languages_auto_selects_latest_successful_english_standard(api_env):
-    domain = "example.com"
+    domain = SUPPORTED_MAIN_DOMAIN
     _write("_system", "manual", "domains.json", {"domains": [domain]})
     _write(domain, "manual", "capture_runs.json", {
         "runs": [
@@ -257,7 +271,7 @@ def test_get_check_languages_auto_selects_latest_successful_english_standard(api
 
 
 def test_get_check_languages_auto_selects_en_standard_success_marker_when_not_ready(api_env):
-    domain = "example.com"
+    domain = SUPPORTED_MAIN_DOMAIN
     _write("_system", "manual", "domains.json", {"domains": [domain]})
     _write(domain, "manual", "capture_runs.json", {
         "runs": [
@@ -280,7 +294,7 @@ def test_get_check_languages_auto_selects_en_standard_success_marker_when_not_re
 
 
 def test_get_check_languages_en_option_uses_metadata_display_label(api_env):
-    domain = "example.com"
+    domain = SUPPORTED_MAIN_DOMAIN
     _write("_system", "manual", "domains.json", {"domains": [domain]})
     _write(domain, "manual", "capture_runs.json", {
         "runs": [
@@ -297,7 +311,7 @@ def test_get_check_languages_en_option_uses_metadata_display_label(api_env):
 
 
 def test_get_check_languages_en_option_uses_metadata_display_name(api_env):
-    domain = "example.com"
+    domain = SUPPORTED_MAIN_DOMAIN
     _write("_system", "manual", "domains.json", {"domains": [domain]})
     _write(domain, "manual", "capture_runs.json", {
         "runs": [
@@ -314,18 +328,18 @@ def test_get_check_languages_en_option_uses_metadata_display_name(api_env):
 
 
 def test_post_rejects_when_english_reference_not_phase6_ready(api_env):
-    domain = "example.com"
+    domain = SUPPORTED_MAIN_DOMAIN
     _seed_runs(domain)
     _seed_pages(domain, "run-en", "en")
 
-    form = "domain=example.com&en_run_id=run-en&target_language=fr"
+    form = _query({"selected_domain": domain, "en_run_id": "run-en", "target_language": "fr"})
     status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
     assert status_post == HTTPStatus.FOUND
     assert "not+ready+for+comparison+prerequisites" in location
 
 
 def test_queued_state_is_rendered_as_queued(api_env):
-    domain = "example.com"
+    domain = SUPPORTED_MAIN_DOMAIN
     _seed_runs(domain)
     _seed_phase6_prereqs(domain, "run-en", "en")
     _seed_pages(domain, "run-en-check-fr", "fr")
@@ -339,6 +353,96 @@ def test_queued_state_is_rendered_as_queued(api_env):
     status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id=run-en-check-fr")
     assert status == HTTPStatus.OK
     assert 'Current state: <strong id="checkLanguagesState">queued</strong>' in body
+
+
+@pytest.mark.parametrize(
+    ("selected_domain", "language", "expected"),
+    [
+        ("https://bongacams.com/", "de", "https://de.bongacams.com/"),
+        ("https://bongamodels.com/", "de", "https://de.bongamodels.com/"),
+        ("https://bongacash.com/", "de", "https://de.bongacash.com/"),
+        (
+            "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html",
+            "de",
+            "https://evinaeva.github.io/polyglot-watchdog-testsite/de/index.html",
+        ),
+    ],
+)
+def test_target_url_generation_for_supported_domains(selected_domain, language, expected):
+    from app.skeleton_server import _build_check_languages_target_url
+
+    assert _build_check_languages_target_url(selected_domain, language) == expected
+
+
+def test_target_url_generation_rejects_unsupported_domain():
+    from app.skeleton_server import _build_check_languages_target_url
+
+    with pytest.raises(ValueError, match="unsupported"):
+        _build_check_languages_target_url("https://unsupported.example/", "de")
+
+
+def test_post_rejects_unsupported_domain(api_env):
+    _seed_runs(SUPPORTED_MAIN_DOMAIN)
+    _seed_phase6_prereqs(SUPPORTED_MAIN_DOMAIN, "run-en", "en")
+    form = _query({"selected_domain": "https://unsupported.example/", "en_run_id": "run-en", "target_language": "fr"})
+    status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
+    assert status_post == HTTPStatus.FOUND
+    assert "Selected+domain+is+unsupported." in location
+
+
+@pytest.mark.parametrize(
+    ("selected_domain", "expected_target_url"),
+    [
+        ("https://bongacams.com/", "https://de.bongacams.com/"),
+        ("https://bongamodels.com/", "https://de.bongamodels.com/"),
+        ("https://bongacash.com/", "https://de.bongacash.com/"),
+        (
+            "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html",
+            "https://evinaeva.github.io/polyglot-watchdog-testsite/de/index.html",
+        ),
+    ],
+)
+def test_post_passes_generated_target_url_into_runtime_execution(api_env, monkeypatch, selected_domain, expected_target_url):
+    _seed_runs(selected_domain)
+    _seed_phase6_prereqs(selected_domain, "run-en", "en")
+    _seed_pages(selected_domain, "run-fr-old", "fr")
+
+    started = {}
+
+    def _fake_run(job_id, domain, en_run_id, target_language, target_run_id, target_url):
+        started["args"] = (job_id, domain, en_run_id, target_language, target_run_id, target_url)
+
+    monkeypatch.setattr("app.skeleton_server._run_check_languages_async", _fake_run)
+
+    form = _query({"selected_domain": selected_domain, "en_run_id": "run-en", "target_language": "de"})
+    status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
+    assert status_post == HTTPStatus.FOUND
+    assert started["args"][1] == selected_domain
+    assert started["args"][2] == "run-en"
+    assert started["args"][3] == "de"
+    assert started["args"][5] == expected_target_url
+
+    parsed = parse_qs(urlparse(location).query)
+    assert parsed["generated_target_url"][0] == expected_target_url
+
+
+def test_post_preserves_selected_domain_and_language_and_shows_generated_target_url(api_env, monkeypatch):
+    domain = SUPPORTED_TEST_DOMAIN
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_pages(domain, "run-fr-old", "fr")
+    monkeypatch.setattr("app.skeleton_server._run_check_languages_async", lambda *args, **kwargs: None)
+
+    form = _query({"selected_domain": domain, "en_run_id": "run-en", "target_language": "de"})
+    status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
+    assert status_post == HTTPStatus.FOUND
+
+    status_get, body, _ = _request("GET", api_env, location)
+    assert status_get == HTTPStatus.OK
+    assert f'<option value="{domain}" selected="selected">' in body
+    assert '<option value="de" selected="selected">' in body
+    assert "Generated target URL: <code>https://evinaeva.github.io/polyglot-watchdog-testsite/de/index.html</code>" in body
+    assert "Target language is required." not in body
 
 
 def test_replay_scope_helper_uses_reference_contexts(monkeypatch):
@@ -360,17 +464,17 @@ def test_replay_scope_helper_uses_reference_contexts(monkeypatch):
 
     from app.skeleton_server import _replay_scope_from_reference_run
 
-    jobs = _replay_scope_from_reference_run("example.com", "run-en", "ja")
+    jobs = _replay_scope_from_reference_run("https://bongacams.com/", "run-en", "ja", "https://ja.bongacams.com/")
     assert len(jobs) == 2
     assert calls == [
-        ("example.com", "https://example.com/a", "ja", "desktop", "baseline", "guest"),
-        ("example.com", "https://example.com/a", "ja", "desktop", "checkout", "pro"),
+        ("https://bongacams.com/", "https://ja.bongacams.com/a", "ja", "desktop", "baseline", "guest"),
+        ("https://bongacams.com/", "https://ja.bongacams.com/a", "ja", "desktop", "checkout", "pro"),
     ]
 
 
 def test_orchestrator_runs_capture_then_comparison(monkeypatch):
     calls = []
-    monkeypatch.setattr("app.skeleton_server._replay_scope_from_reference_run", lambda d, e, t: ["j1", "j2"])
+    monkeypatch.setattr("app.skeleton_server._replay_scope_from_reference_run", lambda d, e, t, u: ["j1", "j2"])
 
     async def _fake_main(*args, **kwargs):
         calls.append("phase1")
@@ -382,13 +486,13 @@ def test_orchestrator_runs_capture_then_comparison(monkeypatch):
 
     from app.skeleton_server import _run_check_languages_async
 
-    _run_check_languages_async("job1", "example.com", "run-en", "fr", "run-en-check-fr")
+    _run_check_languages_async("job1", "https://bongacams.com/", "run-en", "fr", "run-en-check-fr", "https://fr.bongacams.com/")
     assert calls == ["phase1", "phase3", "phase6"]
 
 
 def test_orchestrator_stops_before_comparison_on_capture_failure(monkeypatch):
     calls = []
-    monkeypatch.setattr("app.skeleton_server._replay_scope_from_reference_run", lambda d, e, t: ["j1"])
+    monkeypatch.setattr("app.skeleton_server._replay_scope_from_reference_run", lambda d, e, t, u: ["j1"])
 
     async def _fake_main(*args, **kwargs):
         calls.append("phase1")
@@ -402,13 +506,13 @@ def test_orchestrator_stops_before_comparison_on_capture_failure(monkeypatch):
 
     from app.skeleton_server import _run_check_languages_async
 
-    _run_check_languages_async("job1", "example.com", "run-en", "fr", "run-en-check-fr")
+    _run_check_languages_async("job1", "https://bongacams.com/", "run-en", "fr", "run-en-check-fr", "https://fr.bongacams.com/")
     assert calls == ["phase1"]
     assert any(str(rec.get("stage")) == "running_target_capture_failed" for rec in updates)
 
 
 def test_orchestrator_surfaces_comparison_failure(monkeypatch):
-    monkeypatch.setattr("app.skeleton_server._replay_scope_from_reference_run", lambda d, e, t: ["j1"])
+    monkeypatch.setattr("app.skeleton_server._replay_scope_from_reference_run", lambda d, e, t, u: ["j1"])
 
     async def _fake_main(*args, **kwargs):
         return None
@@ -421,5 +525,5 @@ def test_orchestrator_surfaces_comparison_failure(monkeypatch):
 
     from app.skeleton_server import _run_check_languages_async
 
-    _run_check_languages_async("job1", "example.com", "run-en", "fr", "run-en-check-fr")
+    _run_check_languages_async("job1", "https://bongacams.com/", "run-en", "fr", "run-en-check-fr", "https://fr.bongacams.com/")
     assert any(str(rec.get("stage")) == "running_comparison_failed" for rec in updates)
