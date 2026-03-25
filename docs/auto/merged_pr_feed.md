@@ -1917,3 +1917,38 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3f49fab00832cbced361d5c37b7e5)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #154 — 2026-03-25T15:26:08Z
+
+- Title: docs-autoupdate: migrate docs AI sync runtime to Gemini (AI_MODEL/AI_API_KEY)
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/154
+- Author: evinaeva
+- Base branch: main
+- Head branch: vj7qqm-codex/implement-docs-auto-update-subsystem-patch
+- Merge commit: 87c9daa9b163e675ca8209c87d6e44882cfc32af
+- Changed files:
+  - .github/docs_autoupdate/README.md
+  - .github/docs_autoupdate/scripts/docs_ai_sync.py
+  - .github/workflows/docs-ai-sync.yml
+  - tests/test_docs_autoupdate_scripts.py
+- Description:
+  ### Motivation
+  - Complete the provider migration so the docs auto-update runtime actually uses Gemini-compatible request/response handling instead of Anthropic-specific code.
+  - Rename environment variables and set a Gemini default model to centralize configuration via `AI_API_KEY` and `AI_MODEL` and avoid stale `ANTHROPIC_*` usage.
+  - Fix documentation drift and move the scheduled run exactly two hours earlier while preserving existing pipeline behavior.
+  
+  ### Description
+  - Replaced Anthropic-specific runtime with a Gemini-compatible call helper `call_ai_model` in ` .github/docs_autoupdate/scripts/docs_ai_sync.py`, changed request payload to use `contents` + `generationConfig`, and parse `candidates -> content -> parts` from the response.
+  - Updated runtime defaults and names: set `DEFAULT_MODEL` to `gemini-2.5-flash-lite`, replaced `ANTHROPIC_API_KEY`/`ANTHROPIC_MODEL` reads with `AI_API_KEY`/`AI_MODEL`, and switched raw-response debug path to `.github/tmp/ai_raw_response.txt`.
+  - Updated the scheduled workflow in ` .github/workflows/docs-ai-sync.yml` to run at `0 3 * * *` (two hours earlier) and to expose `AI_API_KEY`/`AI_MODEL`, and adjusted artifact upload references to the new raw response path/name.
+  - Corrected subsystem documentation in ` .github/docs_autoupdate/README.md` to use the actual `.github/docs_autoupdate/...` script paths, to describe feed append semantics and delta processing, and to note the sync cursor location `docs/auto/docs_sync_state.json`.
+  - Updated tests in `tests/test_docs_autoupdate_scripts.py` to monkeypatch `call_ai_model` and to use `AI_API_KEY`/`AI_MODEL`; preserved existing test intent and coverage.
+  
+  ### Testing
+  - Ran unit tests with `pytest -q tests/test_docs_autoupdate_scripts.py` and all tests passed (`16 passed`).
+  - Verified via automated string searches that `call_claude`, `api.anthropic.com`, and `anthropic-version` no longer appear in the touched subsystem files.
+  - Confirmed only the intended files were modified: ` .github/docs_autoupdate/README.md`, ` .github/docs_autoupdate/scripts/docs_ai_sync.py`, ` .github/workflows/docs-ai-sync.yml`, and ` tests/test_docs_autoupdate_scripts.py`.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3fcc1d2e8832c805c3cb6b71911ee)
+- Notes: Auto-generated from merged PR metadata.
