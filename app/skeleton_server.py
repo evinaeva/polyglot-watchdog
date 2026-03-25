@@ -3434,6 +3434,67 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         if issues_missing_after_completion:
             issue_summary_block += '<p class="error">Job completed but issues.json is missing.</p>'
 
+        llm_review_stats_block = "<p>LLM telemetry is not available yet.</p>"
+        llm_stats_exists = bool(domain and target_run_id and _artifact_exists(target_run_domain if 'target_run_domain' in locals() else domain, target_run_id, "llm_review_stats.json"))
+        if llm_stats_exists:
+            raw_llm_stats = _read_json_safe(target_run_domain if 'target_run_domain' in locals() else domain, target_run_id, "llm_review_stats.json", None)
+            if not isinstance(raw_llm_stats, dict):
+                llm_review_stats_block = '<p class="warning">Malformed telemetry: llm_review_stats.json must be an object.</p>'
+            else:
+                llm_requested = raw_llm_stats.get("llm_requested")
+                if isinstance(llm_requested, bool) and llm_requested is False:
+                    llm_review_stats_block = "<p>No real LLM request was sent.</p>"
+                else:
+                    provider = str(raw_llm_stats.get("provider", "")).strip()
+                    model = str(raw_llm_stats.get("model", "")).strip()
+                    prompt_tokens = raw_llm_stats.get("prompt_tokens")
+                    completion_tokens = raw_llm_stats.get("completion_tokens")
+                    total_tokens = raw_llm_stats.get("total_tokens")
+                    cost_usd = raw_llm_stats.get("cost_usd")
+                    status_value = str(raw_llm_stats.get("status", "")).strip().lower()
+                    fallback_mode = str(raw_llm_stats.get("fallback_mode", "")).strip().lower()
+                    malformed_bits: list[str] = []
+                    if status_value not in {"", "running", "completed"}:
+                        malformed_bits.append(f"status={raw_llm_stats.get('status', '')}")
+                    if not provider:
+                        malformed_bits.append(f"provider={raw_llm_stats.get('provider', '')}")
+                    if not model:
+                        malformed_bits.append(f"model={raw_llm_stats.get('model', '')}")
+                    if not isinstance(prompt_tokens, int):
+                        malformed_bits.append(f"prompt_tokens={raw_llm_stats.get('prompt_tokens', '')}")
+                    if not isinstance(completion_tokens, int):
+                        malformed_bits.append(f"completion_tokens={raw_llm_stats.get('completion_tokens', '')}")
+                    if not isinstance(total_tokens, int):
+                        malformed_bits.append(f"total_tokens={raw_llm_stats.get('total_tokens', '')}")
+                    if not isinstance(cost_usd, (float, int)):
+                        malformed_bits.append(f"cost_usd={raw_llm_stats.get('cost_usd', '')}")
+                    if fallback_mode not in {"", "none", "partial", "full"}:
+                        malformed_bits.append(f"fallback_mode={raw_llm_stats.get('fallback_mode', '')}")
+                    if malformed_bits:
+                        llm_review_stats_block = f'<p class="warning">Malformed telemetry: {_h("; ".join(malformed_bits))}</p>'
+                    else:
+                        fallback_label = "No fallback was used."
+                        if fallback_mode == "partial":
+                            fallback_label = "Partial fallback was used."
+                        elif fallback_mode == "full":
+                            fallback_label = "Full fallback was used."
+                        llm_review_stats_block = (
+                            "<ul>"
+                            f"<li>Provider: <strong>{_h(provider)}</strong></li>"
+                            f"<li>Model: <strong>{_h(model)}</strong></li>"
+                            f"<li>Prompt tokens: <strong>{prompt_tokens}</strong></li>"
+                            f"<li>Completion tokens: <strong>{completion_tokens}</strong></li>"
+                            f"<li>Total tokens: <strong>{total_tokens}</strong></li>"
+                            f"<li>Cost (USD): <strong>{float(cost_usd):.4f}</strong></li>"
+                            f"<li>{_h(fallback_label)}</li>"
+                            "</ul>"
+                        )
+        else:
+            if page_state.startswith("running_") or page_state == "queued":
+                llm_review_stats_block = "<p>LLM telemetry is not available yet while the run is still running.</p>"
+            elif page_state in {"completed", "completed_with_zero_issues", "completed_with_issues"}:
+                llm_review_stats_block = '<p class="warning">Missing telemetry after completion.</p>'
+
         latest_job_block = "<p>No composed language-check job has been started yet.</p>"
         if isinstance(latest_job, dict):
             latest_job_block = (
@@ -3485,6 +3546,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 "{{en_read_error}}": _h(en_readiness.get("read_error", "") or "—"),
                 "{{en_ready}}": _h("ready" if en_readiness.get("ready") else "not_ready"),
                 "{{issues_summary}}": issue_summary_block,
+                "{{llm_review_stats}}": llm_review_stats_block,
                 "{{latest_job}}": latest_job_block,
                 "{{issues_link}}": _h(issues_link),
                 "{{issues_api_link}}": _h(issues_api_link),
