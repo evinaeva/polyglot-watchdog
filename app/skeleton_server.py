@@ -539,8 +539,8 @@ def _replay_scope_from_reference_run(domain: str, en_run_id: str, target_languag
         state = str(row.get("state", "")).strip()
         user_tier_raw = row.get("user_tier")
         user_tier = str(user_tier_raw).strip() if user_tier_raw not in (None, "") else None
-        recipe_id = str(row.get("recipe_id", "")).strip() or None
-        capture_point_id = str(row.get("capture_point_id", "")).strip() or None
+        recipe_id = _normalize_optional_string(row.get("recipe_id"))
+        capture_point_id = _normalize_optional_string(row.get("capture_point_id"))
         if not reference_url or not viewport_kind or not state:
             raise ValueError("reference run scope is incomplete in page_screenshots.json")
         url = _target_capture_url_from_reference_url(reference_url, domain, target_url)
@@ -1366,8 +1366,8 @@ def _parse_rerun_payload(payload: dict) -> dict:
     if missing:
         raise ValueError(f"missing required fields: {', '.join(missing)}")
     state = str(payload.get("state", "")).strip()
-    recipe_id = str(payload.get("recipe_id", "")).strip() or None
-    capture_point_id = str(payload.get("capture_point_id", "")).strip() or None
+    recipe_id = _normalize_optional_string(payload.get("recipe_id"))
+    capture_point_id = _normalize_optional_string(payload.get("capture_point_id"))
     if state == "baseline" and (recipe_id or capture_point_id):
         raise ValueError("baseline rerun cannot include recipe_id/capture_point_id")
     if state != "baseline" and (bool(recipe_id) != bool(capture_point_id)):
