@@ -1,4 +1,5 @@
 import json
+from urllib.error import URLError
 
 import pytest
 
@@ -226,3 +227,113 @@ def test_test_heuristic_provider_has_required_provenance_fields():
     }
     assert sg.provider_meta == expected
     assert meaning.provider_meta == expected
+
+
+def test_llm_stats_success_with_usage_payload():
+    def good_request(endpoint, api_key, timeout_s, payload):
+        return {
+            "usage": {"prompt_tokens": 120, "completion_tokens": 30, "total_tokens": 150},
+            "choices": [{
+                "message": {
+                    "content": json.dumps(
+                        {"results": [{"item_id": "item_0", "spelling_score": 0.1, "grammar_score": 0.2, "meaning_mismatch_score": 0.3, "notes": []}]}
+                    )
+                }
+            }],
+        }
+
+    provider = LLMReviewProvider(api_key="k", request_fn=good_request)
+    provider.prefetch_reviews([("Hello", "Bonjour")], "fr")
+    stats = provider.get_llm_review_stats()
+    assert stats["llm_requested"] is True
+    assert stats["llm_batches_succeeded"] == 1
+    assert stats["actual_prompt_tokens"] == 120
+    assert stats["actual_completion_tokens"] == 30
+    assert stats["actual_total_tokens"] == 150
+    assert stats["responses_received"] == 1
+    assert stats["parse_failures"] == 0
+
+
+def test_llm_stats_success_without_usage_payload():
+    def good_request(endpoint, api_key, timeout_s, payload):
+        return {
+            "choices": [{
+                "message": {
+                    "content": json.dumps(
+                        {"results": [{"item_id": "item_0", "spelling_score": 0.1, "grammar_score": 0.2, "meaning_mismatch_score": 0.3, "notes": []}]}
+                    )
+                }
+            }],
+        }
+
+    provider = LLMReviewProvider(api_key="k", request_fn=good_request)
+    provider.prefetch_reviews([("Hello", "Bonjour")], "fr")
+    stats = provider.get_llm_review_stats()
+    assert stats["actual_prompt_tokens"] is None
+    assert stats["actual_completion_tokens"] is None
+    assert stats["actual_total_tokens"] is None
+
+
+def test_llm_stats_transport_failure_records_fallback():
+    def fail_request(endpoint, api_key, timeout_s, payload):
+        raise URLError("network down")
+
+    provider = LLMReviewProvider(api_key="k", request_fn=fail_request)
+    provider.prefetch_reviews([("Hello", "Bonjour")], "fr")
+    stats = provider.get_llm_review_stats()
+    assert stats["transport_failures"] == 1
+    assert stats["llm_batches_failed"] == 1
+    assert stats["fallback_batches"] == 1
+    assert stats["used_fallback"] is True
+    assert stats["batches"][0]["status"] == "failed"
+
+
+def test_llm_stats_parse_failure_records_fallback():
+    def bad_payload_request(endpoint, api_key, timeout_s, payload):
+        return {"choices": [{"message": {"content": "not-json"}}]}
+
+    provider = LLMReviewProvider(api_key="k", request_fn=bad_payload_request)
+    provider.prefetch_reviews([("Hello", "Bonjour")], "fr")
+    stats = provider.get_llm_review_stats()
+    assert stats["parse_failures"] == 1
+    assert stats["llm_batches_failed"] == 1
+    assert stats["fallback_batches"] == 1
+    assert stats["used_fallback"] is True
+
+
+def test_llm_stats_mixed_multi_batch_execution():
+    attempts = 0
+
+    def mixed_request(endpoint, api_key, timeout_s, payload):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return {
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+                "choices": [{"message": {"content": json.dumps({"results": [{"item_id": "item_0", "spelling_score": 0.1, "grammar_score": 0.1, "meaning_mismatch_score": 0.1, "notes": []}]})}}],
+            }
+        raise URLError("timeout")
+
+    provider = LLMReviewProvider(api_key="k", hard_context_tokens=1024, fixed_token_margin=128, request_fn=mixed_request)
+    provider.prefetch_reviews([("a" * 2000, "b" * 2000), ("short", "court")], "fr")
+    stats = provider.get_llm_review_stats()
+    assert stats["llm_batches_attempted"] == 2
+    assert stats["llm_batches_succeeded"] == 1
+    assert stats["llm_batches_failed"] == 1
+    assert stats["transport_failures"] == 1
+    assert stats["fallback_batches"] == 1
+
+
+def test_failed_batch_status_is_not_overwritten_by_fallback_status():
+    def fail_request(endpoint, api_key, timeout_s, payload):
+        raise URLError("gateway timeout")
+
+    provider = LLMReviewProvider(api_key="k", request_fn=fail_request)
+    provider.prefetch_reviews([("Hello", "Bonjour")], "fr")
+    stats = provider.get_llm_review_stats()
+
+    assert stats["llm_batches_attempted"] == 1
+    assert stats["llm_batches_failed"] == 1
+    assert stats["fallback_batches"] == 1
+    assert stats["batches"][0]["status"] == "failed"
+    assert stats["batches"][0]["fallback_used"] is True

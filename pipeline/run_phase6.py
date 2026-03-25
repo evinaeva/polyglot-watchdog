@@ -384,6 +384,7 @@ def run(
     *,
     require_explicit_mode: bool = True,
 ) -> list[dict]:
+    resolved_review_mode = _resolve_review_mode(review_mode, require_explicit_mode=require_explicit_mode)
     en_eligible = read_json_artifact(domain, en_run_id, "eligible_dataset.json")
     target_eligible = read_json_artifact(domain, target_run_id, "eligible_dataset.json")
 
@@ -420,7 +421,7 @@ def run(
         item_id = str(item.get("item_id", "")).strip()
         if item_id and str(item.get("url", "")).strip() in blocked_urls:
             blocked_item_ids.add(item_id)
-    provider = build_provider(mode=_resolve_review_mode(review_mode, require_explicit_mode=require_explicit_mode))
+    provider = build_provider(mode=resolved_review_mode)
     if hasattr(provider, "prefetch_reviews"):
         prefetch_pairs = []
         used_target_ids_for_prefetch: set[str] = set()
@@ -480,6 +481,12 @@ def run(
     )
     validate("coverage_gaps", coverage_gaps)
     write_json_artifact(domain, target_run_id, "coverage_gaps.json", coverage_gaps)
+    if hasattr(provider, "get_llm_review_stats"):
+        llm_review_stats = provider.get_llm_review_stats()
+    else:
+        llm_review_stats = {}
+    llm_review_stats["review_mode"] = str(llm_review_stats.get("review_mode") or resolved_review_mode)
+    write_json_artifact(domain, target_run_id, "llm_review_stats.json", llm_review_stats)
     manifest = {
         "schema_version": "v1.0",
         "phase": "phase6",
@@ -488,6 +495,7 @@ def run(
         "artifact_uris": sorted([
             f"gs://{BUCKET_NAME}/{domain}/{target_run_id}/coverage_gaps.json",
             f"gs://{BUCKET_NAME}/{domain}/{target_run_id}/issues.json",
+            f"gs://{BUCKET_NAME}/{domain}/{target_run_id}/llm_review_stats.json",
         ]),
         "summary_counters": {
             "issues": len(issues),

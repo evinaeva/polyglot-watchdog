@@ -530,3 +530,81 @@ def test_phase6_coverage_gap_marks_blocked_image_items_separately():
 
     gaps = captured["coverage_gaps.json"]
     assert gaps[0]["image_text_review_status"] == "image_text_review_blocked"
+
+
+def test_run_phase6_persists_llm_review_stats_artifact():
+    artifacts = _base_artifacts({"text": "Acheter"})
+    captured = {}
+
+    class _Provider:
+        def review_spelling_grammar(self, text_en, text_target, language):
+            from pipeline.phase6_providers import SpellingGrammarSignals
+            return SpellingGrammarSignals(spelling_score=0.0, grammar_score=0.0, notes=[])
+
+        def review_meaning(self, text_en, text_target, language):
+            from pipeline.phase6_providers import MeaningSignals
+            return MeaningSignals(meaning_mismatch_score=0.0, notes=[])
+
+        def get_llm_review_stats(self):
+            return {
+                "review_mode": "llm",
+                "provider_type": "llm",
+                "configured_provider": "llm",
+                "configured_model": "m",
+                "effective_model": "m",
+                "llm_requested": True,
+                "llm_batches_attempted": 1,
+                "llm_batches_succeeded": 1,
+                "llm_batches_failed": 0,
+                "fallback_batches": 0,
+                "fallback_items": 0,
+                "llm_items_requested": 1,
+                "llm_items_completed": 1,
+                "estimated_prompt_tokens": 1,
+                "estimated_completion_tokens": 1,
+                "estimated_total_tokens": 2,
+                "actual_prompt_tokens": 1,
+                "actual_completion_tokens": 1,
+                "actual_total_tokens": 2,
+                "estimated_cost_usd": None,
+                "actual_cost_usd": None,
+                "currency": "USD",
+                "responses_received": 1,
+                "transport_failures": 0,
+                "parse_failures": 0,
+                "provider_failures": 0,
+                "used_fallback": False,
+                "fallback_reason_summary": [],
+                "batches": [],
+            }
+
+    def _capture_write(domain, run_id, filename, payload):
+        captured[filename] = payload
+        return "gs://bucket/" + filename
+
+    with patch("pipeline.run_phase6.build_provider", return_value=_Provider()), patch(
+        "pipeline.run_phase6.read_json_artifact", side_effect=artifacts
+    ), patch("pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]), patch(
+        "pipeline.run_phase6.write_json_artifact", side_effect=_capture_write
+    ), patch("pipeline.run_phase6.write_phase_manifest"):
+        run("example.com", "run-en", "run-fr", review_mode="llm")
+
+    assert "llm_review_stats.json" in captured
+    assert captured["llm_review_stats.json"]["llm_requested"] is True
+
+
+def test_heuristic_mode_writes_llm_stats_with_llm_requested_false():
+    artifacts = _base_artifacts({"text": "Acheter"})
+    captured = {}
+
+    def _capture_write(domain, run_id, filename, payload):
+        captured[filename] = payload
+        return "gs://bucket/" + filename
+
+    with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+    ), patch("pipeline.run_phase6.write_json_artifact", side_effect=_capture_write), patch("pipeline.run_phase6.write_phase_manifest"):
+        run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
+
+    assert captured["llm_review_stats.json"]["review_mode"] == "test-heuristic"
+    assert captured["llm_review_stats.json"]["llm_requested"] is False
