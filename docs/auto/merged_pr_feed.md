@@ -1991,3 +1991,29 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3fc1e2c7c832c85d0d7b1a91c4700)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #156 — 2026-03-25T19:36:13Z
+
+- Title: Handle SystemExit during check-languages target capture
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/156
+- Author: evinaeva
+- Base branch: main
+- Head branch: cfd2oc-codex/fix-stuck-/check-languages-workflow
+- Merge commit: 73d1623cf708ba571905d46eda4193acc97e7b3e
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  - Phase 1 may call `sys.exit()` / `raise SystemExit`, which bypassed the existing `except Exception` handler and let the background worker die, leaving jobs stuck with `status="running"`, `stage="running_target_capture"`, and an empty `error`.
+  
+  ### Description
+  - Add an explicit `except SystemExit as exc` branch around the `asyncio.run(phase1_main(...))` call in `_run_check_languages_async(...)` that sets the in-memory job to error, persists a failed job record with `stage="running_target_capture_failed"` and a non-empty error (`"Phase 1 exited via SystemExit(<code>)"`), and returns immediately; the `except Exception` path is left intact and unchanged, and no other workflow logic or schemas were modified.
+  - Add a focused regression test `test_orchestrator_converts_phase1_system_exit_to_failed_capture` which simulates `phase1_main` raising `SystemExit(1)` and asserts the persisted failure stage/status, non-empty error, no progression to comparison, and that the in-memory job is marked error.
+  
+  ### Testing
+  - Ran the focused test invocation for the modified scenarios (`tests/test_check_languages_page.py::test_orchestrator_converts_phase1_system_exit_to_failed_capture`, plus two related existing tests); test collection failed in this environment with `ModuleNotFoundError: No module named 'jsonschema'`, so tests could not be executed here, but the new test is self-contained and uses existing test helpers and monkeypatching to validate the SystemExit handling.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c434b77bc8832c90d3eb2b8bb1ba26)
+- Notes: Auto-generated from merged PR metadata.
