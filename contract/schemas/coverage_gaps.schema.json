@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://polyglot-watchdog/contract/schemas/coverage_gaps.schema.json",
+  "title": "Image Text Coverage Gaps",
+  "description": "Phase 6 image-text coverage gaps. Separate from issues taxonomy.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "item_id",
+      "url",
+      "language",
+      "image_text_review_status",
+      "asset_hash",
+      "src",
+      "alt",
+      "is_svg",
+      "svg_text",
+      "page_id"
+    ],
+    "properties": {
+      "item_id": {"type": "string", "minLength": 1},
+      "page_id": {"type": ["string", "null"]},
+      "url": {"type": "string", "format": "uri"},
+      "language": {"type": "string", "minLength": 2},
+      "image_text_review_status": {
+        "type": "string",
+        "enum": [
+          "image_text_reviewed",
+          "image_text_not_reviewed",
+          "image_text_review_blocked"
+        ]
+      },
+      "asset_hash": {"type": "string", "minLength": 1},
+      "src": {"type": "string"},
+      "alt": {"type": "string"},
+      "is_svg": {"type": "boolean"},
+      "svg_text": {"type": "string"},
+      "matched_target_item_id": {"type": ["string", "null"]},
+      "pairing_basis": {"type": ["string", "null"]},
+      "ocr_status": {"type": ["string", "null"]},
+      "coverage_reason": {"type": "string"}
+    }
+  }
+}

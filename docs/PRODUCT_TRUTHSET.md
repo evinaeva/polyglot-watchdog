@@ -65,6 +65,8 @@ The following statements are allowed and should be treated as true:
 - some operator routes are backed by persisted artifacts;
 - the operator workflow is intentionally distributed across multiple pages/tabs;
 - the product includes a new `/check-languages` page for running phase-six language checks comparing a target run against an English reference;
+- phase-six runtime mode selection is explicit (`test-heuristic`, `disabled`, `llm`) and missing mode is a hard error;
+- image-backed review coverage is tracked separately from issues via `coverage_gaps.json` statuses (`image_text_reviewed`, `image_text_not_reviewed`, `image_text_review_blocked`);
 - the product is not yet production-ready.
 
 ## What is no longer allowed

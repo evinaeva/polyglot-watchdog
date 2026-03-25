@@ -619,6 +619,10 @@ The implementation should not expand this into whole-page OCR or arbitrary scree
 
 Phase 6 should combine deterministic checks and AI-assisted checks to identify suspicious localization pairs.
 
+Phase 6 runtime mode selection is explicit (`test-heuristic`, `disabled`, `llm`) and must fail fast when unspecified.
+
+Image-backed coverage must be reported separately from issues in `coverage_gaps.json` with statuses `image_text_reviewed`, `image_text_not_reviewed`, and `image_text_review_blocked`.
+
 Expected review classes:
 
 SPELLING

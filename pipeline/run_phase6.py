@@ -148,6 +148,9 @@ def _score_pair(en_item: dict, target_item: dict) -> tuple[float, dict[str, floa
     if str(en_item.get("css_selector", "")) == str(target_item.get("css_selector", "")):
         breakdown["selector"] = 0.33
         score += 0.33
+    if str(en_item.get("item_id", "")) and str(en_item.get("item_id", "")) == str(target_item.get("item_id", "")):
+        breakdown["item_id_hint"] = 0.25
+        score += 0.25
     if str(en_item.get("local_path_signature", "")) == str(target_item.get("local_path_signature", "")) and str(en_item.get("local_path_signature", "")):
         breakdown["path"] = 0.2
         score += 0.2
@@ -224,7 +227,8 @@ def _pair_target_items(en_item: dict, candidates: list[dict], used_target_ids: s
     top_score, _, top_candidate, top_breakdown = scored[0]
     second_score = scored[1][0] if len(scored) > 1 else -1.0
     tie = len(scored) > 1 and abs(top_score - second_score) < 0.0001
-    if top_score < 0.35 or tie:
+    min_viable_score = 0.20 if len(scored) == 1 else 0.35
+    if top_score < min_viable_score or tie:
         return None, {
             "pairing_basis": "fallback_ambiguous" if tie else "fallback_no_viable_candidate",
             "pairing_confidence": 0.0,
@@ -292,12 +296,84 @@ def _resolve_review_mode(review_mode: str | None, require_explicit_mode: bool) -
     resolved = (review_mode or env_mode or "").strip()
     if resolved:
         return resolved
-    if require_explicit_mode:
-        raise ValueError(
-            "Phase 6 review mode must be set explicitly via --review-mode or PHASE6_REVIEW_PROVIDER. "
-            "Supported modes: test-heuristic, disabled, llm"
-        )
-    return "test-heuristic"
+    raise ValueError(
+        "Phase 6 review mode must be set explicitly via --review-mode or PHASE6_REVIEW_PROVIDER. "
+        "Supported modes: test-heuristic, disabled, llm"
+    )
+
+
+def _image_meta(item: dict, ocr_row: dict | None) -> dict:
+    attrs = item.get("attributes") if isinstance(item.get("attributes"), dict) else {}
+    src = str((ocr_row or {}).get("src", "") or attrs.get("src", "") or "").strip()
+    alt = str((ocr_row or {}).get("alt", "") or attrs.get("alt", "") or "").strip()
+    is_svg = bool((ocr_row or {}).get("is_svg")) or str(item.get("tag", "")).strip().lower() == "svg" or "image/svg+xml" in src.lower() or src.lower().endswith(".svg")
+    svg_text = str((ocr_row or {}).get("svg_text", "")).strip()
+    asset_hash = str((ocr_row or {}).get("asset_hash", "")).strip() or hashlib.sha1((src or item.get("item_id", "")).encode("utf-8")).hexdigest()
+    return {
+        "asset_hash": asset_hash,
+        "src": src,
+        "alt": alt,
+        "is_svg": is_svg,
+        "svg_text": svg_text,
+    }
+
+
+def _build_coverage_gaps(
+    target_eligible: list[dict],
+    target_collected_by_item: dict[str, dict],
+    ocr_by_item: dict[str, dict],
+    blocked_item_ids: set[str],
+    pairing_meta_by_en_item: dict[str, dict[str, Any]],
+) -> tuple[list[dict], dict[str, int]]:
+    rows: list[dict] = []
+    counters = {
+        "image_text_reviewed": 0,
+        "image_text_not_reviewed": 0,
+        "image_text_review_blocked": 0,
+    }
+    for item in sorted((r for r in target_eligible if str(r.get("language", "")).strip().lower() != "en"), key=lambda r: (r.get("item_id", ""), r.get("url", ""))):
+        item_id = str(item.get("item_id", "")).strip()
+        if not item_id:
+            continue
+        collected = target_collected_by_item.get(item_id, {})
+        candidate = {**collected, **item}
+        if not _is_image_item(candidate):
+            continue
+        ocr_row = ocr_by_item.get(item_id, {})
+        meta = _image_meta(candidate, ocr_row)
+        reviewed = bool(meta["svg_text"]) or ocr_row.get("status") == "ok"
+        blocked = item_id in blocked_item_ids
+        if blocked:
+            status = "image_text_review_blocked"
+            reason = "capture_blocked_by_overlay"
+        elif reviewed:
+            status = "image_text_reviewed"
+            reason = "svg_text_extracted" if meta["svg_text"] else "ocr_text_available"
+        else:
+            status = "image_text_not_reviewed"
+            reason = "no_svg_or_ocr_text"
+        counters[status] += 1
+        if status == "image_text_reviewed":
+            continue
+        pair_meta = pairing_meta_by_en_item.get(item_id, {})
+        rows.append({
+            "item_id": item_id,
+            "page_id": candidate.get("page_id"),
+            "url": candidate.get("url", ""),
+            "language": candidate.get("language", ""),
+            "image_text_review_status": status,
+            "asset_hash": meta["asset_hash"],
+            "src": meta["src"],
+            "alt": meta["alt"],
+            "is_svg": meta["is_svg"],
+            "svg_text": meta["svg_text"],
+            "matched_target_item_id": pair_meta.get("matched_target_item_id"),
+            "pairing_basis": pair_meta.get("pairing_basis"),
+            "ocr_status": ocr_row.get("status"),
+            "coverage_reason": reason,
+        })
+    rows.sort(key=lambda row: (row["item_id"], row["url"]))
+    return rows, counters
 
 
 def run(
@@ -306,7 +382,7 @@ def run(
     target_run_id: str,
     review_mode: str | None = None,
     *,
-    require_explicit_mode: bool = False,
+    require_explicit_mode: bool = True,
 ) -> list[dict]:
     en_eligible = read_json_artifact(domain, en_run_id, "eligible_dataset.json")
     target_eligible = read_json_artifact(domain, target_run_id, "eligible_dataset.json")
@@ -338,6 +414,12 @@ def run(
     target_screens_by_page = _index_screenshots(target_screens)
     target_language = next((str(item.get("language", "")).strip() for item in target_eligible if str(item.get("language", "")).strip() and str(item.get("language", "")).lower() != "en"), "")
     blocked_pages = _load_blocked_overlay_pages(domain, target_language, target_screens) if target_language else []
+    blocked_item_ids: set[str] = set()
+    blocked_urls = {str(row.get("url", "")).strip() for row in blocked_pages}
+    for item in target_eligible:
+        item_id = str(item.get("item_id", "")).strip()
+        if item_id and str(item.get("url", "")).strip() in blocked_urls:
+            blocked_item_ids.add(item_id)
     provider = build_provider(mode=_resolve_review_mode(review_mode, require_explicit_mode=require_explicit_mode))
     if hasattr(provider, "prefetch_reviews"):
         prefetch_pairs = []
@@ -355,12 +437,14 @@ def run(
     issues: list[dict] = []
     used_target_ids: set[str] = set()
     target_candidates = [target_by_item[item_id] for item_id in sorted(target_by_item.keys())]
+    pairing_meta_by_target_item_id: dict[str, dict[str, Any]] = {}
 
     for item_id in sorted(en_by_item.keys()):
         en_item = en_by_item[item_id]
         t_item, pairing_meta = _pair_target_items(en_item, target_candidates, used_target_ids)
         if t_item:
             used_target_ids.add(str(t_item.get("item_id")))
+            pairing_meta_by_target_item_id[str(t_item.get("item_id"))] = dict(pairing_meta)
         evidence_base = _build_evidence(t_item, target_collected_by_item, target_screens_by_page) if t_item else _build_missing_target_evidence(en_item, en_collected_by_item, en_screens_by_page)
         evidence_base.update(pairing_meta)
         issues.extend(
@@ -387,13 +471,29 @@ def run(
         sys.exit(1)
 
     write_json_artifact(domain, target_run_id, "issues.json", issues)
+    coverage_gaps, coverage_counters = _build_coverage_gaps(
+        target_eligible=target_eligible,
+        target_collected_by_item=target_collected_by_item,
+        ocr_by_item=ocr_by_item,
+        blocked_item_ids=blocked_item_ids,
+        pairing_meta_by_en_item=pairing_meta_by_target_item_id,
+    )
+    validate("coverage_gaps", coverage_gaps)
+    write_json_artifact(domain, target_run_id, "coverage_gaps.json", coverage_gaps)
     manifest = {
         "schema_version": "v1.0",
         "phase": "phase6",
         "run_id": target_run_id,
         "domain": domain,
-        "artifact_uris": [f"gs://{BUCKET_NAME}/{domain}/{target_run_id}/issues.json"],
-        "summary_counters": {"issues": len(issues)},
+        "artifact_uris": sorted([
+            f"gs://{BUCKET_NAME}/{domain}/{target_run_id}/coverage_gaps.json",
+            f"gs://{BUCKET_NAME}/{domain}/{target_run_id}/issues.json",
+        ]),
+        "summary_counters": {
+            "issues": len(issues),
+            **coverage_counters,
+            "coverage_gaps": len(coverage_gaps),
+        },
         "error_records": [],
         "provenance": {"en_run_id": en_run_id, "target_run_id": target_run_id},
     }

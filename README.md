@@ -102,6 +102,8 @@ Use these statements consistently:
 - "Manual seed URL workflow is valid for v1.0."
 - "Phase 6 uses a two-layer taxonomy: persisted `issue.category` (coarse contract) and evidence-level `review_class` (detailed QA)."
 - "Phase 6 compares curated EN reference content against curated target-language content; OCR text is consumed only for approved `<img>` elements, is supporting input overall, and does not introduce new top-level contract categories."
+- "Phase 6 review mode is explicit (`test-heuristic`, `disabled`, `llm`); missing mode is a hard error."
+- "Image-text review coverage is tracked separately from issues via `coverage_gaps.json` with statuses: `image_text_reviewed`, `image_text_not_reviewed`, `image_text_review_blocked`."
 
 Avoid these outdated statements:
 

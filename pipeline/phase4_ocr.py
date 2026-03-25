@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
+import re
+from urllib.parse import unquote
 from pathlib import Path
 import sys
+import base64
+import xml.etree.ElementTree as ET
 
 from PIL import Image
 
@@ -59,6 +64,36 @@ def _download_gs_uri(gs_uri: str) -> bytes:
     return blob.download_as_bytes()
 
 
+def _safe_svg_text_from_src(src: str) -> str:
+    value = str(src or "").strip()
+    if not value.startswith("data:image/svg+xml"):
+        return ""
+    try:
+        _, payload = value.split(",", 1)
+    except ValueError:
+        return ""
+    header = value.split(",", 1)[0].lower()
+    if ";base64" in header:
+        try:
+            raw = base64.b64decode(payload, validate=True)
+        except Exception:
+            return ""
+        svg_body = raw.decode("utf-8", errors="ignore")
+    else:
+        svg_body = unquote(payload)
+    try:
+        root = ET.fromstring(svg_body)
+    except Exception:
+        return ""
+    chunks: list[str] = []
+    for node in root.iter():
+        text = (node.text or "").strip()
+        if text:
+            chunks.append(text)
+    normalized = re.sub(r"\s+", " ", " ".join(chunks)).strip()
+    return normalized
+
+
 def build_phase4_ocr_rows(
     eligible_dataset: list[dict],
     collected_items: list[dict],
@@ -81,6 +116,13 @@ def build_phase4_ocr_rows(
         screenshot = screenshot_by_page.get(page_id, {}) if page_id else {}
         source_image_uri = screenshot.get("storage_uri", "")
 
+        attributes = collected.get("attributes") if isinstance(collected.get("attributes"), dict) else {}
+        src = str(attributes.get("src", "")).strip()
+        alt = str(attributes.get("alt", "")).strip()
+        is_svg = bool(src.lower().endswith(".svg") or "image/svg+xml" in src.lower() or str(collected.get("tag", "")).strip().lower() == "svg")
+        svg_text = _safe_svg_text_from_src(src) if is_svg else ""
+        asset_hash = hashlib.sha1((src or source_image_uri or str(item_id)).encode("utf-8")).hexdigest()
+
         row = {
             "item_id": item_id,
             "page_id": page_id,
@@ -96,11 +138,25 @@ def build_phase4_ocr_rows(
             "ocr_notes": [],
             "provider_meta": {},
             "status": "failed",
+            "asset_hash": asset_hash,
+            "src": src,
+            "alt": alt,
+            "is_svg": is_svg,
+            "svg_text": svg_text,
         }
 
         if not source_image_uri:
             row["status"] = "failed"
             row["ocr_notes"] = ["missing_source_image"]
+            rows.append(row)
+            continue
+
+        if svg_text:
+            row["status"] = "ok"
+            row["ocr_text"] = svg_text
+            row["ocr_notes"] = ["svg_text_extracted"]
+            row["ocr_provider"] = "ocr.space"
+            row["ocr_engine"] = "svg-prepass"
             rows.append(row)
             continue
 

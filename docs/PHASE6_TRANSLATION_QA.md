@@ -313,3 +313,15 @@ Phase 6 does **not** exist to:
 - treat every mismatch as equally certain.
 
 The correct outcome is a smaller, evidence-backed review queue for a human operator.
+
+
+## 14. Review mode and image coverage reporting
+
+- Phase 6 runtime requires an explicit review mode (`test-heuristic`, `disabled`, or `llm`) via CLI flag or `PHASE6_REVIEW_PROVIDER`.
+- Phase 6 emits `coverage_gaps.json` for image-backed target items that were not actually image-text-reviewed.
+- Coverage status is tracked independently from `issues.json` and uses:
+  - `image_text_reviewed`
+  - `image_text_not_reviewed`
+  - `image_text_review_blocked`
+- Coverage rows include `asset_hash`, `src`, `alt`, `is_svg`, and `svg_text` (when deterministic SVG text extraction succeeds).
+- SVG text extraction is a deterministic pre-step before OCR for inline SVG data URIs.

@@ -236,7 +236,39 @@ def test_phase4_rows_include_only_image_backed_items_and_stable_shape():
     assert rows[0].keys() == {
         "item_id", "page_id", "url", "language", "viewport_kind", "state", "user_tier", "source_image_uri",
         "ocr_text", "ocr_provider", "ocr_engine", "ocr_notes", "provider_meta", "status",
+        "asset_hash", "src", "alt", "is_svg", "svg_text",
     }
+
+
+def test_phase4_svg_prepass_extracts_text_deterministically_without_ocr():
+    svg_data = "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%3E%3Ctext%3EBuy%20Now%3C/text%3E%3C/svg%3E"
+    eligible = [{"item_id": "img-1", "page_id": "p1", "url": "https://example.com", "language": "fr"}]
+    collected = [{
+        "item_id": "img-1",
+        "page_id": "p1",
+        "element_type": "img",
+        "tag": "img",
+        "bbox": {"x": 0, "y": 0, "width": 1, "height": 1},
+        "viewport_kind": "desktop",
+        "state": "baseline",
+        "user_tier": "guest",
+        "attributes": {"src": svg_data, "alt": "cta"},
+    }]
+    screenshots = [{"page_id": "p1", "storage_uri": "gs://b/page.png"}]
+
+    rows = build_phase4_ocr_rows(
+        eligible,
+        collected,
+        screenshots,
+        image_fetcher=lambda _: _tiny_png_bytes(),
+        ocr_fn=lambda _: {"status": "failed", "ocr_text": "", "ocr_provider": "ocr.space", "ocr_engine": "3", "ocr_notes": [], "provider_meta": {}},
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["status"] == "ok"
+    assert rows[0]["svg_text"] == "Buy Now"
+    assert rows[0]["ocr_text"] == "Buy Now"
+    assert rows[0]["ocr_engine"] == "svg-prepass"
 
 
 
@@ -256,6 +288,11 @@ def _phase4_row(status: str = "ok") -> dict:
         "ocr_notes": [],
         "provider_meta": {"provider": "ocr.space"},
         "status": status,
+        "asset_hash": "hash-1",
+        "src": "",
+        "alt": "",
+        "is_svg": False,
+        "svg_text": "",
     }
     if status == "skipped":
         row["ocr_notes"] = ["missing_api_key"]
@@ -320,6 +357,11 @@ def test_phase6_ocr_fixture_row_is_schema_valid():
         "ocr_notes": [],
         "provider_meta": {"provider": "ocr.space"},
         "status": "ok",
+        "asset_hash": "h",
+        "src": "",
+        "alt": "",
+        "is_svg": False,
+        "svg_text": "",
     }])
 
 
@@ -343,6 +385,11 @@ def test_phase4_schema_accepts_google_vision_fallback_row():
             "reason_for_fallback": "ocr_space_empty_text",
         },
         "status": "ok",
+        "asset_hash": "h",
+        "src": "",
+        "alt": "",
+        "is_svg": False,
+        "svg_text": "",
     }])
 
 def test_phase6_consumes_phase4_ocr_artifact_without_contract_changes():
@@ -370,13 +417,18 @@ def test_phase6_consumes_phase4_ocr_artifact_without_contract_changes():
             "ocr_notes": [],
             "provider_meta": {"provider": "ocr.space"},
             "status": "ok",
+            "asset_hash": "h",
+            "src": "",
+            "alt": "",
+            "is_svg": False,
+            "svg_text": "",
         }],
     ]
 
     with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
         "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
     ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
-        issues = run("example.com", "run-en", "run-fr")
+        issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
     assert len(issues) == 1
     assert issues[0]["category"] == "FORMATTING_MISMATCH"
@@ -398,7 +450,7 @@ def test_phase6_continues_when_phase4_ocr_artifact_is_absent():
     with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts + [FileNotFoundError("missing")]), patch(
         "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
     ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
-        issues = run("example.com", "run-en", "run-fr")
+        issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
     assert issues == []
 
@@ -421,7 +473,7 @@ def test_phase6_continues_when_phase4_ocr_artifact_not_found_style_error():
     with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts + [NotFound("missing")]), patch(
         "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
     ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
-        issues = run("example.com", "run-en", "run-fr")
+        issues = run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
 
     assert issues == []
 
@@ -443,7 +495,7 @@ def test_phase6_rejects_invalid_present_phase4_ocr_artifact():
         "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
     ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
         try:
-            run("example.com", "run-en", "run-fr")
+            run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
             assert False, "expected invalid present OCR artifact to fail schema validation"
         except SchemaValidationError as exc:
             assert "phase4_ocr" in str(exc)
@@ -466,7 +518,7 @@ def test_phase6_rejects_non_list_present_phase4_ocr_artifact():
         "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
     ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
         try:
-            run("example.com", "run-en", "run-fr")
+            run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
             assert False, "expected non-list OCR artifact to fail schema validation"
         except SchemaValidationError as exc:
             assert "phase4_ocr" in str(exc)
@@ -488,7 +540,7 @@ def test_phase6_raises_unexpected_ocr_artifact_read_errors():
         "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
     ), patch("pipeline.run_phase6.write_json_artifact"), patch("pipeline.run_phase6.write_phase_manifest"):
         try:
-            run("example.com", "run-en", "run-fr")
+            run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
             assert False, "expected unexpected OCR artifact read failures to propagate"
         except RuntimeError as exc:
             assert str(exc) == "boom"
