@@ -1755,6 +1755,21 @@ def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_
         asyncio.run(phase1_main(domain, target_run_id, target_language, "desktop", "baseline", None, jobs_override=replay_jobs))
         _require_artifact_exists(domain, target_run_id, "page_screenshots.json")
         _require_artifact_exists(domain, target_run_id, "collected_items.json")
+    except SystemExit as exc:
+        error = f"Phase 1 exited via SystemExit({exc.code})"
+        _jobs[job_id]["status"] = "error"
+        _jobs[job_id]["error"] = error
+        _upsert_job_status(domain, target_run_id, {
+            "job_id": job_id,
+            "status": "failed",
+            "type": "check_languages",
+            "stage": "running_target_capture_failed",
+            "en_run_id": en_run_id,
+            "target_language": target_language,
+            "target_url": target_url,
+            "error": error,
+        })
+        return
     except Exception as exc:
         _jobs[job_id]["status"] = "error"
         _jobs[job_id]["error"] = str(exc)

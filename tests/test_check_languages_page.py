@@ -908,6 +908,36 @@ def test_orchestrator_stops_before_comparison_on_capture_failure(monkeypatch):
     assert any(str(rec.get("status")) == "failed" for rec in updates)
 
 
+def test_orchestrator_converts_phase1_system_exit_to_failed_capture(monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.skeleton_server._replay_scope_from_reference_run", lambda d, e, t, u: ["j1"])
+
+    async def _fake_main(*args, **kwargs):
+        calls.append("phase1")
+        raise SystemExit(1)
+
+    monkeypatch.setattr("pipeline.run_phase1.main", _fake_main)
+    monkeypatch.setattr("pipeline.run_phase3.run", lambda **kwargs: calls.append("phase3"))
+    monkeypatch.setattr("pipeline.run_phase6.run", lambda **kwargs: calls.append("phase6"))
+    updates = []
+    monkeypatch.setattr("app.skeleton_server._upsert_job_status", lambda d, r, rec: updates.append(rec))
+
+    from app.skeleton_server import _jobs, _run_check_languages_async
+
+    _run_check_languages_async("job1", "https://bongacams.com/", "run-en", "fr", "run-en-check-fr", "https://fr.bongacams.com/")
+
+    assert calls == ["phase1"]
+    failed = [rec for rec in updates if str(rec.get("stage")) == "running_target_capture_failed"]
+    assert failed
+    assert str(failed[-1].get("status")) == "failed"
+    assert str(failed[-1].get("error", "")).strip()
+    assert "SystemExit" in str(failed[-1].get("error", ""))
+    assert not any(str(rec.get("stage")) == "running_comparison" for rec in updates)
+    assert _jobs["job1"]["status"] == "error"
+    assert _jobs["job1"].get("error", "").strip()
+    assert _jobs["job1"]["error"] != ""
+
+
 def test_orchestrator_fails_when_capture_returns_without_required_artifacts(monkeypatch):
     calls = []
     monkeypatch.setattr("app.skeleton_server._replay_scope_from_reference_run", lambda d, e, t, u: ["j1"])
