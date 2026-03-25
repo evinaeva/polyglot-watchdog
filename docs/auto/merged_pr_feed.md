@@ -1817,3 +1817,38 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3eab968e4832c8e0c4aa98c35f201)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #151 — 2026-03-25T15:05:04Z
+
+- Title: Phase6: Add LLM review telemetry and persist `llm_review_stats` artifact
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/151
+- Author: evinaeva
+- Base branch: main
+- Head branch: hml5n4-codex/implement-llm-execution-telemetry-for-phase-6
+- Merge commit: f88b2967775a19efc9d109f2a9354d02258c7ca2
+- Changed files:
+  - pipeline/phase6_providers.py
+  - pipeline/run_phase6.py
+  - tests/test_phase6_providers.py
+  - tests/test_phase6_review_pipeline.py
+- Description:
+  ### Motivation
+  - Surface detailed telemetry for AI-assisted reviews including batch outcomes, token usage, costs, and fallback reasons. 
+  - Ensure deterministic and disabled providers expose the same stats shape so the pipeline can always persist a `llm_review_stats.json` artifact. 
+  - Improve error classification for LLM requests to distinguish transport/parse/provider failures and to mark fallback usage. 
+  
+  ### Description
+  - Added `_empty_llm_review_stats` helper and implemented `get_llm_review_stats` for `LLMReviewProvider`, `DeterministicOfflineProvider`, and `DisabledReviewProvider` to expose unified telemetry. 
+  - Instrumented `LLMReviewProvider` with `_batch_stats`, token/accounting fields, `_read_cost_env`, `_safe_int`, `_compute_cost`, and logic in `_review_batch` to return and record per-batch stats including estimated/actual tokens, costs, statuses, and failure reasons. 
+  - Adjusted prompt/item token estimation with `_estimate_item_prompt_tokens` and other minor refactors to batch handling and error handling for `URLError`, `TimeoutError`, `OSError`, `ValueError`, and provider parsing errors. 
+  - Updated pipeline entry `run` to resolve review mode once, build the provider from the resolved mode, and always write `llm_review_stats.json` (populating `review_mode` if provider does not supply it). 
+  - Added/updated unit tests to validate stats behavior, cost/usage parsing, failure classification, multi-batch scenarios, and that the pipeline persists the `llm_review_stats.json` artifact. 
+  
+  ### Testing
+  - Ran the Phase 6 provider unit tests in `tests/test_phase6_providers.py` which include usage-success, missing-usage, transport and parse failure cases, and mixed multi-batch behavior, and they passed. 
+  - Ran pipeline tests in `tests/test_phase6_review_pipeline.py` validating that `llm_review_stats.json` is written and that heuristic mode reports `llm_requested: false`, and they passed. 
+  - Full test suite executed with `pytest` for the modified modules and all added/updated tests succeeded.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3f2ab29e8832c94c00631856f70f2)
+- Notes: Auto-generated from merged PR metadata.
