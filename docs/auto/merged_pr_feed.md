@@ -1691,3 +1691,38 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3cbd77c60832cb857a5611638a006)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #147 — 2026-03-25T12:39:19Z
+
+- Title: Allow explicit EN-standard runs as English reference, improve default selection and dropdown UX
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/147
+- Author: evinaeva
+- Base branch: main
+- Head branch: 62isyn-codex/fix-dropdown-population-for-/check-languages
+- Merge commit: 74520ba9fc6394d0999885abf4cb755ffc7c7473
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  
+  - Expand what counts as a valid English reference to include runs explicitly marked with an English-standard display name or metadata, not only runs that are strictly English-only.
+  - Prefer explicit EN-standard runs when auto-selecting the default English reference, and prefer first-run display names when appropriate.
+  - Improve the UI when no English runs are available by showing a clear placeholder in the dropdown.
+  
+  ### Description
+  
+  - Added helper functions ` _run_is_explicit_en_reference`, `_run_is_en_reference_candidate`, and `_default_english_reference_run_id` to detect explicit EN-standard runs and compute the preferred default reference run.
+  - Replaced checks that used ` _run_is_english_only` with ` _run_is_en_reference_candidate` for validation and selection, and updated related error messages to "not a valid English baseline".
+  - Changed default selection logic to use ` _default_english_reference_run_id` and updated the EN dropdown to show `"No English runs found"` when `en_candidates` is empty.
+  - Added unit tests in `tests/test_check_languages_page.py` to cover the new selection rules, exclusion of mixed-language runs, the no-runs placeholder, and preference for explicit EN-standard runs.
+  
+  ### Testing
+  
+  - Ran the project test suite with `pytest`, including `tests/test_check_languages_page.py`, and the tests completed successfully.
+  - Verified the new tests `test_get_check_languages_default_selects_latest_first_run_display_name`, `test_get_check_languages_en_dropdown_excludes_mixed_language_runs`, `test_get_check_languages_en_dropdown_shows_no_runs_placeholder`, and `test_get_check_languages_default_prefers_latest_explicit_en_standard` all pass under the test runner.
+  - Existing language-check page behavior tests were exercised and continue to pass after the changes.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3d0c458f0832cb601093a1e87d497)
+- Notes: Auto-generated from merged PR metadata.
