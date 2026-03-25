@@ -132,9 +132,9 @@ def test_docs_ai_noop_and_state_advancement_and_blank_model_fallback(monkeypatch
         return '{"updates": []}'
 
     monkeypatch.setattr(mod, "git_show", fake_show)
-    monkeypatch.setattr(mod, "call_claude", fake_call)
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
-    monkeypatch.setenv("ANTHROPIC_MODEL", "")
+    monkeypatch.setattr(mod, "call_ai_model", fake_call)
+    monkeypatch.setenv("AI_API_KEY", "x")
+    monkeypatch.setenv("AI_MODEL", "")
 
     prompt = tmp_path / "prompt.txt"
     prompt.write_text("template", encoding="utf-8")
@@ -218,7 +218,7 @@ def test_docs_ai_state_marker_missing_without_pr_fails():
     assert False, "Expected unsafe replay guard runtime error"
 
 
-def test_docs_ai_rejects_invalid_claude_output(monkeypatch, tmp_path):
+def test_docs_ai_rejects_invalid_ai_output(monkeypatch, tmp_path):
     mod = load_docs_ai_module()
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / "a.md").write_text("A\n", encoding="utf-8")
@@ -230,8 +230,8 @@ def test_docs_ai_rejects_invalid_claude_output(monkeypatch, tmp_path):
         if ref_path.endswith("merged_pr_feed.md")
         else '{"last_processed_merge_commit":"","last_processed_pr_number":0,"last_sync_at_utc":""}',
     )
-    monkeypatch.setattr(mod, "call_claude", lambda *args, **kwargs: '{"foo": 1}')
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    monkeypatch.setattr(mod, "call_ai_model", lambda *args, **kwargs: '{"foo": 1}')
+    monkeypatch.setenv("AI_API_KEY", "x")
 
     prompt = tmp_path / "prompt.txt"
     prompt.write_text("template", encoding="utf-8")
@@ -247,7 +247,7 @@ def test_docs_ai_rejects_invalid_claude_output(monkeypatch, tmp_path):
     assert rc == 1
 
 
-def test_docs_ai_rejects_malformed_anthropic_model_before_api_call(monkeypatch, tmp_path):
+def test_docs_ai_rejects_malformed_ai_model_before_api_call(monkeypatch, tmp_path):
     mod = load_docs_ai_module()
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / "a.md").write_text("A\n", encoding="utf-8")
@@ -264,11 +264,11 @@ def test_docs_ai_rejects_malformed_anthropic_model_before_api_call(monkeypatch, 
 
     def fail_if_called(*_args, **_kwargs):
         called["value"] = True
-        raise AssertionError("call_claude should not be called for malformed ANTHROPIC_MODEL")
+        raise AssertionError("call_ai_model should not be called for malformed AI_MODEL")
 
-    monkeypatch.setattr(mod, "call_claude", fail_if_called)
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
-    monkeypatch.setenv("ANTHROPIC_MODEL", "ANTHROPIC_MODEL = claude-3-haiku-20240307")
+    monkeypatch.setattr(mod, "call_ai_model", fail_if_called)
+    monkeypatch.setenv("AI_API_KEY", "x")
+    monkeypatch.setenv("AI_MODEL", "AI_MODEL = gemini-2.5-flash-lite")
 
     prompt = tmp_path / "prompt.txt"
     prompt.write_text("template", encoding="utf-8")
@@ -286,7 +286,7 @@ def test_docs_ai_rejects_malformed_anthropic_model_before_api_call(monkeypatch, 
     assert not out_state.exists()
 
 
-def _run_docs_ai_main(mod, tmp_path: Path, monkeypatch, claude_response: str):
+def _run_docs_ai_main(mod, tmp_path: Path, monkeypatch, ai_response: str):
     (tmp_path / "docs").mkdir(exist_ok=True)
     (tmp_path / "docs" / "a.md").write_text("alpha\nbeta\n", encoding="utf-8")
 
@@ -304,8 +304,8 @@ def _run_docs_ai_main(mod, tmp_path: Path, monkeypatch, claude_response: str):
         return '{"last_processed_merge_commit":"","last_processed_pr_number":0,"last_sync_at_utc":""}'
 
     monkeypatch.setattr(mod, "git_show", fake_show)
-    monkeypatch.setattr(mod, "call_claude", lambda *_args, **_kwargs: claude_response)
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    monkeypatch.setattr(mod, "call_ai_model", lambda *_args, **_kwargs: ai_response)
+    monkeypatch.setenv("AI_API_KEY", "x")
 
     prompt = tmp_path / "prompt.txt"
     prompt.write_text("template", encoding="utf-8")
@@ -366,10 +366,10 @@ def test_docs_ai_patch_search_multiple_matches_fails(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(
         mod,
-        "call_claude",
+        "call_ai_model",
         lambda *_args, **_kwargs: '{"updates":[{"path":"docs/a.md","action":"patch","patches":[{"search":"dup\\n","replace":"ok\\n"}]}]}',
     )
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    monkeypatch.setenv("AI_API_KEY", "x")
     prompt = tmp_path / "prompt.txt"
     prompt.write_text("template", encoding="utf-8")
     out_state = tmp_path / "state.json"
