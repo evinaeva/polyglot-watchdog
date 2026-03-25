@@ -130,25 +130,47 @@ def _seed_phase6_prereqs(domain: str, run_id: str, language: str = "en"):
 def _llm_review_stats_payload(
     *,
     llm_requested: bool = True,
-    status: str = "completed",
-    fallback_mode: str = "none",
-    provider: str = "openrouter",
-    model: str = "openrouter/free",
-    prompt_tokens: int = 120,
-    completion_tokens: int = 30,
-    total_tokens: int = 150,
-    cost_usd: float = 0.0012,
+    review_mode: str = "llm",
+    configured_provider: str = "llm",
+    configured_model: str = "openrouter/free",
+    effective_model: str = "openrouter/free",
+    llm_batches_attempted: int = 1,
+    llm_batches_succeeded: int = 1,
+    llm_batches_failed: int = 0,
+    fallback_batches: int = 0,
+    fallback_items: int = 0,
+    used_fallback: bool = False,
+    responses_received: int = 1,
+    estimated_prompt_tokens: int = 120,
+    estimated_completion_tokens: int = 30,
+    estimated_total_tokens: int = 150,
+    actual_prompt_tokens: int | None = 118,
+    actual_completion_tokens: int | None = 28,
+    actual_total_tokens: int | None = 146,
+    actual_cost_usd: float | None = 0.0012,
 ) -> dict:
     return {
+        "review_mode": review_mode,
+        "provider_type": "llm",
+        "configured_provider": configured_provider,
+        "configured_model": configured_model,
+        "effective_model": effective_model,
         "llm_requested": llm_requested,
-        "status": status,
-        "fallback_mode": fallback_mode,
-        "provider": provider,
-        "model": model,
-        "prompt_tokens": prompt_tokens,
-        "completion_tokens": completion_tokens,
-        "total_tokens": total_tokens,
-        "cost_usd": cost_usd,
+        "llm_batches_attempted": llm_batches_attempted,
+        "llm_batches_succeeded": llm_batches_succeeded,
+        "llm_batches_failed": llm_batches_failed,
+        "fallback_batches": fallback_batches,
+        "fallback_items": fallback_items,
+        "used_fallback": used_fallback,
+        "responses_received": responses_received,
+        "estimated_prompt_tokens": estimated_prompt_tokens,
+        "estimated_completion_tokens": estimated_completion_tokens,
+        "estimated_total_tokens": estimated_total_tokens,
+        "actual_prompt_tokens": actual_prompt_tokens,
+        "actual_completion_tokens": actual_completion_tokens,
+        "actual_total_tokens": actual_total_tokens,
+        "actual_cost_usd": actual_cost_usd,
+        "batches": [],
     }
 
 
@@ -157,11 +179,31 @@ def _llm_review_stats_completed_payload() -> dict:
 
 
 def _llm_review_stats_partial_fallback_payload() -> dict:
-    return _llm_review_stats_payload(fallback_mode="partial")
+    return _llm_review_stats_payload(
+        llm_batches_attempted=2,
+        llm_batches_succeeded=1,
+        llm_batches_failed=1,
+        fallback_batches=1,
+        fallback_items=2,
+        used_fallback=True,
+        responses_received=1,
+    )
 
 
 def _llm_review_stats_full_fallback_payload() -> dict:
-    return _llm_review_stats_payload(fallback_mode="full")
+    return _llm_review_stats_payload(
+        llm_batches_attempted=2,
+        llm_batches_succeeded=0,
+        llm_batches_failed=2,
+        fallback_batches=2,
+        fallback_items=3,
+        used_fallback=True,
+        responses_received=0,
+        actual_prompt_tokens=None,
+        actual_completion_tokens=None,
+        actual_total_tokens=None,
+        actual_cost_usd=None,
+    )
 
 
 def _seed_check_languages_completed_run(domain: str, en_run_id: str, target_language: str, target_run_id: str):
@@ -973,10 +1015,11 @@ def test_get_check_languages_completed_llm_run_shows_provider_model_tokens_and_c
 
     status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
     assert status == HTTPStatus.OK
-    assert "Provider: <strong>openrouter</strong>" in body
-    assert "Model: <strong>openrouter/free</strong>" in body
-    assert "Total tokens: <strong>150</strong>" in body
-    assert "Cost (USD): <strong>0.0012</strong>" in body
+    assert "Configured provider/model: llm / openrouter/free" in body
+    assert "Effective provider/model: llm / openrouter/free" in body
+    assert "Estimated tokens (prompt/completion/total): prompt=120, completion=30, total=150" in body
+    assert "Actual tokens (prompt/completion/total): prompt=118, completion=28, total=146" in body
+    assert "Cost used: $0.001200 (actual)" in body
 
 
 def test_get_check_languages_completed_llm_run_shows_partial_fallback_clearly(api_env):
@@ -987,7 +1030,8 @@ def test_get_check_languages_completed_llm_run_shows_partial_fallback_clearly(ap
 
     status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
     assert status == HTTPStatus.OK
-    assert "Partial fallback was used." in body
+    assert "Fallback status: Partial fallback" in body
+    assert "Operator notes: Fallback used: Partial fallback" in body
 
 
 def test_get_check_languages_completed_llm_run_shows_full_fallback_clearly(api_env):
@@ -998,10 +1042,10 @@ def test_get_check_languages_completed_llm_run_shows_full_fallback_clearly(api_e
 
     status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
     assert status == HTTPStatus.OK
-    assert "Full fallback was used." in body
+    assert "Fallback status: Full fallback" in body
+    assert "No successful LLM responses" in body
 
 
-def test_get_check_languages_running_state_before_llm_telemetry_exists(api_env):
 def test_llm_review_state_missing_telemetry_in_progress(api_env):
     domain = SUPPORTED_MAIN_DOMAIN
     _seed_runs(domain)
@@ -1030,7 +1074,7 @@ def test_llm_review_state_missing_telemetry_in_progress(api_env):
     status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id=run-en-check-fr")
     assert status == HTTPStatus.OK
     assert "running" in body.lower()
-    assert "LLM telemetry is not available yet while the run is still running." in body
+    assert "State: <strong>LLM review not reached yet</strong>" in body
 
 
 def test_get_check_languages_warns_when_llm_telemetry_missing_after_completion(api_env):
@@ -1040,20 +1084,20 @@ def test_get_check_languages_warns_when_llm_telemetry_missing_after_completion(a
 
     status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
     assert status == HTTPStatus.OK
-    assert "Missing telemetry after completion." in body
+    assert "State: <strong>LLM telemetry missing</strong>" in body
 
 
 def test_get_check_languages_malformed_llm_telemetry_warning_is_rendered_safely(api_env):
     domain = SUPPORTED_MAIN_DOMAIN
     target_run_id = "run-en-check-fr"
     _seed_check_languages_completed_run(domain, "run-en", "fr", target_run_id)
-    _write(domain, target_run_id, "llm_review_stats.json", {"status": "<script>alert(1)</script>"})
+    _write(domain, target_run_id, "llm_review_stats.json", ["<script>alert(1)</script>"])
 
     status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
     assert status == HTTPStatus.OK
-    assert "malformed telemetry" in body.lower()
+    assert "LLM telemetry malformed" in body
     assert "<script>alert(1)</script>" not in body
-    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in body
+    assert "Telemetry file exists but is malformed; showing unavailable placeholders." in body
 
 
 def test_get_check_languages_llm_requested_false_shows_no_real_llm_request_message(api_env):
@@ -1064,9 +1108,53 @@ def test_get_check_languages_llm_requested_false_shows_no_real_llm_request_messa
         domain,
         target_run_id,
         "llm_review_stats.json",
-        _llm_review_stats_payload(llm_requested=False, fallback_mode="full", provider="", model="", prompt_tokens=0, completion_tokens=0, total_tokens=0, cost_usd=0.0),
+        _llm_review_stats_payload(
+            llm_requested=False,
+            review_mode="llm",
+            llm_batches_attempted=0,
+            llm_batches_succeeded=0,
+            llm_batches_failed=0,
+            fallback_batches=1,
+            fallback_items=1,
+            used_fallback=True,
+            responses_received=0,
+            estimated_prompt_tokens=0,
+            estimated_completion_tokens=0,
+            estimated_total_tokens=0,
+            actual_prompt_tokens=None,
+            actual_completion_tokens=None,
+            actual_total_tokens=None,
+            actual_cost_usd=None,
+        ),
     )
 
     status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
     assert status == HTTPStatus.OK
-    assert "No real LLM request was sent." in body
+    assert "LLM not executed: provider misconfigured (missing API key or provider)" in body
+
+
+def test_llm_review_ui_state_is_consistent_with_telemetry(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_check_languages_completed_run(domain, "run-en", "fr", target_run_id)
+    _write(
+        domain,
+        target_run_id,
+        "llm_review_stats.json",
+        _llm_review_stats_payload(
+            llm_requested=True,
+            llm_batches_attempted=2,
+            llm_batches_succeeded=1,
+            llm_batches_failed=1,
+            responses_received=1,
+            used_fallback=True,
+            fallback_batches=1,
+            fallback_items=1,
+        ),
+    )
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert "LLM not executed: provider misconfigured (missing API key or provider)" not in body
+    assert "Effective provider/model: llm / openrouter/free" in body
+    assert "Fallback status: Partial fallback" in body
