@@ -697,6 +697,37 @@ def test_replay_scope_helper_rewrites_github_pages_language_segment_only(monkeyp
     ]
 
 
+def test_replay_scope_helper_treats_null_recipe_fields_as_not_applicable(monkeypatch):
+    pages = [
+        {
+            "url": "https://example.com/a",
+            "language": "en",
+            "viewport_kind": "desktop",
+            "state": "baseline",
+            "user_tier": "guest",
+            "recipe_id": None,
+            "capture_point_id": None,
+        }
+    ]
+    monkeypatch.setattr("app.skeleton_server._read_list_artifact_required", lambda _domain, _run_id, _filename: pages)
+
+    calls = []
+
+    def _fake_build(domain, url, language, viewport_kind, state, user_tier, recipe_id=None, capture_point_id=None):
+        calls.append((domain, url, language, viewport_kind, state, user_tier, recipe_id, capture_point_id))
+        return {"ctx": (url, viewport_kind, state, user_tier)}
+
+    monkeypatch.setattr("pipeline.run_phase1.build_exact_context_job", _fake_build)
+
+    from app.skeleton_server import _replay_scope_from_reference_run
+
+    jobs = _replay_scope_from_reference_run("https://bongacams.com/", "run-en", "ja", "https://ja.bongacams.com/")
+    assert len(jobs) == 1
+    assert calls == [
+        ("https://bongacams.com/", "https://ja.bongacams.com/a", "ja", "desktop", "baseline", "guest", None, None),
+    ]
+
+
 def test_orchestrator_runs_capture_then_comparison(monkeypatch):
     calls = []
     monkeypatch.setattr("app.skeleton_server._replay_scope_from_reference_run", lambda d, e, t, u: ["j1", "j2"])

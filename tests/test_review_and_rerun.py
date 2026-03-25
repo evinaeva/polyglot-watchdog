@@ -178,6 +178,31 @@ class ReviewAndRerunTests(unittest.TestCase):
                     capture_point_id="cp-profile-open",
                 )
 
+    def test_exact_context_baseline_rejects_meaningful_recipe_fields(self):
+        with patch("pipeline.run_phase1.load_recipes_for_planner", return_value={}):
+            with self.assertRaisesRegex(RuntimeError, "baseline context must not include recipe_id/capture_point_id"):
+                build_exact_context_job(
+                    domain="example.com",
+                    url="https://example.com/",
+                    language="en",
+                    viewport_kind="desktop",
+                    state="baseline",
+                    user_tier="guest",
+                    recipe_id="profile_interactions",
+                    capture_point_id=None,
+                )
+            with self.assertRaisesRegex(RuntimeError, "baseline context must not include recipe_id/capture_point_id"):
+                build_exact_context_job(
+                    domain="example.com",
+                    url="https://example.com/",
+                    language="en",
+                    viewport_kind="desktop",
+                    state="baseline",
+                    user_tier="guest",
+                    recipe_id=None,
+                    capture_point_id="profile_open",
+                )
+
     def test_exact_context_rerun_includes_provenance_link(self):
         recipes = {
             "profile": Recipe(
