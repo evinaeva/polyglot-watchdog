@@ -106,8 +106,8 @@ Phase 4 emits `phase4_ocr.json` as an array of OCR rows for approved image-backe
 
 Current narrow contract:
 
-- provider: `ocr.space`
-- engine: `3`
+- primary provider: `ocr.space` (engine `3`)
+- fallback provider: `google_vision` (when OCR.Space is unavailable or returns empty/malformed results)
 - statuses: `ok`, `skipped`, `failed`
 
 Status semantics:
@@ -115,6 +115,16 @@ Status semantics:
 - `ok`: OCR completed and produced usable normalized text (`ocr_text`).
 - `skipped`: OCR intentionally not attempted for a non-error reason (for example missing API key).
 - `failed`: OCR attempted or expected but no valid result was produced (input/provider/processing failure).
+
+OCR rows also include deterministic SVG text extraction fields:
+
+- `asset_hash`: SHA-1 hash of the image asset
+- `src`: image source URL or data URI
+- `alt`: alt text
+- `is_svg`: boolean indicating SVG format
+- `svg_text`: extracted text from inline SVG (when deterministic extraction succeeds)
+
+SVG text extraction is a deterministic pre-step before raster OCR; when SVG text is successfully extracted, raster OCR is skipped.
 
 Phase 6 may consume this artifact when present, but must continue safely when it is absent. OCR text from this artifact is supporting input for approved image-backed items in EN ↔ target review; when quality is usable it may be used as canonical comparison text for that pair, and otherwise Phase 6 falls back to normalized DOM text. This does not create standalone issue categories or alter top-level contract taxonomy.
 
@@ -317,7 +327,7 @@ The correct outcome is a smaller, evidence-backed review queue for a human opera
 
 ## 14. Review mode and image coverage reporting
 
-- Phase 6 runtime requires an explicit review mode (`test-heuristic`, `disabled`, or `llm`) via CLI flag or `PHASE6_REVIEW_PROVIDER`.
+- Phase 6 runtime requires an explicit review mode (`test-heuristic`, `disabled`, or `llm`) via CLI flag or `PHASE6_REVIEW_PROVIDER`. Missing mode is a hard error.
 - Phase 6 emits `coverage_gaps.json` for image-backed target items that were not actually image-text-reviewed.
 - Coverage status is tracked independently from `issues.json` and uses:
   - `image_text_reviewed`
@@ -325,3 +335,5 @@ The correct outcome is a smaller, evidence-backed review queue for a human opera
   - `image_text_review_blocked`
 - Coverage rows include `asset_hash`, `src`, `alt`, `is_svg`, and `svg_text` (when deterministic SVG text extraction succeeds).
 - SVG text extraction is a deterministic pre-step before OCR for inline SVG data URIs.
+- Stale background jobs are normalized to failed state when reading latest status and when checking for duplicate in-progress jobs.
+- Explicit artifact gates ensure missing outputs terminalize the job at the correct stage: `page_screenshots.json` and `collected_items.json` after Phase 1, `eligible_dataset.json` after Phase 3, and `issues.json` after Phase 6.

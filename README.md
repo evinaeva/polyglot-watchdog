@@ -26,11 +26,15 @@ What is already real in the repository:
 
 - canonical artifact storage paths and JSON artifact writers/readers;
 - deterministic pipeline/storage conventions for run-level artifacts;
-- implemented phase runners for key contract-aligned flows, including Phase 1, Phase 3, and Phase 6;
-- a `/urls` operator surface for managing seed URLs;
-- a `/check-languages` operator surface for running phase-six language checks with target-language selection and job orchestration;
+- implemented phase runners for key contract-aligned flows, including Phase 1, Phase 3, Phase 4, and Phase 6;
+- a `/urls` operator surface for managing seed URLs with persisted domain selection and last-used first-run domain memory;
+- a `/check-languages` operator surface for running phase-six language checks with target-language selection, GitHub Pages project site support, and job orchestration;
 - operator-facing issue exploration backed by persisted issue artifacts;
-- operator workflow pages are now visibly linked via global navigation.
+- operator workflow pages are now visibly linked via global navigation;
+- Phase 6 image-text review coverage tracking via `coverage_gaps.json` with statuses (`image_text_reviewed`, `image_text_not_reviewed`, `image_text_review_blocked`);
+- SVG deterministic text extraction and Google Vision fallback for OCR when OCR.Space is unavailable;
+- explicit Phase 6 review mode requirement (`test-heuristic`, `disabled`, `llm`) with fail-fast when missing;
+- Tallinn timezone (Europe/Tallinn) display formatting with DST awareness for all timestamps.
 
 What is not yet complete:
 
