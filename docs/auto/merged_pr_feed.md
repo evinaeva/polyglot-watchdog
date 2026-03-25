@@ -1458,3 +1458,38 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c38edf87c0832cb9bac7996d599e89)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #139 — 2026-03-25T08:30:06Z
+
+- Title: Make /urls Domain selector use persisted domains and remember last-used first-run domain
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/139
+- Author: evinaeva
+- Base branch: main
+- Head branch: 1pjjme-codex/fix-/urls-domain-dropdown-behavior
+- Merge commit: 47a6cead0cd3350d4d5ce49607b69878e08cb32f
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_operator_ui_runtime_regressions.py
+  - tests/test_stage_c_operator_workflow.py
+  - web/static/urls.js
+  - web/templates/urls.html
+- Description:
+  ### Motivation
+  - The Domain field on the /urls page was effectively pinned to a hardcoded `bongacams.com` HTML default and did not reflect persisted domains or the last domain used for a first run.
+  - Users must be able to select any persisted domain, type a new domain, and have the last domain used for a first-run persistently preselected across reloads.
+  
+  ### Description
+  - Removed the hardcoded `value="bongacams.com"` and static datalist entry from `web/templates/urls.html` so the input is editable and data-driven.  
+  - Extended `/api/domains` (in `app/skeleton_server.py`) to return deduped persisted domains plus `last_used_first_run_domain`, and added small helpers to read/write `_system/manual/urls_page_state.json`.  
+  - Persist `last_used_first_run_domain` when a first run is started by wiring `_set_last_used_first_run_domain` into `/api/capture/start` and `/api/workflow/start-capture`.  
+  - Updated frontend initialization in `web/static/urls.js` to populate the datalist from the API, preselect `last_used_first_run_domain` if present, fall back deterministically to the first saved domain (or remain empty if none), and avoid auto-loading URLs when the domain input is empty.  
+  - Tests: updated `tests/test_operator_ui_runtime_regressions.py` to assert preselection behavior and typed-domain runtime behavior, and added `test_urls_domain_source_and_last_used_first_run_persistence` to `tests/test_stage_c_operator_workflow.py` to validate the end-to-end persistence and API shape.
+  
+  ### Testing
+  - Ran the focused JS runtime regression: `PYTHONPATH=. pytest -q tests/test_operator_ui_runtime_regressions.py::test_urls_runtime_uses_live_typed_domain_for_continue_and_api_mutations`, which passed.  
+  - Ran the new integration test together with the JS test: `PYTHONPATH=. pytest -q tests/test_operator_ui_runtime_regressions.py tests/test_stage_c_operator_workflow.py -q`, which produced all tests passing.  
+  - The modified tests exercise: domains API contents and last-used field, absence of the hardcoded bongacams value in the /urls page HTML, typed-domain add/persist via `/api/seed-urls/add`, and that starting a first-run updates `last_used_first_run_domain` (all assertions passed).
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c399ca4efc832caff8580c0d8eb378)
+- Notes: Auto-generated from merged PR metadata.
