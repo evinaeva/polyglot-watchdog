@@ -1663,3 +1663,31 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3beb5935c832ca019e72f7efbe8e4)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #146 — 2026-03-25T11:57:11Z
+
+- Title: Fix /check-languages form parsing so selected target_language is submitted
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/146
+- Author: evinaeva
+- Base branch: main
+- Head branch: fkwp9k-codex/fix-target-language-submission-in-/check-languages
+- Merge commit: 1b67e20816a943ffe1036f756ad0fc051d0abb0e
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  - Submissions to `/check-languages` could drop `target_language` when duplicate form keys contained an empty value first (e.g. `target_language=&target_language=de`), causing a spurious "Target language is required" error and empty state.
+  
+  ### Description
+  - Hardened form parsing in `SkeletonHandler._read_form_payload` to call `parse_qs(..., keep_blank_values=True)` and to pick the last non-empty value for duplicate keys so the selected `target_language` is preserved.
+  - Added regression test `test_post_prefers_non_empty_target_language_when_duplicate_form_values` which posts `target_language=&target_language=de` and asserts the redirect and subsequent GET show `target_language=de` and a populated generated target URL.
+  - No other check-languages logic, domain canonicalization, or English reference behavior was changed.
+  
+  ### Testing
+  - Installed dependencies with `python -m pip install -r requirements.txt` (succeeded in the run).
+  - Ran targeted tests with `PYTHONPATH=. pytest -q tests/test_check_languages_page.py -k "post_preserves_selected_domain_and_language_and_shows_generated_target_url or post_prefers_non_empty_target_language_when_duplicate_form_values or post_starts_composed_async_workflow"` and all selected tests passed (3 passed).
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3cbd77c60832cb857a5611638a006)
+- Notes: Auto-generated from merged PR metadata.
