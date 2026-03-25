@@ -1726,3 +1726,29 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3d0c458f0832cb601093a1e87d497)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #148 — 2026-03-25T13:14:03Z
+
+- Title: Disable "Start language check" button when form incomplete or job in progress
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/148
+- Author: evinaeva
+- Base branch: main
+- Head branch: 3uqnty-codex/locate-and-analyze-disabled-button-issue
+- Merge commit: 1c70dccb781fec2db184ad78042bcaa9a78b7c30
+- Changed files:
+  - web/templates/check-languages.html
+- Description:
+  ### Motivation
+  - Prevent operators from starting a language check when required selections are missing or when a check is already queued or running.
+  
+  ### Description
+  - Added IDs `checkLanguagesForm` and `checkLanguagesStartButton` to the form and submit button for DOM access.
+  - Introduced an inline script that reads `selected_domain`, `en_run_id`, `target_language`, and the `#checkLanguagesState` text to compute whether a job is in progress and toggles the start button's `disabled` state accordingly.
+  - The script attaches `change` listeners to the three controls and runs `updateStartButtonState` on load to set the initial button state.
+  
+  ### Testing
+  - No automated tests were added or executed for this UI change.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3db1f38a0832cbb085c4898730e43)
+- Notes: Auto-generated from merged PR metadata.
