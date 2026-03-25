@@ -1752,3 +1752,34 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3db1f38a0832cbb085c4898730e43)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #149 — 2026-03-25T13:46:04Z
+
+- Title: Accept null recipe_id/capture_point_id for baseline replay
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/149
+- Author: evinaeva
+- Base branch: main
+- Head branch: 1jctow-codex/fix-/check-languages-baseline-validation
+- Merge commit: ea1be7f6d17689be1cc44e341be236a1717ad98a
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+  - tests/test_review_and_rerun.py
+- Description:
+  ### Motivation
+  - Baseline replay was failing because JSON `null` values in `page_screenshots.json` were coerced to non-empty strings and tripped the baseline guard, while baseline rows with null/missing recipe identifiers should be allowed. 
+  
+  ### Description
+  - Normalize `recipe_id` and `capture_point_id` using `_normalize_optional_string` when extracting replay scope in `_replay_scope_from_reference_run` in `app/skeleton_server.py` so null/empty/missing values become `None`.
+  - Apply the same normalization to `_parse_rerun_payload` in `app/skeleton_server.py` for consistent rerun parsing semantics.
+  - Add regression tests: `tests/test_check_languages_page.py::test_replay_scope_helper_treats_null_recipe_fields_as_not_applicable` and `tests/test_review_and_rerun.py::test_exact_context_baseline_rejects_meaningful_recipe_fields` to cover the accepted and rejected cases.
+  - Kept the existing baseline guard in `pipeline/run_phase1.py` unchanged so meaningful non-empty `recipe_id`/`capture_point_id` still cause rejection.
+  
+  ### Testing
+  - Ran targeted pytest cases for the new behavior: `tests/test_check_languages_page.py::test_replay_scope_helper_treats_null_recipe_fields_as_not_applicable`, `tests/test_review_and_rerun.py::ReviewAndRerunTests::test_exact_context_baseline_rejects_meaningful_recipe_fields`, and `tests/test_review_and_rerun.py::ReviewAndRerunTests::test_rerun_payload_accepts_baseline_without_recipe_identifiers`, and all 3 passed.
+  - Ran `tests/test_review_and_rerun.py::ReviewAndRerunTests::test_exact_context_job_resolves_single_job` separately and it passed.
+  - These targeted unit tests confirm null-like baseline fields are treated as not-applicable while meaningful recipe/capture-point values are still rejected.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3e572425c832ca68237d84d8b4e0c)
+- Notes: Auto-generated from merged PR metadata.
