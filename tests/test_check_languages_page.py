@@ -218,6 +218,39 @@ def test_duplicate_in_progress_guard(api_env):
     assert "already+in+progress" in location
 
 
+def test_duplicate_guard_ignores_stale_running_job(api_env, monkeypatch):
+    domain = SUPPORTED_MAIN_DOMAIN
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_pages(domain, "run-fr-old", "fr")
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {
+                "run_id": "run-en-check-fr",
+                "created_at": "2026-03-12T00:00:00Z",
+                "jobs": [
+                    {
+                        "job_id": "check-languages-run-en-check-fr-1",
+                        "status": "running",
+                        "type": "check_languages",
+                        "en_run_id": "run-en",
+                        "target_language": "fr",
+                        "updated_at": "2000-01-01T00:00:00Z",
+                        "created_at": "2000-01-01T00:00:00Z",
+                    }
+                ],
+            },
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+    monkeypatch.setenv("WORKFLOW_STALE_JOB_SECONDS", "30")
+
+    form = _query({"selected_domain": domain, "en_run_id": "run-en", "target_language": "fr"})
+    status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
+    assert status_post == HTTPStatus.FOUND
+    assert "Language+check+started." in location
+
+
 def test_completed_state_shows_target_run_and_summary(api_env):
     domain = SUPPORTED_MAIN_DOMAIN
     _seed_runs(domain)
@@ -738,7 +771,9 @@ def test_orchestrator_runs_capture_then_comparison(monkeypatch):
     monkeypatch.setattr("pipeline.run_phase1.main", _fake_main)
     monkeypatch.setattr("pipeline.run_phase3.run", lambda **kwargs: calls.append("phase3"))
     monkeypatch.setattr("pipeline.run_phase6.run", lambda **kwargs: calls.append("phase6"))
+    monkeypatch.setattr("app.skeleton_server._require_artifact_exists", lambda *args, **kwargs: None)
     monkeypatch.setattr("app.skeleton_server._upsert_job_status", lambda *args, **kwargs: None)
+    monkeypatch.setenv("PHASE6_REVIEW_PROVIDER", "test-heuristic")
 
     from app.skeleton_server import _run_check_languages_async
 
@@ -765,6 +800,31 @@ def test_orchestrator_stops_before_comparison_on_capture_failure(monkeypatch):
     _run_check_languages_async("job1", "https://bongacams.com/", "run-en", "fr", "run-en-check-fr", "https://fr.bongacams.com/")
     assert calls == ["phase1"]
     assert any(str(rec.get("stage")) == "running_target_capture_failed" for rec in updates)
+    assert any(str(rec.get("status")) == "failed" for rec in updates)
+
+
+def test_orchestrator_fails_when_capture_returns_without_required_artifacts(monkeypatch):
+    calls = []
+    monkeypatch.setattr("app.skeleton_server._replay_scope_from_reference_run", lambda d, e, t, u: ["j1"])
+
+    async def _fake_main(*args, **kwargs):
+        calls.append("phase1")
+        return None
+
+    monkeypatch.setattr("pipeline.run_phase1.main", _fake_main)
+    monkeypatch.setattr("pipeline.run_phase3.run", lambda **kwargs: calls.append("phase3"))
+    monkeypatch.setattr("pipeline.run_phase6.run", lambda **kwargs: calls.append("phase6"))
+    monkeypatch.setattr("app.skeleton_server._require_artifact_exists", lambda *args, **kwargs: (_ for _ in ()).throw(FileNotFoundError("page_screenshots.json artifact missing")))
+    updates = []
+    monkeypatch.setattr("app.skeleton_server._upsert_job_status", lambda d, r, rec: updates.append(rec))
+
+    from app.skeleton_server import _run_check_languages_async
+
+    _run_check_languages_async("job1", "https://bongacams.com/", "run-en", "fr", "run-en-check-fr", "https://fr.bongacams.com/")
+    assert calls == ["phase1"]
+    failed = [rec for rec in updates if str(rec.get("stage")) == "running_target_capture_failed"]
+    assert failed
+    assert "artifact missing" in str(failed[-1].get("error", ""))
 
 
 def test_orchestrator_surfaces_comparison_failure(monkeypatch):
@@ -776,6 +836,7 @@ def test_orchestrator_surfaces_comparison_failure(monkeypatch):
     monkeypatch.setattr("pipeline.run_phase1.main", _fake_main)
     monkeypatch.setattr("pipeline.run_phase3.run", lambda **kwargs: None)
     monkeypatch.setattr("pipeline.run_phase6.run", lambda **kwargs: (_ for _ in ()).throw(RuntimeError("phase6 failed")))
+    monkeypatch.setattr("app.skeleton_server._require_artifact_exists", lambda *args, **kwargs: None)
     updates = []
     monkeypatch.setattr("app.skeleton_server._upsert_job_status", lambda d, r, rec: updates.append(rec))
 
@@ -783,3 +844,59 @@ def test_orchestrator_surfaces_comparison_failure(monkeypatch):
 
     _run_check_languages_async("job1", "https://bongacams.com/", "run-en", "fr", "run-en-check-fr", "https://fr.bongacams.com/")
     assert any(str(rec.get("stage")) == "running_comparison_failed" for rec in updates)
+
+
+def test_orchestrator_surfaces_missing_phase6_provider(monkeypatch):
+    monkeypatch.setattr("app.skeleton_server._replay_scope_from_reference_run", lambda d, e, t, u: ["j1"])
+    monkeypatch.setattr("app.skeleton_server._require_artifact_exists", lambda *args, **kwargs: None)
+
+    async def _fake_main(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr("pipeline.run_phase1.main", _fake_main)
+    monkeypatch.setattr("pipeline.run_phase3.run", lambda **kwargs: None)
+    monkeypatch.setattr("pipeline.run_phase6.run", lambda **kwargs: None)
+    monkeypatch.delenv("PHASE6_REVIEW_PROVIDER", raising=False)
+    updates = []
+    monkeypatch.setattr("app.skeleton_server._upsert_job_status", lambda d, r, rec: updates.append(rec))
+
+    from app.skeleton_server import _run_check_languages_async
+
+    _run_check_languages_async("job1", "https://bongacams.com/", "run-en", "fr", "run-en-check-fr", "https://fr.bongacams.com/")
+    failed = [rec for rec in updates if str(rec.get("stage")) == "running_comparison_failed"]
+    assert failed
+    assert "PHASE6_REVIEW_PROVIDER is required" in str(failed[-1].get("error", ""))
+
+
+def test_stale_check_languages_job_is_rendered_as_failed(api_env, monkeypatch):
+    domain = SUPPORTED_MAIN_DOMAIN
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_pages(domain, "run-en-check-fr", "fr")
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {
+                "run_id": "run-en-check-fr",
+                "created_at": "2026-03-12T00:00:00Z",
+                "jobs": [
+                    {
+                        "job_id": "check-languages-1",
+                        "status": "running",
+                        "type": "check_languages",
+                        "stage": "running_target_capture",
+                        "en_run_id": "run-en",
+                        "target_language": "fr",
+                        "updated_at": "2000-01-01T00:00:00Z",
+                        "created_at": "2000-01-01T00:00:00Z",
+                    }
+                ],
+            },
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+    monkeypatch.setenv("WORKFLOW_STALE_JOB_SECONDS", "30")
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id=run-en-check-fr")
+    assert status == HTTPStatus.OK
+    assert 'Current state: <strong id="checkLanguagesState">failed</strong>' in body
+    assert "capture worker stale: no completion heartbeat" in body
