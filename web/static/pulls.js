@@ -170,6 +170,26 @@ function decisionToLabel(decision) {
   return DECISION_TO_UI[String(decision || '').trim()] || '';
 }
 
+function formatViewportKind(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'desktop') return 'Desktop';
+  if (normalized === 'mobile') return 'Mobile';
+  if (normalized === 'any') return 'Any';
+  return normalized ? normalized[0].toUpperCase() + normalized.slice(1) : '—';
+}
+
+function formatUserTier(value) {
+  const normalized = String(value || '').trim();
+  if (!normalized) return 'Free';
+  return normalized[0].toUpperCase() + normalized.slice(1);
+}
+
+function captureContextSummary(row) {
+  const language = String(row.language || '').trim() || '—';
+  const state = String(row.state || '').trim() || '—';
+  return `${language.toUpperCase()} · ${formatViewportKind(row.viewport_kind)} · ${state} · ${formatUserTier(row.user_tier)}`;
+}
+
 function updateWorkflowSummary(domain, runId) {
   const parts = [];
   if (domain) parts.push(`domain: ${domain}`);
@@ -694,10 +714,15 @@ function renderRows(domain, runId) {
       <button type="button" class="pulls-preview-trigger">Preview on page</button>
       <details>
         <summary>Advanced</summary>
-        <div>capture_context_id: ${escapeHtml(row.capture_context_id)}</div>
-        <div>page_id: ${escapeHtml(row.page_id)}</div>
-        <div>viewport_kind: ${escapeHtml(row.viewport_kind)}</div>
-        <div>user_tier: ${escapeHtml(row.user_tier)}</div>
+        <div>Capture context: ${escapeHtml(captureContextSummary(row))}</div>
+        <div>Page: ${escapeHtml(row.url || '—')}</div>
+        <div>Viewport: ${escapeHtml(formatViewportKind(row.viewport_kind))}</div>
+        <div>User tier: ${escapeHtml(formatUserTier(row.user_tier))}</div>
+        <details class="pulls-technical-ids">
+          <summary>Technical IDs</summary>
+          <div>capture_context_id: ${escapeHtml(row.capture_context_id || '—')}</div>
+          <div>page_id: ${escapeHtml(row.page_id || '—')}</div>
+        </details>
       </details>`;
 
     const select = controls.querySelector('select');

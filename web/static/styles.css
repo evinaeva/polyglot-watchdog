@@ -17,6 +17,58 @@ nav button:hover { background: #475569; }
 main { padding: 18px; }
 .controls, .filters { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .urls-actions { margin-top: 8px; }
+.domain-combobox {
+  display: inline-flex;
+  align-items: stretch;
+  min-width: min(680px, 92vw);
+  max-width: 100%;
+  position: relative;
+}
+.domain-combobox #domainInput {
+  flex: 1;
+  min-width: 240px;
+  border-radius: 8px 0 0 8px;
+}
+.domain-combobox #domainSavedToggle {
+  border-radius: 0 8px 8px 0;
+  white-space: nowrap;
+}
+.domain-saved-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 100%;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid #2a3a63;
+  border-radius: 10px;
+  background: #16213d;
+  box-shadow: 0 12px 24px rgba(2, 10, 28, 0.45);
+  z-index: 8;
+  padding: 6px;
+}
+.domain-saved-option {
+  width: 100%;
+  text-align: left;
+  margin: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 7px 9px;
+  color: #dbe7ff;
+  background: transparent;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.domain-saved-option:hover,
+.domain-saved-option:focus-visible {
+  background: rgba(79, 209, 197, 0.16);
+  border-color: rgba(110, 231, 255, 0.42);
+  outline: none;
+}
+.domain-saved-empty {
+  padding: 8px;
+  color: #99a7c7;
+}
 table { width: 100%; border-collapse: collapse; background: #fff; }
 th, td { border: 1px solid #d1d5db; padding: 8px; font-size: 14px; text-align: left; vertical-align: top; }
 .url-cell { min-width: 360px; }
@@ -177,6 +229,16 @@ pre { background: #0f172a; color: #e2e8f0; padding: 10px; border-radius: 4px; ov
 .pulls-preview-modal.hidden { display: none; }
 .pulls-preview-overlay { position: absolute; inset: 0; background: rgba(15, 23, 42, 0.7); }
 .pulls-preview-panel { position: relative; background: #fff; width: min(1100px, 96vw); max-height: 92vh; overflow: auto; border-radius: 8px; padding: 12px; z-index: 1; }
+.pulls-preview-panel,
+.pulls-preview-panel h2,
+.pulls-preview-panel h3,
+.pulls-preview-panel p,
+.pulls-preview-panel li,
+.pulls-preview-panel summary,
+.pulls-preview-panel button {
+  color: #0f172a;
+}
+.pulls-preview-panel .muted { color: #334155; }
 .pulls-preview-header { display: flex; align-items: center; justify-content: space-between; }
 .pulls-preview-header h2 { margin: 0; }
 .pulls-preview-toolbar { display: flex; gap: 8px; margin: 8px 0; }

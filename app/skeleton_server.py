@@ -658,9 +658,23 @@ def _to_rule_type(decision: str) -> str:
     }
     return mapping.get(value, decision)
 def _list_domains() -> list[str]:
+    from pipeline.storage import write_json_artifact
+
     payload = _read_json_safe("_system", "manual", "domains.json", {"domains": []})
     values = payload.get("domains") if isinstance(payload, dict) else []
-    return sorted({str(v).strip() for v in values if str(v).strip()})
+    normalized: set[str] = set()
+    for raw in values:
+        value = str(raw).strip()
+        if not value:
+            continue
+        try:
+            normalized.add(validate_domain(value))
+        except ValueError:
+            continue
+    cleaned = sorted(normalized)
+    if isinstance(payload, dict) and payload.get("domains") != cleaned:
+        write_json_artifact("_system", "manual", "domains.json", {"domains": cleaned})
+    return cleaned
 
 
 def _register_domain(domain: str) -> None:
@@ -680,8 +694,17 @@ def _read_urls_page_state() -> dict:
 
 
 def _last_used_first_run_domain() -> str:
+    from pipeline.storage import write_json_artifact
+
     payload = _read_urls_page_state()
-    return str(payload.get("last_used_first_run_domain", "")).strip()
+    raw_value = str(payload.get("last_used_first_run_domain", "")).strip()
+    try:
+        return validate_domain(raw_value)
+    except ValueError:
+        if isinstance(payload, dict) and payload.get("last_used_first_run_domain"):
+            payload["last_used_first_run_domain"] = ""
+            write_json_artifact("_system", "manual", "urls_page_state.json", payload)
+        return ""
 
 
 def _set_last_used_first_run_domain(domain: str) -> None:
