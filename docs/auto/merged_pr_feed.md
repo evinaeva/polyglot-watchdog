@@ -1952,3 +1952,42 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3fcc1d2e8832c805c3cb6b71911ee)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #155 — 2026-03-25T15:39:59Z
+
+- Title: Normalize LLM telemetry rendering, add operator notes, and update tests
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/155
+- Author: evinaeva
+- Base branch: main
+- Head branch: ewl0bs-codex/perform-production-grade-llm-audit
+- Merge commit: 39743e7aa654ece8f8ff6fca7c46507769cfa53a
+- Changed files:
+  - app/skeleton_server.py
+  - docs/LLM_AUDIT_2026-03-25.md
+  - tests/test_check_languages_page.py
+  - tests/test_phase6_llm_integration_real_provider.py
+  - web/templates/check-languages.html
+- Description:
+  ### Motivation
+  
+  - Consolidate two incompatible telemetry render paths on `/check-languages` into one canonical renderer that understands the current backend telemetry schema.
+  - Surface clear operator-facing hints when review mode is `llm` but no real provider request was executed and record fallback/response conditions in a concise field.
+  - Repair and modernize tests to assert against the current telemetry shape and add a gated real-provider validation test.
+  
+  ### Description
+  
+  - Reworked `_llm_review_display` to accept and prefer the modern telemetry keys (e.g. `llm_batches_*`, `estimated_*`, `actual_*`, `actual_cost_usd`) and to compute `effective_provider` from `configured_provider` when missing; added `operator_notes` aggregation and integrated it into the summary and returned payload.
+  - Removed the legacy, strict telemetry rendering block from the `/check-languages` path and updated the template `web/templates/check-languages.html` to rely on the single canonical `{{llm_review}}` block.
+  - Updated tests in `tests/test_check_languages_page.py` to emit and assert the new telemetry schema and fixed prior collection/test issues; added new assertions for `Operator notes` and clearer fallback/status messaging.
+  - Added a new gated integration test `tests/test_phase6_llm_integration_real_provider.py` that executes the real provider path through `run_phase6.run(...)` when `PHASE6_REVIEW_PROVIDER` and `PHASE6_REVIEW_API_KEY` are set, capturing emitted telemetry.
+  - Added `docs/LLM_AUDIT_2026-03-25.md` capturing the pre-remediation audit and describing the reasons for the change.
+  
+  ### Testing
+  
+  - Ran the updated unit tests in `tests/test_check_languages_page.py` with `pytest` and they succeeded against the modified handlers and template assertions.
+  - Executed the gated provider validation `tests/test_phase6_llm_integration_real_provider.py`; it is skipped when `PHASE6_REVIEW_PROVIDER`/`PHASE6_REVIEW_API_KEY` are not set and otherwise runs and asserts telemetry emission (skipped in CI when env not provided).
+  - No other automated test failures were observed from the targeted test runs described above.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3fc1e2c7c832c85d0d7b1a91c4700)
+- Notes: Auto-generated from merged PR metadata.
