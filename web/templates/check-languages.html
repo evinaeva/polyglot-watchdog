@@ -20,7 +20,7 @@
 
     <section>
       <h2>Selection</h2>
-      <form method="post" action="/check-languages">
+      <form id="checkLanguagesForm" method="post" action="/check-languages">
         <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
         <div class="controls">
           <div>
@@ -43,7 +43,7 @@
           </div>
         </div>
         <p>
-          <button type="submit"{{start_disabled}}>Start language check</button>
+          <button id="checkLanguagesStartButton" type="submit"{{start_disabled}}>Start language check</button>
         </p>
       </form>
     </section>
@@ -87,5 +87,27 @@
   <script src="/static/i18n.js"></script>
   <script src="/static/nav-active.js"></script>
   <script src="/static/auth.js"></script>
+  <script>
+    (() => {
+      const form = document.getElementById("checkLanguagesForm");
+      const startButton = document.getElementById("checkLanguagesStartButton");
+      if (!form || !startButton) return;
+
+      const stateEl = document.getElementById("checkLanguagesState");
+      const updateStartButtonState = () => {
+        const selectedDomain = String((form.elements.namedItem("selected_domain") || {}).value || "").trim();
+        const enRunId = String((form.elements.namedItem("en_run_id") || {}).value || "").trim();
+        const targetLanguage = String((form.elements.namedItem("target_language") || {}).value || "").trim();
+        const state = String((stateEl || {}).textContent || "").trim().toLowerCase();
+        const inProgress = state === "queued" || state.startsWith("running_");
+        startButton.disabled = !(selectedDomain && enRunId && targetLanguage) || inProgress;
+      };
+
+      form.elements.namedItem("selected_domain")?.addEventListener("change", updateStartButtonState);
+      form.elements.namedItem("en_run_id")?.addEventListener("change", updateStartButtonState);
+      form.elements.namedItem("target_language")?.addEventListener("change", updateStartButtonState);
+      updateStartButtonState();
+    })();
+  </script>
 </body>
 </html>
