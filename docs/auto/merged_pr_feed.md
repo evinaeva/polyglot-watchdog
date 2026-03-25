@@ -1883,3 +1883,37 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3f49e221c832c84a5ee01b996e30a)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #153 — 2026-03-25T15:14:40Z
+
+- Title: Expose LLM review telemetry on check-languages page and add tests
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/153
+- Author: evinaeva
+- Base branch: main
+- Head branch: ey8hbp-codex/add-get-tests-for-languages-page
+- Merge commit: 0bed3546da9c0e49e21782a58040854455c0f5b5
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+  - web/templates/check-languages.html
+- Description:
+  ### Motivation
+  
+  - Surface LLM review telemetry for language-check runs so operators can see provider, model, token counts, cost, and fallback status, and surface clear messages when telemetry is missing or malformed.
+  - Treat runs that did not send a real LLM request differently from completed runs with telemetry so UI messages are accurate.
+  - Ensure telemetry is safely validated and HTML-escaped before rendering to avoid injection from malformed files.
+  
+  ### Description
+  
+  - Parse and validate `llm_review_stats.json` in `SkeletonHandler` (in `app/skeleton_server.py`) and build `llm_review_stats_block` that covers completed telemetry, no-real-request, malformed telemetry, runtime-unavailable, and missing-after-completion cases.
+  - Wire the block into the template rendering by adding the `{{llm_review_stats}}` replacement and adding a new `LLM review telemetry` section in `web/templates/check-languages.html`.
+  - Add helper seed functions and a suite of tests in `tests/test_check_languages_page.py` to validate rendering of provider, model, token totals, cost formatting, partial/full fallback messages, running-state message, missing telemetry warning, and safe escaping of malformed telemetry.
+  
+  ### Testing
+  
+  - Ran `pytest tests/test_check_languages_page.py` which exercises the new telemetry parsing and rendering scenarios including `test_get_check_languages_completed_llm_run_shows_provider_model_tokens_and_cost`, `test_get_check_languages_completed_llm_run_shows_partial_fallback_clearly`, `test_get_check_languages_completed_llm_run_shows_full_fallback_clearly`, `test_get_check_languages_running_state_before_llm_telemetry_exists`, `test_get_check_languages_warns_when_llm_telemetry_missing_after_completion`, `test_get_check_languages_malformed_llm_telemetry_warning_is_rendered_safely`, and `test_get_check_languages_llm_requested_false_shows_no_real_llm_request_message`.
+  - All added tests passed.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3f49fab00832cbced361d5c37b7e5)
+- Notes: Auto-generated from merged PR metadata.
