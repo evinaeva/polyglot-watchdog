@@ -1528,3 +1528,37 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c399ca4efc832caff8580c0d8eb378)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #142 — 2026-03-25T09:44:43Z
+
+- Title: Support GitHub Pages project language paths and site-family run discovery for check-languages
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/142
+- Author: evinaeva
+- Base branch: main
+- Head branch: 12g1ho-codex/fix-/check-languages-for-github-pages-support
+- Merge commit: 3bb33b08ce466a424f26f26d0865a2133b634e15
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  
+  - Enable `check-languages` flows to work with GitHub Pages project sites that embed the language segment in the path (e.g. `/polyglot-watchdog-testsite/en/test.html`) instead of only exact-index URLs.
+  - Allow runs across site-family domains (index and other pages) to be discovered and treated as a single site family for run discovery, run-id generation, and job/orchestration.
+  
+  ### Description
+  
+  - Added `_parse_github_pages_project_language_url` to parse GitHub Pages project URLs with a language path segment and extract `project_prefix`, `language`, and `page_tail` information. 
+  - Added domain helpers `_is_supported_check_languages_domain`, `_check_languages_site_family_key`, and `_check_languages_run_domains` to treat GitHub Pages project URLs as supported and to discover all runs belonging to the same project family. 
+  - Extended `_build_check_languages_target_url` and `_target_capture_url_from_reference_url` to build and rewrite target URLs for GitHub Pages project sites while preserving page tails and mapping language segments. 
+  - Modified run/job discovery and orchestration helpers (`_load_check_language_runs`, `_generate_target_run_id`, `_find_in_progress_check_languages_job`, `_latest_check_languages_job`, `_latest_successful_en_standard_run_id`) to operate across related site-family domains and to track the `domain` / `site_family_key` where runs originate. 
+  - Updated request handling in `_serve_check_languages_page` and the `POST /check-languages` flow to select and use the run's actual domain (`run_domain`) when checking readiness, starting jobs, and reading artifacts, and to include non-standard but supported domain options in the domain select list. 
+  - Added/updated unit tests in `tests/test_check_languages_page.py` to cover GitHub Pages project path parsing, target URL generation for `test.html` pages, cross-visibility of runs between index and test pages, legacy exact-match behavior for existing domains, and replay-scope rewriting for GitHub Pages pages.
+  
+  ### Testing
+  
+  - Ran the test module `tests/test_check_languages_page.py` including the new tests `test_target_url_generation_for_supported_domains` (new case for `test.html`), `test_get_accepts_github_pages_project_site_domain_pattern`, `test_en_run_under_index_visible_when_opening_test_page`, `test_en_run_under_test_page_visible_when_opening_index_page`, `test_legacy_domains_remain_exact_match_for_run_discovery`, `test_post_passes_generated_target_url_into_runtime_execution` (new case), and `test_replay_scope_helper_rewrites_github_pages_language_segment_only` and observed all tests passing locally under `pytest`.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3a62b3588832ca5a6476690e9be33)
+- Notes: Auto-generated from merged PR metadata.
