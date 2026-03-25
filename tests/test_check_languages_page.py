@@ -900,3 +900,106 @@ def test_stale_check_languages_job_is_rendered_as_failed(api_env, monkeypatch):
     assert status == HTTPStatus.OK
     assert 'Current state: <strong id="checkLanguagesState">failed</strong>' in body
     assert "capture worker stale: no completion heartbeat" in body
+
+
+def test_llm_review_state_missing_telemetry_in_progress(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_pages(domain, "run-en-check-fr", "fr")
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {
+                "run_id": "run-en-check-fr",
+                "created_at": "2026-03-12T00:00:00Z",
+                "jobs": [
+                    {
+                        "job_id": "check-languages-1",
+                        "status": "running",
+                        "type": "check_languages",
+                        "stage": "running_comparison",
+                        "en_run_id": "run-en",
+                        "target_language": "fr",
+                    }
+                ],
+            },
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id=run-en-check-fr")
+    assert status == HTTPStatus.OK
+    assert "LLM review not reached yet" in body
+
+
+def test_llm_review_state_missing_telemetry_completed(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_pages(domain, "run-en-check-fr", "fr")
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {
+                "run_id": "run-en-check-fr",
+                "created_at": "2026-03-12T00:00:00Z",
+                "jobs": [
+                    {
+                        "job_id": "check-languages-1",
+                        "status": "succeeded",
+                        "type": "check_languages",
+                        "stage": "completed",
+                        "en_run_id": "run-en",
+                        "target_language": "fr",
+                    }
+                ],
+            },
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id=run-en-check-fr")
+    assert status == HTTPStatus.OK
+    assert "LLM telemetry missing" in body
+
+
+def test_llm_review_telemetry_renders_request_and_cost_priority(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_pages(domain, "run-en-check-fr", "fr")
+    _write(domain, "run-en-check-fr", "llm_review_stats.json", {
+        "llm_requested": False,
+        "batches_attempted": 2,
+        "batches_succeeded": 0,
+        "batches_failed": 2,
+        "fallback_batches": 2,
+        "fallback_items": 8,
+        "estimated_tokens": {"prompt": 100, "completion": 20, "total": 120},
+        "actual_tokens": {"prompt": 90, "completion": 10, "total": 100},
+        "estimated_cost_usd": 0.12,
+    })
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {
+                "run_id": "run-en-check-fr",
+                "created_at": "2026-03-12T00:00:00Z",
+                "jobs": [
+                    {
+                        "job_id": "check-languages-1",
+                        "status": "succeeded",
+                        "type": "check_languages",
+                        "stage": "completed",
+                        "en_run_id": "run-en",
+                        "target_language": "fr",
+                    }
+                ],
+            },
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id=run-en-check-fr")
+    assert status == HTTPStatus.OK
+    assert "no real LLM request was sent" in body
+    assert "Fallback status: Full fallback" in body
+    assert "$0.120000 (estimated)" in body
