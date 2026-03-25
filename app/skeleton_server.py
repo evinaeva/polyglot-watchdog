@@ -602,6 +602,28 @@ def _register_domain(domain: str) -> None:
     write_json_artifact("_system", "manual", "domains.json", {"domains": sorted(domains)})
 
 
+def _read_urls_page_state() -> dict:
+    payload = _read_json_safe("_system", "manual", "urls_page_state.json", {})
+    if not isinstance(payload, dict):
+        return {}
+    return payload
+
+
+def _last_used_first_run_domain() -> str:
+    payload = _read_urls_page_state()
+    return str(payload.get("last_used_first_run_domain", "")).strip()
+
+
+def _set_last_used_first_run_domain(domain: str) -> None:
+    from pipeline.storage import write_json_artifact
+
+    valid_domain = validate_domain(domain)
+    payload = _read_urls_page_state()
+    payload["last_used_first_run_domain"] = valid_domain
+    write_json_artifact("_system", "manual", "urls_page_state.json", payload)
+    _register_domain(valid_domain)
+
+
 def _load_runs(domain: str) -> dict:
     payload = _read_json_safe(domain, "manual", "capture_runs.json", {"runs": []})
     if not isinstance(payload, dict) or not isinstance(payload.get("runs"), list):
@@ -1764,7 +1786,10 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/domains":
             if not self._require_auth(api=True):
                 return
-            self._json_response({"items": _list_domains()})
+            self._json_response({
+                "items": _list_domains(),
+                "last_used_first_run_domain": _last_used_first_run_domain(),
+            })
             return
         if parsed.path == "/api/url-inventory":
             if not self._require_auth(api=True):
@@ -2623,9 +2648,11 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             runtime_payload = {"domain": domain, "run_id": run_id, "language": language, "viewport_kind": viewport_kind, "state": state, "user_tier": user_tier}
             try:
                 load_phase1_runtime_config(runtime_payload)
-                _register_domain(validate_domain(domain))
+                valid_domain = validate_domain(domain)
+                _register_domain(valid_domain)
+                _set_last_used_first_run_domain(valid_domain)
                 job_id = f"phase1-{run_id}-{language}-{viewport_kind}-{state}"
-                _upsert_job_status(domain, run_id, {"job_id": job_id, "status": "queued", "context": runtime_payload})
+                _upsert_job_status(valid_domain, run_id, {"job_id": job_id, "status": "queued", "context": runtime_payload})
                 t = threading.Thread(target=_run_phase1_async, args=(job_id, runtime_payload), daemon=True)
                 t.start()
                 self._json_response({"status": "started", "job_id": job_id, "run_id": run_id})
@@ -2852,6 +2879,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 load_phase1_runtime_config(runtime_payload)
                 valid_domain = validate_domain(domain)
                 _register_domain(valid_domain)
+                _set_last_used_first_run_domain(valid_domain)
                 existing_run = next((row for row in _load_runs(valid_domain).get("runs", []) if str(row.get("run_id", "")).strip() == run_id), None)
                 existing_display_name = _normalize_optional_string((existing_run or {}).get("display_name"))
                 is_new_run = existing_run is None
