@@ -62,7 +62,7 @@ def test_urls_runtime_uses_live_typed_domain_for_continue_and_api_mutations():
           continueFirstRun: makeElement('continueFirstRun'),
           domainSuggestions: makeElement('domainSuggestions'),
         };
-        els.domainInput.value = 'bongacams.com';
+        els.domainInput.value = '';
 
         const documentListeners = {};
         const payloads = [];
@@ -80,7 +80,7 @@ def test_urls_runtime_uses_live_typed_domain_for_continue_and_api_mutations():
           },
           fetch: async (url, init = {}) => {
             if (url === '/api/domains') {
-              return { ok: true, json: async () => ({ items: ['bongacams.com', 'typed.example'] }) };
+              return { ok: true, json: async () => ({ items: ['bongacams.com', 'typed.example'], last_used_first_run_domain: 'typed.example' }) };
             }
             if (url.startsWith('/api/recipes?')) {
               return { ok: true, json: async () => ({ recipes: [] }) };
@@ -101,11 +101,13 @@ def test_urls_runtime_uses_live_typed_domain_for_continue_and_api_mutations():
 
         (async () => {
           await documentListeners['pw:i18n:ready']();
+          const preselectedAfterLoad = els.domainInput.value;
           els.domainInput.value = 'typed.example';
           els.domainInput.dispatch('input');
           els.urlsMultiline.value = 'https://typed.example/a';
           await els.addButton.click();
           console.log(JSON.stringify({
+            preselectedAfterLoad,
             continueHref: els.continueFirstRun.href,
             addPayloadDomain: payloads[0] ? payloads[0].domain : '',
             defaultValueStillExpected: els.domainInput.value,
@@ -114,6 +116,7 @@ def test_urls_runtime_uses_live_typed_domain_for_continue_and_api_mutations():
         """
     )
     out = _run_node_json(script)
+    assert out["preselectedAfterLoad"] == "typed.example"
     assert out["continueHref"] == "/workflow?domain=typed.example"
     assert out["addPayloadDomain"] == "typed.example"
     assert out["defaultValueStillExpected"] == "typed.example"
