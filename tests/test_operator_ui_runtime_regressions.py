@@ -25,6 +25,7 @@ def test_urls_runtime_uses_live_typed_domain_for_continue_and_api_mutations():
 
         function makeElement(id='') {
           const listeners = {};
+          const classes = new Set();
           return {
             id,
             value: '',
@@ -36,7 +37,12 @@ def test_urls_runtime_uses_live_typed_domain_for_continue_and_api_mutations():
             children: [],
             options: [],
             className: '',
-            classList: { add(){}, remove(){}, toggle(){}, contains(){ return false; } },
+            classList: {
+              add(name){ classes.add(name); },
+              remove(name){ classes.delete(name); },
+              toggle(name){ if (classes.has(name)) { classes.delete(name); return false; } classes.add(name); return true; },
+              contains(name){ return classes.has(name); },
+            },
             setAttribute(){},
             appendChild(child){ this.children.push(child); this.options.push(child); return child; },
             append(...nodes){ this.children.push(...nodes); },
@@ -50,6 +56,8 @@ def test_urls_runtime_uses_live_typed_domain_for_continue_and_api_mutations():
 
         const els = {
           domainInput: makeElement('domainInput'),
+          domainSavedToggle: makeElement('domainSavedToggle'),
+          domainSavedMenu: makeElement('domainSavedMenu'),
           loadButton: makeElement('loadButton'),
           replaceButton: makeElement('replaceButton'),
           addButton: makeElement('addButton'),
@@ -60,8 +68,8 @@ def test_urls_runtime_uses_live_typed_domain_for_continue_and_api_mutations():
           errorBox: makeElement('errorBox'),
           statusBox: makeElement('statusBox'),
           continueFirstRun: makeElement('continueFirstRun'),
-          domainSuggestions: makeElement('domainSuggestions'),
         };
+        els.domainSavedMenu.classList.add('hidden');
         els.domainInput.value = '';
 
         const documentListeners = {};
@@ -333,6 +341,7 @@ def test_pulls_top_and_bottom_next_step_links_receive_same_runtime_href():
 
         function makeElement(id='') {
           const listeners = {};
+          const classes = new Set();
           return {
             id,
             value: '',
@@ -381,3 +390,187 @@ def test_pulls_top_and_bottom_next_step_links_receive_same_runtime_href():
     expected = "/check-languages?domain=example.com&en_run_id=run-77"
     assert out["top"] == expected
     assert out["bottom"] == expected
+
+
+def test_urls_saved_domain_menu_filters_malformed_values_and_supports_selection():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function makeElement(id='') {
+          const listeners = {};
+          const classes = new Set();
+          return {
+            id,
+            value: '',
+            href: '',
+            textContent: '',
+            innerHTML: '',
+            dataset: {},
+            disabled: false,
+            children: [],
+            options: [],
+            className: '',
+            classList: {
+              add(name){ classes.add(name); },
+              remove(name){ classes.delete(name); },
+              toggle(name){ if (classes.has(name)) { classes.delete(name); return false; } classes.add(name); return true; },
+              contains(name){ return classes.has(name); },
+            },
+            setAttribute(){},
+            contains(){ return false; },
+            appendChild(child){ this.children.push(child); this.options.push(child); return child; },
+            append(...nodes){ this.children.push(...nodes); },
+            querySelector(){ return this.children.find((child) => child.className === 'domain-saved-option') || null; },
+            addEventListener(type, cb){ listeners[type] = cb; },
+            dispatch(type, payload = {}){ if (listeners[type]) return listeners[type]({ target: this, ...payload }); },
+            click(){ if (listeners.click) return listeners.click({ target: this }); },
+            focus(){},
+          };
+        }
+
+        const els = {
+          domainInput: makeElement('domainInput'),
+          domainSavedToggle: makeElement('domainSavedToggle'),
+          domainSavedMenu: makeElement('domainSavedMenu'),
+          loadButton: makeElement('loadButton'),
+          replaceButton: makeElement('replaceButton'),
+          addButton: makeElement('addButton'),
+          clearButton: makeElement('clearButton'),
+          urlsMultiline: makeElement('urlsMultiline'),
+          updatedAt: makeElement('updatedAt'),
+          savedUrlsBody: makeElement('savedUrlsBody'),
+          errorBox: makeElement('errorBox'),
+          statusBox: makeElement('statusBox'),
+          continueFirstRun: makeElement('continueFirstRun'),
+        };
+        els.domainSavedMenu.classList.add('hidden');
+
+        const documentListeners = {};
+        const sandbox = {
+          console,
+          URLSearchParams,
+          URL,
+          setTimeout: (fn) => { fn(); return 1; },
+          clearTimeout: () => {},
+          window: { i18n: { t: (_k, fallback) => fallback } },
+          document: {
+            getElementById: (id) => els[id],
+            createElement: () => makeElement('created'),
+            addEventListener: (event, cb) => { documentListeners[event] = cb; },
+          },
+          fetch: async (url) => {
+            if (url === '/api/domains') {
+              return { ok: true, json: async () => ({ items: ['good.example', 'bhttps://evinaeva.github.io/polyglot-watchdog-testsite/'], last_used_first_run_domain: '' }) };
+            }
+            if (url.startsWith('/api/recipes?')) return { ok: true, json: async () => ({ recipes: [] }) };
+            if (url.startsWith('/api/seed-urls?')) return { ok: true, json: async () => ({ urls: [], updated_at: '2026-03-24T00:00:00Z' }) };
+            return { ok: true, json: async () => ({}) };
+          },
+        };
+
+        vm.createContext(sandbox);
+        vm.runInContext(fs.readFileSync('web/static/urls.js', 'utf8'), sandbox);
+
+        (async () => {
+          await documentListeners['pw:i18n:ready']();
+          els.domainSavedToggle.click();
+          const savedValues = els.domainSavedMenu.children.map((child) => child.textContent);
+          const firstOption = els.domainSavedMenu.children.find((child) => child.className === 'domain-saved-option');
+          if (firstOption) firstOption.click();
+          console.log(JSON.stringify({
+            savedValues,
+            selectedDomain: els.domainInput.value,
+            continueHref: els.continueFirstRun.href,
+          }));
+        })().catch((err) => { console.error(err); process.exit(1); });
+        """
+    )
+    out = _run_node_json(script)
+    assert "good.example" in out["savedValues"]
+    assert "bhttps://evinaeva.github.io/polyglot-watchdog-testsite/" not in out["savedValues"]
+    assert out["selectedDomain"] == "good.example"
+    assert out["continueHref"] == "/workflow?domain=good.example"
+
+
+def test_pulls_advanced_primary_labels_are_readable_and_user_tier_defaults_to_free():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function makeElement(id='') {
+          const listeners = {};
+          return {
+            id,
+            value: '',
+            href: '',
+            innerHTML: '',
+            textContent: '',
+            className: '',
+            dataset: {},
+            disabled: false,
+            children: [],
+            classList: { add(){}, remove(){}, toggle(){} },
+            setAttribute(){},
+            appendChild(child){ this.children.push(child); return child; },
+            append(...nodes){ this.children.push(...nodes); },
+            addEventListener(type, cb){ listeners[type] = cb; },
+            querySelector(){ return { addEventListener(){}, value: 'exclude' }; },
+            focus(){},
+          };
+        }
+
+        const ids = ['pullsStatus','pullsTable','pullsUrlSearch','pullsElementTypeFilter','pullsLanguageSummary','pullsWorkflowContextSummary','pullsWhitelistInput','pullsWhitelistAdd','pullsWhitelistStatus','pullsWhitelistChips','pullsPrepareCapturedData','pullsPrepareCapturedDataStatus','pullsPreviewModal','pullsPreviewOverlay','pullsPreviewClose','pullsPreviewStatus','pullsPreviewImage','pullsPreviewBbox','pullsPreviewDetails','pullsScreenshotViewport','pullsScreenshotCanvas','pullsZoomIn','pullsZoomOut','pullsCenterElement','pullsImageAssetSection','pullsImageAsset','pullsImageAssetFallback','pullsImageAssetMeta','pullsBackToRunHub','continueCheckLanguages','continueCheckLanguagesBottom','pullsOpenContexts','pullsOpenIssues'];
+        const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
+        els.pullsTable.querySelector = () => ({ innerHTML: '', appendChild(){}, children: [] });
+
+        const sandbox = {
+          console,
+          URLSearchParams,
+          window: { location: { search: '?domain=example.com&run_id=run-1' }, addEventListener(){} },
+          document: {
+            getElementById: (id) => els[id],
+            createElement: (tag) => {
+              const el = makeElement(tag);
+              if (tag === 'tr') {
+                Object.defineProperty(el, 'innerHTML', {
+                  set(value) {
+                    this._innerHTML = value;
+                    this.lastElementChild = { appendChild(){} };
+                  },
+                  get() { return this._innerHTML || ''; },
+                });
+              }
+              return el;
+            },
+            addEventListener() {},
+          },
+          safeReadPayload: async (response) => response.json(),
+          setTimeout: (fn) => { fn(); return 1; },
+          clearTimeout: () => {},
+          ResizeObserver: function(){ this.observe = () => {}; this.disconnect = () => {}; },
+          fetch: async (url) => {
+            if (url.startsWith('/api/pulls?')) return { ok: true, status: 200, json: async () => ({ rows: [] }) };
+            if (url.startsWith('/api/element-type-whitelist?')) return { ok: true, status: 200, json: async () => ({ entries: [] }) };
+            return { ok: true, status: 200, json: async () => ({}) };
+          },
+        };
+
+        vm.createContext(sandbox);
+        const source = fs.readFileSync('web/static/pulls.js', 'utf8');
+        vm.runInContext(source, sandbox);
+        console.log(JSON.stringify({
+          defaultTier: sandbox.formatUserTier(''),
+          summary: sandbox.captureContextSummary({ language: 'en', viewport_kind: 'desktop', state: 'baseline', user_tier: '' }),
+          hasReadableAdvancedLabel: source.includes('Capture context:'),
+          hasTechnicalDisclosure: source.includes('Technical IDs'),
+        }));
+        """
+    )
+    out = _run_node_json(script)
+    assert out["defaultTier"] == "Free"
+    assert out["summary"] == "EN · Desktop · baseline · Free"
+    assert out["hasReadableAdvancedLabel"] is True
+    assert out["hasTechnicalDisclosure"] is True

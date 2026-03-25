@@ -1,4 +1,6 @@
-from app.seed_urls import _seed_payload, normalize_seed_url, parse_seed_urls, parse_seed_urls_with_errors
+import pytest
+
+from app.seed_urls import _seed_payload, normalize_seed_url, parse_seed_urls, parse_seed_urls_with_errors, validate_domain
 
 
 def test_normalize_seed_url_rules() -> None:
@@ -94,3 +96,8 @@ def test_load_active_map_ignores_invalid_state_urls(monkeypatch):
 
     mapping = _load_active_map("example.com")
     assert mapping == {"https://good.example.com/": False}
+
+
+def test_validate_domain_rejects_malformed_prefixed_scheme():
+    with pytest.raises(ValueError):
+        validate_domain("bhttps://evinaeva.github.io/polyglot-watchdog-testsite/")

@@ -9,8 +9,10 @@ const savedUrlsBody = document.getElementById('savedUrlsBody');
 const errorBox = document.getElementById('errorBox');
 const statusBox = document.getElementById('statusBox');
 const continueLink = document.getElementById('continueFirstRun');
-const domainSuggestions = document.getElementById('domainSuggestions');
+const domainSavedToggle = document.getElementById('domainSavedToggle');
+const domainSavedMenu = document.getElementById('domainSavedMenu');
 let recipes = [];
+let savedDomains = [];
 
 const SAVE_SUCCESS_TIMEOUT_MS = 2000;
 const ACTIVATION_TIMEOUT_MS = 1200;
@@ -34,6 +36,63 @@ function t(key, fallback) {
 
 function selectedDomain() {
   return (domainInput?.value || '').trim();
+}
+
+function isValidSavedDomainValue(value) {
+  const trimmed = String(value || '').trim();
+  if (!trimmed || /\s/.test(trimmed)) return false;
+  if (/^bhttps?:\/\//i.test(trimmed)) return false;
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const parsed = new URL(trimmed);
+      return Boolean(parsed.hostname);
+    } catch (_error) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function closeSavedDomainsMenu() {
+  if (!domainSavedMenu) return;
+  domainSavedMenu.classList.add('hidden');
+  if (domainSavedToggle) domainSavedToggle.setAttribute('aria-expanded', 'false');
+}
+
+function renderSavedDomainsMenu(filterValue = '') {
+  if (!domainSavedMenu) return;
+  const filter = String(filterValue || '').trim().toLowerCase();
+  domainSavedMenu.innerHTML = '';
+  const visibleDomains = savedDomains.filter((value) => !filter || value.toLowerCase().includes(filter));
+  if (!visibleDomains.length) {
+    const empty = document.createElement('div');
+    empty.className = 'domain-saved-empty';
+    empty.textContent = 'No saved domains';
+    domainSavedMenu.appendChild(empty);
+    return;
+  }
+  for (const value of visibleDomains) {
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.className = 'domain-saved-option';
+    option.role = 'option';
+    option.title = value;
+    option.textContent = value;
+    option.addEventListener('click', () => {
+      if (domainInput) domainInput.value = value;
+      syncContinueLink();
+      closeSavedDomainsMenu();
+      domainInput?.focus();
+    });
+    domainSavedMenu.appendChild(option);
+  }
+}
+
+function openSavedDomainsMenu(filterValue = '') {
+  if (!domainSavedMenu || !domainSavedToggle) return;
+  renderSavedDomainsMenu(filterValue);
+  domainSavedMenu.classList.remove('hidden');
+  domainSavedToggle.setAttribute('aria-expanded', 'true');
 }
 
 function syncContinueLink() {
@@ -384,24 +443,16 @@ async function maybeLoadDomains() {
     if (!response.ok || !Array.isArray(payload.items)) return;
     const lastUsedFirstRunDomain = String(payload.last_used_first_run_domain || '').trim();
     const known = new Set();
-    if (domainSuggestions) domainSuggestions.innerHTML = '';
     for (const domain of payload.items) {
       const value = String(domain || '').trim();
-      if (!value || known.has(value)) continue;
+      if (!isValidSavedDomainValue(value) || known.has(value)) continue;
       known.add(value);
-      const option = document.createElement('option');
-      option.value = value;
-      if (domainSuggestions) {
-        domainSuggestions.appendChild(option);
-      }
     }
     const domains = Array.from(known);
-    if (lastUsedFirstRunDomain && !known.has(lastUsedFirstRunDomain)) {
-      const option = document.createElement('option');
-      option.value = lastUsedFirstRunDomain;
+    if (isValidSavedDomainValue(lastUsedFirstRunDomain) && !known.has(lastUsedFirstRunDomain)) {
       domains.push(lastUsedFirstRunDomain);
-      if (domainSuggestions) domainSuggestions.appendChild(option);
     }
+    savedDomains = domains;
     const preferredDefault = lastUsedFirstRunDomain || domains[0] || '';
     if (domainInput && !selectedDomain()) {
       domainInput.value = preferredDefault;
@@ -489,8 +540,55 @@ clearButton.addEventListener('click', () => mutate('/api/seed-urls/clear', { dom
 }));
 
 if (domainInput) {
-  domainInput.addEventListener('change', syncContinueLink);
-  domainInput.addEventListener('input', syncContinueLink);
+  domainInput.addEventListener('change', () => {
+    syncContinueLink();
+    renderSavedDomainsMenu(selectedDomain());
+  });
+  domainInput.addEventListener('input', () => {
+    syncContinueLink();
+    if (domainSavedMenu && !domainSavedMenu.classList.contains('hidden')) {
+      renderSavedDomainsMenu(selectedDomain());
+    }
+  });
+  domainInput.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      openSavedDomainsMenu(selectedDomain());
+      const firstOption = domainSavedMenu?.querySelector('.domain-saved-option');
+      firstOption?.focus();
+    }
+    if (event.key === 'Escape') {
+      closeSavedDomainsMenu();
+    }
+  });
+}
+
+if (domainSavedToggle) {
+  domainSavedToggle.addEventListener('click', () => {
+    if (domainSavedMenu?.classList.contains('hidden')) {
+      openSavedDomainsMenu(selectedDomain());
+    } else {
+      closeSavedDomainsMenu();
+    }
+  });
+}
+
+document.addEventListener('click', (event) => {
+  const target = event.target;
+  if (!domainSavedMenu || !domainSavedToggle || !target) return;
+  const toggleContains = typeof domainSavedToggle.contains === 'function' ? domainSavedToggle.contains(target) : false;
+  const menuContains = typeof domainSavedMenu.contains === 'function' ? domainSavedMenu.contains(target) : false;
+  if (target === domainSavedToggle || toggleContains || menuContains) return;
+  closeSavedDomainsMenu();
+});
+
+if (domainSavedMenu) {
+  domainSavedMenu.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      closeSavedDomainsMenu();
+      domainInput?.focus();
+    }
+  });
 }
 
 document.addEventListener('pw:i18n:ready', async () => {

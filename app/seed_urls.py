@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import re
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -133,6 +134,8 @@ def _load_active_map(domain: str) -> dict[str, bool]:
 def validate_domain(domain: str) -> str:
     if not domain or any(char.isspace() for char in domain):
         raise ValueError("domain must be non-empty and contain no whitespace")
+    if re.match(r"^bhttps?://", str(domain).strip(), flags=re.IGNORECASE):
+        raise ValueError("domain appears malformed")
     return domain
 
 

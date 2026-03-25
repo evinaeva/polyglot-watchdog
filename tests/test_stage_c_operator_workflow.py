@@ -217,14 +217,20 @@ def test_stage_c_readme_status_is_not_outdated():
     assert "operator workflow pages are now visibly linked via global navigation" in content
 
 
+def test_pulls_preview_modal_has_readable_text_style_hooks():
+    styles = Path("web/static/styles.css").read_text(encoding="utf-8")
+    assert ".pulls-preview-panel .muted { color: #334155; }" in styles
+    assert ".pulls-preview-panel,\n.pulls-preview-panel h2" in styles
+
+
 def test_urls_domain_source_and_last_used_first_run_persistence(api_env):
-    _write("_system", "manual", "domains.json", {"domains": ["bongacams.com", "alpha.example", "alpha.example"]})
-    _write("_system", "manual", "urls_page_state.json", {"last_used_first_run_domain": "alpha.example"})
+    _write("_system", "manual", "domains.json", {"domains": ["bongacams.com", "alpha.example", "alpha.example", "bhttps://evinaeva.github.io/polyglot-watchdog-testsite/"]})
+    _write("_system", "manual", "urls_page_state.json", {"last_used_first_run_domain": "bhttps://evinaeva.github.io/polyglot-watchdog-testsite/"})
 
     status_domains, payload_domains = _request("GET", api_env, "/api/domains")
     assert status_domains == HTTPStatus.OK
     assert payload_domains["items"] == ["alpha.example", "bongacams.com"]
-    assert payload_domains["last_used_first_run_domain"] == "alpha.example"
+    assert payload_domains["last_used_first_run_domain"] == ""
 
     status_urls, body_urls = _request("GET", api_env, "/urls")
     assert status_urls == HTTPStatus.OK
