@@ -1632,3 +1632,34 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3b9e74680832c9afa9dc13a56800e)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #145 — 2026-03-25T11:39:17Z
+
+- Title: Normalize GitHub Pages testsite domains and treat legacy root as canonical alias
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/145
+- Author: evinaeva
+- Base branch: main
+- Head branch: jbmhrr-codex/standardize-github-pages-test-site-domain-key
+- Merge commit: 674e1a2d3d56b39b0bf7b3fc4ddee8f836db12ea
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+  - tests/test_stage_c_operator_workflow.py
+- Description:
+  ### Motivation
+  - Handle a legacy GitHub Pages root domain alias that should map to a canonical project-specific testsite URL so user input, storage, discovery and runtime execution consistently reference the canonical testsite.
+  - Ensure generation of language-specific target URLs, run discovery and domain persistence work across both canonical project paths and the legacy root alias.
+  
+  ### Description
+  - Add constants for the canonical GitHub Pages testsite, its legacy root alias and project prefix, and replace inline literal with the constant in supported domains list.
+  - Introduce `_is_github_pages_testsite_alias` and `_normalize_testsite_domain_key` to normalize legacy root and project-path inputs to a single canonical domain key and update `_normalize_check_languages_domain` to use it.
+  - Update domain handling throughout the server (domain listing, registration, seed URL APIs, run loading, capture start, recipes, whitelist, check-languages flow, and URL generation) to validate and persist the normalized canonical domain key, and make `_check_languages_run_domains` include the legacy root when returning run domains for the canonical testsite.
+  - Add parsing helper `_parse_github_pages_project_language_url` usage improvements and adjust `_list_domains` to normalize testsite entries before validating and writing back cleaned domain lists.
+  
+  ### Testing
+  - Ran unit tests `tests/test_check_languages_page.py` and `tests/test_stage_c_operator_workflow.py` with `pytest` covering normalization, generation of language target URLs, legacy-root alias handling, run discovery and persistence, and they passed.
+  - Ran the full test suite with `pytest` to verify no regressions and it completed successfully.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c3beb5935c832ca019e72f7efbe8e4)
+- Notes: Auto-generated from merged PR metadata.
