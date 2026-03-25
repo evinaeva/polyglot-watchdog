@@ -698,6 +698,170 @@ def _format_summary_pairs(summary_map: dict) -> str:
 def _h(value: object) -> str:
     return html.escape(str(value or ""), quote=True)
 
+
+def _as_int(value: object, default: int = 0) -> int:
+    try:
+        if value is None or value == "":
+            return default
+        return int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        return default
+
+
+def _as_float(value: object) -> float | None:
+    try:
+        if value is None or value == "":
+            return None
+        return float(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _as_bool(value: object) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    normalized = str(value or "").strip().lower()
+    if normalized in {"true", "1", "yes", "y"}:
+        return True
+    if normalized in {"false", "0", "no", "n"}:
+        return False
+    return None
+
+
+def _first_present(payload: dict, *keys: str):
+    for key in keys:
+        if key in payload and payload.get(key) is not None:
+            return payload.get(key)
+    return None
+
+
+def _coalesce(*values: object):
+    for value in values:
+        if value is not None and str(value) != "":
+            return value
+    return None
+
+
+def _llm_review_display(latest_job: dict | None, telemetry_payload: object, telemetry_exists: bool) -> dict[str, str]:
+    in_progress = str((latest_job or {}).get("status", "")).strip().lower() in {"running", "queued"} or str((latest_job or {}).get("stage", "")).strip().lower() in {
+        "queued",
+        "preparing_target_run",
+        "running_target_capture",
+        "running_comparison",
+    }
+    completed = str((latest_job or {}).get("status", "")).strip().lower() in {"succeeded", "failed", "error"} or str((latest_job or {}).get("stage", "")).strip().lower() in {
+        "completed",
+        "running_comparison_failed",
+        "running_target_capture_failed",
+    }
+
+    state = "Telemetry not evaluated yet."
+    warning = ""
+    payload = telemetry_payload if isinstance(telemetry_payload, dict) else None
+    malformed = telemetry_exists and payload is None
+    if not telemetry_exists:
+        if in_progress:
+            state = "LLM review not reached yet"
+        elif completed:
+            state = "LLM telemetry missing"
+        else:
+            state = "LLM telemetry unavailable"
+    elif malformed:
+        state = "LLM telemetry malformed"
+        warning = "Telemetry file exists but is malformed; showing unavailable placeholders."
+        payload = {}
+
+    payload = payload or {}
+    estimated_tokens = payload.get("estimated_tokens") if isinstance(payload.get("estimated_tokens"), dict) else {}
+    actual_tokens = payload.get("actual_tokens") if isinstance(payload.get("actual_tokens"), dict) else {}
+    costs = payload.get("cost_usd") if isinstance(payload.get("cost_usd"), dict) else {}
+
+    llm_requested = _as_bool(_first_present(payload, "llm_requested", "request_sent"))
+    requested_text = (
+        "no real LLM request was sent"
+        if llm_requested is False
+        else "yes"
+        if llm_requested is True
+        else "unknown"
+    )
+
+    batches_attempted = _as_int(_first_present(payload, "batches_attempted", "attempted_batches"))
+    batches_succeeded = _as_int(_first_present(payload, "batches_succeeded", "successful_batches"))
+    batches_failed = _as_int(_first_present(payload, "batches_failed", "failed_batches"))
+    responses_received = _as_int(_first_present(payload, "responses_received", "response_count"))
+    fallback_batches = _as_int(_first_present(payload, "fallback_batches", "batches_fallback"))
+    fallback_items = _as_int(_first_present(payload, "fallback_items", "items_fallback"))
+
+    fallback_state = "N/A"
+    if batches_attempted > 0:
+        if batches_succeeded == 0 and (fallback_batches > 0 or batches_failed >= batches_attempted):
+            fallback_state = "Full fallback"
+        elif fallback_batches > 0 or fallback_items > 0 or (batches_succeeded > 0 and batches_failed > 0):
+            fallback_state = "Partial fallback"
+        elif batches_succeeded > 0 and batches_failed == 0 and fallback_batches == 0 and fallback_items == 0:
+            fallback_state = "Fully LLM-backed"
+        else:
+            fallback_state = "Mixed/unknown"
+
+    est_prompt = _as_int(_first_present(estimated_tokens, "prompt", "input", "prompt_tokens"), _as_int(_first_present(payload, "estimated_prompt_tokens")))
+    est_completion = _as_int(_first_present(estimated_tokens, "completion", "output", "completion_tokens"), _as_int(_first_present(payload, "estimated_completion_tokens")))
+    est_total = _as_int(_first_present(estimated_tokens, "total", "total_tokens"), est_prompt + est_completion)
+
+    act_prompt = _as_int(_first_present(actual_tokens, "prompt", "input", "prompt_tokens"), _as_int(_first_present(payload, "actual_prompt_tokens")))
+    act_completion = _as_int(_first_present(actual_tokens, "completion", "output", "completion_tokens"), _as_int(_first_present(payload, "actual_completion_tokens")))
+    act_total = _as_int(_first_present(actual_tokens, "total", "total_tokens"), act_prompt + act_completion)
+
+    configured_provider = str(_first_present(payload, "configured_provider", "provider_configured", "provider") or "—")
+    effective_provider = str(_first_present(payload, "effective_provider", "provider_effective", "provider") or "—")
+    configured_model = str(_first_present(payload, "configured_model", "model_configured", "model") or "—")
+    effective_model = str(_first_present(payload, "effective_model", "model_effective", "model") or "—")
+    review_mode = str(_first_present(payload, "review_mode", "mode") or "—")
+    provider_type = str(_first_present(payload, "provider_type", "provider_kind") or "—")
+
+    if provider_type == "—":
+        if llm_requested is False:
+            provider_type = "no real LLM request was sent"
+        elif fallback_state == "Fully LLM-backed":
+            provider_type = "llm"
+        elif fallback_state in {"Partial fallback", "Full fallback"}:
+            provider_type = "llm+fallback"
+
+    actual_cost = _as_float(_coalesce(_first_present(payload, "actual_cost_usd", "cost_actual_usd"), costs.get("actual")))
+    estimated_cost = _as_float(_coalesce(_first_present(payload, "estimated_cost_usd", "cost_estimated_usd"), costs.get("estimated")))
+    if actual_cost is not None:
+        cost_display = f"${actual_cost:.6f} (actual)"
+    elif estimated_cost is not None:
+        cost_display = f"${estimated_cost:.6f} (estimated)"
+    else:
+        cost_display = "unavailable"
+
+    summary = f"{state}. Fallback status: {fallback_state}. Cost: {cost_display}."
+    if llm_requested is False:
+        summary += " no real LLM request was sent."
+
+    return {
+        "state": state,
+        "warning": warning,
+        "review_mode": review_mode,
+        "provider_type": provider_type,
+        "configured_provider": configured_provider,
+        "effective_provider": effective_provider,
+        "configured_model": configured_model,
+        "effective_model": effective_model,
+        "llm_requested": requested_text,
+        "batches_attempted": str(batches_attempted),
+        "batches_succeeded": str(batches_succeeded),
+        "batches_failed": str(batches_failed),
+        "responses_received": str(responses_received),
+        "fallback_batches": str(fallback_batches),
+        "fallback_items": str(fallback_items),
+        "fallback_state": fallback_state,
+        "estimated_tokens": f"prompt={est_prompt}, completion={est_completion}, total={est_total}",
+        "actual_tokens": f"prompt={act_prompt}, completion={act_completion}, total={act_total}",
+        "cost_display": cost_display,
+        "process_summary": summary,
+    }
+
 def _capture_context_id_from_page(domain: str, page: dict) -> str:
     from pipeline.interactive_capture import CaptureContext, build_capture_context_id
 
@@ -3311,6 +3475,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         issues_exists = False
         issues_missing_after_completion = False
         latest_job = None
+        llm_review_block = "<p>LLM telemetry is not available for this selection yet.</p>"
         page_state = "input_incomplete"
         en_readiness = {"required": [], "missing": [], "read_error": "", "ready": False}
 
@@ -3367,6 +3532,29 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             latest_job = _latest_check_languages_job(domain, target_run_id)
             target_run_domain = str((run_map.get(target_run_id) or {}).get("domain", "")).strip() or str((latest_job or {}).get("domain", "")).strip() or domain
             issues_exists = _artifact_exists(target_run_domain, target_run_id, "issues.json")
+            llm_stats_exists = _artifact_exists(target_run_domain, target_run_id, "llm_review_stats.json")
+            llm_stats_payload = _read_json_safe(target_run_domain, target_run_id, "llm_review_stats.json", None) if llm_stats_exists else None
+            llm_display = _llm_review_display(latest_job, llm_stats_payload, llm_stats_exists)
+            warning_html = f'<p class="warning">{_h(llm_display["warning"])}</p>' if llm_display["warning"] else ""
+            llm_review_block = (
+                f"<p>{_h(llm_display['process_summary'])}</p>"
+                f"{warning_html}"
+                f"<ul>"
+                f"<li>State: <strong>{_h(llm_display['state'])}</strong></li>"
+                f"<li>Review mode: {_h(llm_display['review_mode'])}</li>"
+                f"<li>Provider type: {_h(llm_display['provider_type'])}</li>"
+                f"<li>Configured provider/model: {_h(llm_display['configured_provider'])} / {_h(llm_display['configured_model'])}</li>"
+                f"<li>Effective provider/model: {_h(llm_display['effective_provider'])} / {_h(llm_display['effective_model'])}</li>"
+                f"<li>LLM request flag: {_h(llm_display['llm_requested'])}</li>"
+                f"<li>Batches attempted/succeeded/failed: {_h(llm_display['batches_attempted'])} / {_h(llm_display['batches_succeeded'])} / {_h(llm_display['batches_failed'])}</li>"
+                f"<li>Responses received: {_h(llm_display['responses_received'])}</li>"
+                f"<li>Fallback batches/items: {_h(llm_display['fallback_batches'])} / {_h(llm_display['fallback_items'])}</li>"
+                f"<li>Fallback status: {_h(llm_display['fallback_state'])}</li>"
+                f"<li>Estimated tokens (prompt/completion/total): {_h(llm_display['estimated_tokens'])}</li>"
+                f"<li>Actual tokens (prompt/completion/total): {_h(llm_display['actual_tokens'])}</li>"
+                f"<li>Cost used: {_h(llm_display['cost_display'])}</li>"
+                f"</ul>"
+            )
             if issues_exists:
                 issues_payload = _read_json_safe(target_run_domain, target_run_id, "issues.json", None)
                 if isinstance(issues_payload, list):
@@ -3548,6 +3736,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 "{{issues_summary}}": issue_summary_block,
                 "{{llm_review_stats}}": llm_review_stats_block,
                 "{{latest_job}}": latest_job_block,
+                "{{llm_review}}": llm_review_block,
                 "{{issues_link}}": _h(issues_link),
                 "{{issues_api_link}}": _h(issues_api_link),
                 "{{start_disabled}}": disabled_attr,

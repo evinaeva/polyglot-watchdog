@@ -1002,6 +1002,7 @@ def test_get_check_languages_completed_llm_run_shows_full_fallback_clearly(api_e
 
 
 def test_get_check_languages_running_state_before_llm_telemetry_exists(api_env):
+def test_llm_review_state_missing_telemetry_in_progress(api_env):
     domain = SUPPORTED_MAIN_DOMAIN
     _seed_runs(domain)
     _seed_phase6_prereqs(domain, "run-en", "en")
@@ -1011,7 +1012,16 @@ def test_get_check_languages_running_state_before_llm_telemetry_exists(api_env):
             {
                 "run_id": "run-en-check-fr",
                 "created_at": "2026-03-12T00:00:00Z",
-                "jobs": [{"job_id": "check-languages-1", "status": "running", "type": "check_languages", "stage": "running_comparison", "en_run_id": "run-en", "target_language": "fr"}],
+                "jobs": [
+                    {
+                        "job_id": "check-languages-1",
+                        "status": "running",
+                        "type": "check_languages",
+                        "stage": "running_comparison",
+                        "en_run_id": "run-en",
+                        "target_language": "fr",
+                    }
+                ],
             },
             {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
         ]

@@ -15,6 +15,47 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 
+def _empty_llm_review_stats(
+    *,
+    review_mode: str,
+    provider_type: str,
+    configured_provider: str,
+    configured_model: str,
+    effective_model: str,
+) -> dict[str, Any]:
+    return {
+        "review_mode": review_mode,
+        "provider_type": provider_type,
+        "configured_provider": configured_provider,
+        "configured_model": configured_model,
+        "effective_model": effective_model,
+        "llm_requested": False,
+        "llm_batches_attempted": 0,
+        "llm_batches_succeeded": 0,
+        "llm_batches_failed": 0,
+        "fallback_batches": 0,
+        "fallback_items": 0,
+        "llm_items_requested": 0,
+        "llm_items_completed": 0,
+        "estimated_prompt_tokens": 0,
+        "estimated_completion_tokens": 0,
+        "estimated_total_tokens": 0,
+        "actual_prompt_tokens": None,
+        "actual_completion_tokens": None,
+        "actual_total_tokens": None,
+        "estimated_cost_usd": None,
+        "actual_cost_usd": None,
+        "currency": "USD",
+        "responses_received": 0,
+        "transport_failures": 0,
+        "parse_failures": 0,
+        "provider_failures": 0,
+        "used_fallback": False,
+        "fallback_reason_summary": [],
+        "batches": [],
+    }
+
+
 @dataclass(frozen=True)
 class SpellingGrammarSignals:
     spelling_score: float
@@ -99,6 +140,15 @@ class DeterministicOfflineProvider:
             provider_meta=dict(self._PROVIDER_META),
         )
 
+    def get_llm_review_stats(self) -> dict[str, Any]:
+        return _empty_llm_review_stats(
+            review_mode="test-heuristic",
+            provider_type="heuristic",
+            configured_provider="test-heuristic",
+            configured_model="",
+            effective_model="",
+        )
+
 
 class DisabledReviewProvider:
     """Provider that emits no AI-assisted signals."""
@@ -108,6 +158,15 @@ class DisabledReviewProvider:
 
     def review_meaning(self, text_en: str, text_target: str, language: str) -> MeaningSignals:
         return MeaningSignals(meaning_mismatch_score=0.0, notes=["provider_disabled"])
+
+    def get_llm_review_stats(self) -> dict[str, Any]:
+        return _empty_llm_review_stats(
+            review_mode="disabled",
+            provider_type="disabled",
+            configured_provider="disabled",
+            configured_model="",
+            effective_model="",
+        )
 
 
 class LLMReviewProvider:
@@ -150,6 +209,23 @@ class LLMReviewProvider:
         self._fallback = fallback_provider or DeterministicOfflineProvider()
         self._request_fn = request_fn or self._default_request
         self._pair_reviews: dict[tuple[str, str, str], _PairReviewResult] = {}
+        self._batch_stats: list[dict[str, Any]] = []
+        self._input_cost_per_1m = self._read_cost_env("PHASE6_REVIEW_INPUT_COST_PER_1M_TOKENS")
+        self._output_cost_per_1m = self._read_cost_env("PHASE6_REVIEW_OUTPUT_COST_PER_1M_TOKENS")
+        self._actual_prompt_token_sum = 0
+        self._actual_completion_token_sum = 0
+        self._actual_total_token_sum = 0
+        self._has_actual_usage = False
+
+    @staticmethod
+    def _read_cost_env(env_key: str) -> float | None:
+        raw = os.environ.get(env_key)
+        if raw is None:
+            return None
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return None
 
     def prefetch_reviews(self, pairs: list[tuple[str, str]], language: str) -> None:
         unresolved_items: list[dict[str, Any]] = []
@@ -194,7 +270,7 @@ class LLMReviewProvider:
         return self._pair_reviews.get(cache_key) or self._fallback_result(text_en, text_target, language)
 
     def _execute_batch(self, language: str, items: list[dict[str, Any]]) -> None:
-        parsed_by_item_id = self._review_batch(language=language, items=items)
+        parsed_by_item_id, batch_stats = self._review_batch(language=language, items=items, batch_index=len(self._batch_stats) + 1)
         for item in items:
             cache_key = item["cache_key"]
             text_en = item["text_en"]
@@ -207,10 +283,46 @@ class LLMReviewProvider:
                 else self._fallback_result(text_en=text_en, text_target=text_target, language=language)
             )
             self._pair_reviews[cache_key] = result
+        completed = len(parsed_by_item_id)
+        fallback_items = max(0, len(items) - completed)
+        batch_stats["llm_items_completed"] = completed
+        batch_stats["fallback_items"] = fallback_items
+        batch_stats["fallback_used"] = fallback_items > 0
+        if batch_stats["status"] not in {"not_attempted", "failed"}:
+            batch_stats["status"] = "succeeded" if fallback_items == 0 else "fallback"
+        if fallback_items > 0:
+            batch_stats["failure_type"] = batch_stats["failure_type"] or "fallback"
+            batch_stats["failure_message"] = batch_stats["failure_message"] or f"{fallback_items} item(s) used fallback"
+        self._batch_stats.append(batch_stats)
 
-    def _review_batch(self, language: str, items: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    def _review_batch(self, language: str, items: list[dict[str, Any]], batch_index: int) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+        estimated_prompt_tokens = self._estimate_prompt_tokens() + sum(self._estimate_item_prompt_tokens(language, item) for item in items)
+        estimated_completion_tokens = len(items) * self._estimated_output_tokens_per_item
+        estimated_total_tokens = estimated_prompt_tokens + estimated_completion_tokens
+        batch_stats = {
+            "batch_index": batch_index,
+            "items": len(items),
+            "estimated_prompt_tokens": estimated_prompt_tokens,
+            "estimated_completion_tokens": estimated_completion_tokens,
+            "estimated_total_tokens": estimated_total_tokens,
+            "actual_prompt_tokens": None,
+            "actual_completion_tokens": None,
+            "actual_total_tokens": None,
+            "estimated_cost_usd": self._compute_cost(estimated_prompt_tokens, estimated_completion_tokens),
+            "actual_cost_usd": None,
+            "provider": "llm",
+            "model": self._model,
+            "status": "attempted",
+            "fallback_used": False,
+            "failure_type": None,
+            "failure_message": None,
+            "response_received": False,
+        }
         if not self._api_key:
-            return {}
+            batch_stats["status"] = "not_attempted"
+            batch_stats["failure_type"] = "provider"
+            batch_stats["failure_message"] = "missing_api_key"
+            return {}, batch_stats
 
         user_payload = {
             "language": language,
@@ -231,11 +343,50 @@ class LLMReviewProvider:
 
         try:
             response = self._request_fn(self._endpoint, self._api_key, self._timeout_s, payload)
+            batch_stats["response_received"] = True
             content = response["choices"][0]["message"]["content"]
+            usage = response.get("usage", {}) if isinstance(response, dict) else {}
+            prompt_tokens = self._safe_int((usage or {}).get("prompt_tokens"))
+            completion_tokens = self._safe_int((usage or {}).get("completion_tokens"))
+            total_tokens = self._safe_int((usage or {}).get("total_tokens"))
+            if prompt_tokens is not None and completion_tokens is not None:
+                if total_tokens is None:
+                    total_tokens = prompt_tokens + completion_tokens
+                batch_stats["actual_prompt_tokens"] = prompt_tokens
+                batch_stats["actual_completion_tokens"] = completion_tokens
+                batch_stats["actual_total_tokens"] = total_tokens
+                batch_stats["actual_cost_usd"] = self._compute_cost(prompt_tokens, completion_tokens)
+                self._actual_prompt_token_sum += prompt_tokens
+                self._actual_completion_token_sum += completion_tokens
+                self._actual_total_token_sum += total_tokens
+                self._has_actual_usage = True
             parsed = json.loads(content)
-        except (KeyError, IndexError, TypeError, ValueError, URLError):
-            return {}
-        return self._parse_batch_results(parsed, {item["item_id"] for item in items})
+        except URLError as exc:
+            batch_stats["status"] = "failed"
+            batch_stats["failure_type"] = "transport"
+            batch_stats["failure_message"] = str(exc)
+            return {}, batch_stats
+        except (TimeoutError, OSError) as exc:
+            batch_stats["status"] = "failed"
+            batch_stats["failure_type"] = "transport"
+            batch_stats["failure_message"] = str(exc)
+            return {}, batch_stats
+        except ValueError as exc:
+            batch_stats["status"] = "failed"
+            batch_stats["failure_type"] = "parse"
+            batch_stats["failure_message"] = str(exc)
+            return {}, batch_stats
+        except (KeyError, IndexError, TypeError) as exc:
+            batch_stats["status"] = "failed"
+            batch_stats["failure_type"] = "provider"
+            batch_stats["failure_message"] = str(exc)
+            return {}, batch_stats
+        valid = self._parse_batch_results(parsed, {item["item_id"] for item in items})
+        if not valid:
+            batch_stats["status"] = "failed"
+            batch_stats["failure_type"] = "parse"
+            batch_stats["failure_message"] = "empty_or_invalid_results"
+        return valid, batch_stats
 
     def _parse_batch_results(self, parsed: Any, expected_item_ids: set[str]) -> dict[str, dict[str, Any]]:
         if not isinstance(parsed, dict):
@@ -331,11 +482,14 @@ class LLMReviewProvider:
         return self._estimate_tokens(self._system_prompt) + 200
 
     def _estimate_item_tokens(self, language: str, item: dict[str, Any]) -> int:
+        return self._estimate_item_prompt_tokens(language, item) + self._estimated_output_tokens_per_item
+
+    def _estimate_item_prompt_tokens(self, language: str, item: dict[str, Any]) -> int:
         serialized = json.dumps(
             {"language": language, "items": [{"item_id": item["item_id"], "text_en": item["text_en"], "text_target": item["text_target"]}]},
             ensure_ascii=False,
         )
-        return self._estimate_tokens(serialized) + self._estimated_output_tokens_per_item + 24
+        return self._estimate_tokens(serialized) + 24
 
     @staticmethod
     def _estimate_tokens(text: str) -> int:
@@ -348,6 +502,19 @@ class LLMReviewProvider:
             return True
         except (TypeError, ValueError):
             return False
+
+    @staticmethod
+    def _safe_int(value: Any) -> int | None:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _compute_cost(self, prompt_tokens: int, completion_tokens: int) -> float | None:
+        if self._input_cost_per_1m is None or self._output_cost_per_1m is None:
+            return None
+        value = (prompt_tokens / 1_000_000.0) * self._input_cost_per_1m + (completion_tokens / 1_000_000.0) * self._output_cost_per_1m
+        return round(value, 8)
 
     def _build_system_prompt(self, custom_prompt: str | None) -> str:
         base = (custom_prompt or "").strip() or self._DEFAULT_SYSTEM_PROMPT
@@ -389,6 +556,51 @@ class LLMReviewProvider:
                 if cleaned and cleaned not in merged:
                     merged.append(cleaned)
         return merged[:5] if merged else ["llm_response_no_notes"]
+
+    def get_llm_review_stats(self) -> dict[str, Any]:
+        stats = _empty_llm_review_stats(
+            review_mode="llm",
+            provider_type="llm",
+            configured_provider="llm",
+            configured_model=self._model,
+            effective_model=self._model,
+        )
+        stats["batches"] = [dict(batch) for batch in self._batch_stats]
+        stats["llm_batches_attempted"] = sum(1 for batch in self._batch_stats if batch["status"] != "not_attempted")
+        stats["llm_requested"] = stats["llm_batches_attempted"] > 0
+        stats["llm_batches_succeeded"] = sum(1 for batch in self._batch_stats if batch["status"] == "succeeded")
+        stats["llm_batches_failed"] = sum(1 for batch in self._batch_stats if batch["status"] == "failed")
+        stats["fallback_batches"] = sum(1 for batch in self._batch_stats if batch["fallback_used"])
+        stats["llm_items_requested"] = sum(int(batch["items"]) for batch in self._batch_stats)
+        stats["llm_items_completed"] = sum(int(batch.get("llm_items_completed", 0)) for batch in self._batch_stats)
+        stats["fallback_items"] = sum(int(batch.get("fallback_items", 0)) for batch in self._batch_stats)
+        stats["estimated_prompt_tokens"] = sum(int(batch["estimated_prompt_tokens"]) for batch in self._batch_stats)
+        stats["estimated_completion_tokens"] = sum(int(batch["estimated_completion_tokens"]) for batch in self._batch_stats)
+        stats["estimated_total_tokens"] = sum(int(batch["estimated_total_tokens"]) for batch in self._batch_stats)
+        est_costs = [batch["estimated_cost_usd"] for batch in self._batch_stats if batch.get("estimated_cost_usd") is not None]
+        stats["estimated_cost_usd"] = round(sum(est_costs), 8) if len(est_costs) == len(self._batch_stats) and est_costs else None
+        if self._has_actual_usage:
+            stats["actual_prompt_tokens"] = self._actual_prompt_token_sum
+            stats["actual_completion_tokens"] = self._actual_completion_token_sum
+            stats["actual_total_tokens"] = self._actual_total_token_sum
+            stats["actual_cost_usd"] = self._compute_cost(self._actual_prompt_token_sum, self._actual_completion_token_sum)
+        stats["responses_received"] = sum(1 for batch in self._batch_stats if batch["response_received"])
+        stats["transport_failures"] = sum(1 for batch in self._batch_stats if batch["failure_type"] == "transport")
+        stats["parse_failures"] = sum(1 for batch in self._batch_stats if batch["failure_type"] == "parse")
+        stats["provider_failures"] = sum(1 for batch in self._batch_stats if batch["failure_type"] == "provider")
+        stats["used_fallback"] = stats["fallback_batches"] > 0
+        reason_counts: dict[str, int] = {}
+        for batch in self._batch_stats:
+            if not batch.get("fallback_used"):
+                continue
+            failure_type = str(batch.get("failure_type") or "fallback")
+            failure_message = str(batch.get("failure_message") or "").strip()
+            reason = failure_type if not failure_message else f"{failure_type}:{failure_message}"
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+        stats["fallback_reason_summary"] = [
+            reason for reason, _ in sorted(reason_counts.items(), key=lambda row: (-row[1], row[0]))[:5]
+        ]
+        return stats
 
 
 def build_provider(mode: str) -> Phase6ReviewProvider:
