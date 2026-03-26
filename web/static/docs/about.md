@@ -94,8 +94,8 @@ Artifacts are organized per domain and run.
 
 The UI includes useful operator tooling, but some screens are still exploratory or not fully release-hardened.
 
-- `/crawler` is still positioned as inventory-inspection tooling rather than a release-ready operator workflow surface.
-- `/pulling` remains an internal-oriented review harness and is not the sole canonical workflow surface for release messaging.
-- `/` (Issues) is operator-facing and artifact-backed, but still pre-production overall.
+- Canonical multi-page operator workflow surfaces include `/urls`, `/workflow`, `/contexts`, `/pulls`, `/check-languages`, and `/` (issues).
+- `/crawler` and `/pulling` still exist as auxiliary/internal-oriented tooling and are not the canonical release workflow path.
+- The operator console is artifact-backed but remains pre-production overall.
 
 Treat the interface as an operator/development console during pre-production, not a production-ready dashboard.
