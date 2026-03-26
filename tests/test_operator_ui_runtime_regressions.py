@@ -244,6 +244,144 @@ def test_workflow_runtime_uses_canonical_screenshot_view_url_and_safe_empty_stat
     assert 'open</a>' not in out["secondHtml"]
 
 
+def test_urls_drawer_keeps_url_domain_for_row_mutations_when_recipe_domain_changes():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function makeElement(id='') {
+          const listeners = {};
+          const classes = new Set();
+          const el = {
+            id,
+            value: '',
+            href: '',
+            textContent: '',
+            innerHTML: '',
+            dataset: {},
+            checked: true,
+            disabled: false,
+            files: [{ name: 'r.json' }],
+            children: [],
+            options: [],
+            selectedOptions: [],
+            className: '',
+            classList: {
+              add(name){ classes.add(name); },
+              remove(name){ classes.delete(name); },
+              toggle(name){ if (classes.has(name)) { classes.delete(name); return false; } classes.add(name); return true; },
+              contains(name){ return classes.has(name); },
+            },
+            setAttribute(){},
+            appendChild(child){ this.children.push(child); this.options.push(child); return child; },
+            append(...nodes){ this.children.push(...nodes); },
+            addEventListener(type, cb){ listeners[type] = cb; },
+            dispatch(type){ if (listeners[type]) return listeners[type]({ target: this, key: '' }); },
+            click(){ if (listeners.click) return listeners.click({ target: this }); },
+            querySelector(){ return makeElement('qs'); },
+            querySelectorAll(){ return []; },
+          };
+          return el;
+        }
+
+        const els = {
+          domainInput: makeElement('domainInput'),
+          domainSavedToggle: makeElement('domainSavedToggle'),
+          domainSavedMenu: makeElement('domainSavedMenu'),
+          loadButton: makeElement('loadButton'),
+          replaceButton: makeElement('replaceButton'),
+          addButton: makeElement('addButton'),
+          clearButton: makeElement('clearButton'),
+          urlsMultiline: makeElement('urlsMultiline'),
+          updatedAt: makeElement('updatedAt'),
+          savedUrlsBody: makeElement('savedUrlsBody'),
+          errorBox: makeElement('errorBox'),
+          statusBox: makeElement('statusBox'),
+          continueFirstRun: makeElement('continueFirstRun'),
+          recipeDrawer: makeElement('recipeDrawer'),
+          closeRecipeDrawer: makeElement('closeRecipeDrawer'),
+          recipeDrawerUrl: makeElement('recipeDrawerUrl'),
+          recipeDomainSelect: makeElement('recipeDomainSelect'),
+          recipeAttachToggle: makeElement('recipeAttachToggle'),
+          recipeFileInput: makeElement('recipeFileInput'),
+          uploadRecipeButton: makeElement('uploadRecipeButton'),
+          attachedRecipesList: makeElement('attachedRecipesList'),
+          allRecipesList: makeElement('allRecipesList'),
+        };
+        els.domainInput.value = 'domain-a.com';
+        els.recipeDomainSelect.value = 'domain-a.com';
+        els.domainSavedMenu.classList.add('hidden');
+
+        const documentListeners = {};
+        const calls = [];
+        const seedRows = {
+          'domain-a.com': { urls: [{ url: 'https://domain-a.com/u', recipe_ids: ['a-r1'], active: true }], updated_at: '2026-03-01T00:00:00Z' },
+          'domain-b.com': { urls: [{ url: 'https://domain-b.com/u', recipe_ids: ['b-r1'], active: true }], updated_at: '2026-03-01T00:00:00Z' },
+        };
+
+        const sandbox = {
+          console,
+          URLSearchParams,
+          FormData: class { constructor(){ this.map = new Map(); } append(k,v){ this.map.set(k,v); } },
+          window: { i18n: { t: (_k, fb) => fb }, confirm: () => true },
+          setTimeout: (fn) => { fn(); return 1; },
+          clearTimeout: () => {},
+          document: {
+            getElementById: (id) => els[id],
+            createElement: () => makeElement('created'),
+            addEventListener: (event, cb) => { documentListeners[event] = cb; },
+          },
+          fetch: async (url, init = {}) => {
+            calls.push({ url, init });
+            if (url === '/api/domains') {
+              return { ok: true, json: async () => ({ items: ['domain-a.com', 'domain-b.com'] }) };
+            }
+            if (url.startsWith('/api/recipes?')) return { ok: true, json: async () => ({ recipes: [{ recipe_id: 'b-r1' }] }) };
+            if (url.startsWith('/api/seed-urls?')) {
+              const domain = decodeURIComponent(url.split('domain=')[1] || '');
+              return { ok: true, json: async () => seedRows[domain] || { urls: [], updated_at: '' } };
+            }
+            if (url === '/api/seed-urls/row-upsert') {
+              const payload = JSON.parse(init.body || '{}');
+              return { ok: true, json: async () => ({ urls: [{ url: payload.row.url, recipe_ids: payload.row.recipe_ids, active: true }], updated_at: '2026-03-02T00:00:00Z' }) };
+            }
+            if (url === '/api/recipes/upload') {
+              return { ok: true, json: async () => ({ status: 'ok', recipe_id: 'b-r1', overwrote: false }) };
+            }
+            if (url === '/api/recipes/delete') return { ok: true, json: async () => ({ status: 'ok' }) };
+            if (url === '/api/seed-urls/add' || url === '/api/seed-urls/clear' || url === '/api/seed-urls/delete' || url === '/api/seed-urls') {
+              return { ok: true, json: async () => ({ urls: [], updated_at: '2026-03-01T00:00:00Z' }) };
+            }
+            throw new Error('Unexpected URL: ' + url);
+          },
+        };
+
+        vm.createContext(sandbox);
+        vm.runInContext(fs.readFileSync('web/static/urls.js', 'utf8'), sandbox);
+
+        (async () => {
+          await documentListeners['pw:i18n:ready']();
+          await sandbox.load();
+          sandbox.openRecipeDrawer('https://domain-a.com/u');
+          els.recipeDomainSelect.value = 'domain-b.com';
+          await sandbox.loadRecipeManagementData();
+          await sandbox.upsertRowRecipes('https://domain-a.com/u', ['a-r1', 'b-r1']);
+          const recipeCalls = calls.filter((row) => row.url.startsWith('/api/recipes?domain='));
+          console.log(JSON.stringify({
+            rowUpsertDomain: JSON.parse(calls.find((row) => row.url === '/api/seed-urls/row-upsert').init.body).domain,
+            recipeFetchDomain: recipeCalls.length ? recipeCalls[recipeCalls.length - 1].url : '',
+            seedFetchUsedRecipeDomain: calls.some((row) => row.url === '/api/seed-urls?domain=domain-b.com'),
+          }));
+        })().catch((err) => { console.error(err); process.exit(1); });
+        """
+    )
+    out = _run_node_json(script)
+    assert out["rowUpsertDomain"] == "domain-a.com"
+    assert out["recipeFetchDomain"].endswith("domain-b.com")
+    assert out["seedFetchUsedRecipeDomain"] is False
+
+
 def test_workflow_runtime_formats_utc_timestamps_in_tallinn_with_dst():
     script = textwrap.dedent(
         r"""

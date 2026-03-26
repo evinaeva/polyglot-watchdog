@@ -1,6 +1,7 @@
 import http.client
 import json
 import threading
+import uuid
 from http import HTTPStatus
 from http.server import ThreadingHTTPServer
 
@@ -58,6 +59,39 @@ def _request(method: str, port: int, path: str, payload: dict | None = None):
     headers = {"Content-Type": "application/json"}
     body = json.dumps(payload) if payload is not None else None
     conn.request(method, path, body=body, headers=headers)
+    response = conn.getresponse()
+    raw = response.read()
+    conn.close()
+    return response.status, (json.loads(raw) if raw else {})
+
+
+def _request_multipart(port: int, path: str, fields: dict[str, str], filename: str, content: bytes, *, quoted_boundary: bool = False):
+    boundary = f"----watchdog-{uuid.uuid4().hex}"
+    body_parts: list[bytes] = []
+    for key, value in fields.items():
+        body_parts.append(
+            (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="{key}"\r\n\r\n'
+                f"{value}\r\n"
+            ).encode("utf-8")
+        )
+    body_parts.append(
+        (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+            "Content-Type: application/json\r\n\r\n"
+        ).encode("utf-8")
+    )
+    body_parts.append(content)
+    body_parts.append(f"\r\n--{boundary}--\r\n".encode("utf-8"))
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn.request(
+        "POST",
+        path,
+        body=b"".join(body_parts),
+        headers={"Content-Type": f"multipart/form-data; boundary=\"{boundary}\"" if quoted_boundary else f"multipart/form-data; boundary={boundary}"},
+    )
     response = conn.getresponse()
     raw = response.read()
     conn.close()
@@ -300,3 +334,128 @@ def test_annotation_decisions_persist_to_template_rules_and_pulls(api_env):
     status_pulls, payload_pulls = _request("GET", api_env, f"/api/pulls?domain={domain}&run_id={run_id}")
     assert status_pulls == HTTPStatus.OK
     assert payload_pulls["rows"][0]["decision"] == "ALWAYS_COLLECT"
+
+
+def test_recipe_upload_supports_json5_attach_and_overwrite_confirmation(api_env):
+    domain = "example.com"
+    _request("POST", api_env, "/api/seed-urls/add", {"domain": domain, "urls_multiline": "https://example.com/p1"})
+
+    status, body = _request_multipart(
+        api_env,
+        "/api/recipes/upload",
+        {"domain_id": domain, "attach_to_url": "true", "url": "https://example.com/p1"},
+        "recipe.json5",
+        b'{// comment\n"recipe_id":"r-upload","url_pattern":"/p1","steps":[],"capture_points":[{"state":"baseline"},],}',
+    )
+    assert status == HTTPStatus.OK
+    assert body["status"] == "ok"
+    assert body["recipe_id"] == "r-upload"
+    assert body["attached_to_url"] is True
+
+    seed_status, seed_body = _request("GET", api_env, f"/api/seed-urls?domain={domain}")
+    assert seed_status == HTTPStatus.OK
+    assert seed_body["urls"][0]["recipe_ids"] == ["r-upload"]
+
+    conflict_status, conflict_body = _request_multipart(
+        api_env,
+        "/api/recipes/upload",
+        {"domain_id": domain, "attach_to_url": "false"},
+        "recipe.json",
+        b'{"recipe_id":"r-upload","url_pattern":"/p1","steps":[],"capture_points":[{"state":"baseline"}]}',
+    )
+    assert conflict_status == HTTPStatus.CONFLICT
+    assert conflict_body["status"] == "overwrite_required"
+
+    overwrite_status, overwrite_body = _request_multipart(
+        api_env,
+        "/api/recipes/upload",
+        {"domain_id": domain, "attach_to_url": "false", "overwrite": "true"},
+        "recipe.json",
+        b'{"recipe_id":"r-upload","url_pattern":"/p1","steps":[],"capture_points":[{"state":"baseline"}]}',
+    )
+    assert overwrite_status == HTTPStatus.OK
+    assert overwrite_body["overwrote"] is True
+
+
+def test_recipe_upload_json_and_delete_clears_seed_url_associations(api_env):
+    domain = "example.com"
+    _request("POST", api_env, "/api/seed-urls/add", {"domain": domain, "urls_multiline": "https://example.com/p2"})
+    upload_status, upload_body = _request_multipart(
+        api_env,
+        "/api/recipes/upload",
+        {"domain_id": domain, "attach_to_url": "true", "url": "https://example.com/p2"},
+        "recipe.json",
+        b'{"recipe_id":"r-json","url_pattern":"/p2"}',
+    )
+    assert upload_status == HTTPStatus.OK
+    assert upload_body["status"] == "ok"
+    assert upload_body["attached_to_url"] is True
+
+    delete_status, delete_body = _request("POST", api_env, "/api/recipes/delete", {"domain": domain, "recipe_id": "r-json"})
+    assert delete_status == HTTPStatus.OK
+    assert delete_body["status"] == "ok"
+    assert delete_body["recipe_id"] == "r-json"
+
+    seed_status, seed_body = _request("GET", api_env, f"/api/seed-urls?domain={domain}")
+    assert seed_status == HTTPStatus.OK
+    assert seed_body["urls"][0]["recipe_ids"] == []
+
+
+def test_recipe_upload_accepts_minimal_payload_via_compat_normalization(api_env):
+    domain = "example.com"
+    status, body = _request_multipart(
+        api_env,
+        "/api/recipes/upload",
+        {"domain_id": domain, "attach_to_url": "false"},
+        "minimal.json",
+        b'{"recipe_id":"minimal-only"}',
+    )
+    assert status == HTTPStatus.OK
+    assert body["status"] == "ok"
+    assert body["recipe"]["recipe_id"] == "minimal-only"
+    assert body["recipe"]["url_pattern"] == "*"
+    assert body["recipe"]["steps"] == []
+    assert body["recipe"]["capture_points"] == []
+
+
+def test_recipe_upload_multipart_handles_quoted_boundary_and_empty_field(api_env):
+    domain = "example.com"
+    status, body = _request_multipart(
+        api_env,
+        "/api/recipes/upload",
+        {"domain_id": domain, "attach_to_url": "false", "url": ""},
+        "quoted.json5",
+        b'{/*c*/"recipe_id":"quoted","url_pattern":"/x","steps":[],"capture_points":[]}',
+        quoted_boundary=True,
+    )
+    assert status == HTTPStatus.OK
+    assert body["status"] == "ok"
+    assert body["recipe_id"] == "quoted"
+
+
+def test_recipe_delete_cleanup_preserves_row_order_and_unrelated_fields(api_env):
+    domain = "example.com"
+    _request("POST", api_env, "/api/seed-urls/add", {"domain": domain, "urls_multiline": "https://example.com/second\nhttps://example.com/first"})
+    _request("POST", api_env, "/api/seed-urls/row-upsert", {
+        "domain": domain,
+        "row": {"url": "https://example.com/second", "recipe_ids": ["keep", "drop"], "active": True},
+    })
+    _request("POST", api_env, "/api/seed-urls/row-upsert", {
+        "domain": domain,
+        "row": {"url": "https://example.com/first", "recipe_ids": ["drop"], "active": False},
+    })
+    _request_multipart(
+        api_env,
+        "/api/recipes/upload",
+        {"domain_id": domain, "attach_to_url": "false"},
+        "drop.json",
+        b'{"recipe_id":"drop","url_pattern":"/x","steps":[],"capture_points":[]}',
+    )
+    status, body = _request("POST", api_env, "/api/recipes/delete", {"domain": domain, "recipe_id": "drop"})
+    assert status == HTTPStatus.OK
+    assert body["status"] == "ok"
+    rows = body["seed_urls"]["urls"]
+    assert [row["url"] for row in rows] == ["https://example.com/first", "https://example.com/second"]
+    assert rows[0]["recipe_ids"] == []
+    assert rows[1]["recipe_ids"] == ["keep"]
+    assert rows[0]["active"] is False

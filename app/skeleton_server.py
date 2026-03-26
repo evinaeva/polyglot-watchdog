@@ -49,8 +49,9 @@ from app.seed_urls import (
     write_seed_urls,
 )
 from app.testbench import get_modules, run_module_test
+from pipeline import storage
+from pipeline.runtime_config import validate_seed_urls_payload, load_phase1_runtime_config
 from pipeline.interactive_capture import GCSArtifactWriter
-from pipeline.runtime_config import load_phase1_runtime_config
 
 TEMPLATES_DIR = BASE_DIR / "web" / "templates"
 STATIC_DIR = BASE_DIR / "web" / "static"
@@ -161,6 +162,123 @@ def _normalize_optional_string(value):
     if not text or text.lower() in {"none", "null"}:
         return None
     return text
+
+
+def _strip_json5_comments(source: str) -> str:
+    result: list[str] = []
+    index = 0
+    in_string = False
+    quote_char = ""
+    escaped = False
+    length = len(source)
+    while index < length:
+        char = source[index]
+        nxt = source[index + 1] if index + 1 < length else ""
+        if in_string:
+            result.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote_char:
+                in_string = False
+            index += 1
+            continue
+        if char in {'"', "'"}:
+            in_string = True
+            quote_char = char
+            result.append(char)
+            index += 1
+            continue
+        if char == "/" and nxt == "/":
+            index += 2
+            while index < length and source[index] not in {"\n", "\r"}:
+                index += 1
+            continue
+        if char == "/" and nxt == "*":
+            index += 2
+            while index + 1 < length and not (source[index] == "*" and source[index + 1] == "/"):
+                index += 1
+            index += 2
+            continue
+        result.append(char)
+        index += 1
+    return "".join(result)
+
+
+def _parse_json_or_json5(raw: bytes) -> dict:
+    text = raw.decode("utf-8-sig")
+    parsed = json.loads(text)
+    if isinstance(parsed, dict):
+        return parsed
+    raise ValueError("recipe file must contain a JSON object")
+
+
+def _parse_json_or_json5_safe(raw: bytes) -> dict:
+    """Parse JSON with limited JSON5 compatibility (comments + trailing commas only)."""
+    try:
+        return _parse_json_or_json5(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        pass
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ValueError("invalid JSON/JSON5 payload") from exc
+    without_comments = _strip_json5_comments(text)
+    cleaned = re.sub(r",(\s*[}\]])", r"\1", without_comments)
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        raise ValueError("invalid JSON/JSON5 payload") from exc
+    if isinstance(parsed, dict):
+        return parsed
+    raise ValueError("recipe file must contain a JSON object")
+
+
+def _compat_recipe_for_storage(raw_recipe: dict) -> dict:
+    """Create a storage-compatibility copy without mutating the uploaded source payload."""
+    compat = dict(raw_recipe)
+    if not isinstance(compat.get("url_pattern"), str):
+        compat["url_pattern"] = str(compat.get("url_pattern", "") or "")
+    if not str(compat.get("url_pattern", "")).strip():
+        compat["url_pattern"] = "*"
+    steps = compat.get("steps", [])
+    compat["steps"] = list(steps) if isinstance(steps, list) else []
+    capture_points = compat.get("capture_points", [])
+    compat["capture_points"] = list(capture_points) if isinstance(capture_points, list) else []
+    return compat
+
+
+def _utc_now_rfc3339() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _write_seed_rows_preserve_order(domain: str, rows: list[dict]) -> dict:
+    updated_at = _utc_now_rfc3339()
+    contract_payload = {
+        "domain": domain,
+        "updated_at": updated_at,
+        "urls": [
+            {
+                "url": row["url"],
+                "description": row.get("description"),
+                "recipe_ids": list(row.get("recipe_ids", [])),
+            }
+            for row in rows
+        ],
+    }
+    validate_seed_urls_payload(contract_payload)
+    storage.write_json_artifact(domain, "manual", "seed_urls.json", contract_payload)
+    storage.write_json_artifact(
+        domain,
+        "manual",
+        "seed_url_states.json",
+        {
+            "updated_at": updated_at,
+            "states": [{"url": row["url"], "active": bool(row.get("active", True))} for row in rows],
+        },
+    )
+    return {"domain": domain, "updated_at": updated_at, "urls": rows}
 
 
 def _issue_sort_key(issue: dict) -> tuple[int, int, str]:
@@ -3107,6 +3225,72 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 )
             return
 
+        if self.path == "/api/recipes/upload":
+            fields, files = self._read_multipart_form_payload()
+            domain = str(fields.get("domain_id", "")).strip()
+            attach_to_url = str(fields.get("attach_to_url", "")).strip().lower() in {"1", "true", "yes", "on"}
+            overwrite = str(fields.get("overwrite", "")).strip().lower() in {"1", "true", "yes", "on"}
+            raw_url = str(fields.get("url", "")).strip()
+            recipe_file = files.get("file", {})
+            filename = str(recipe_file.get("filename", "")).strip()
+            content = recipe_file.get("content", b"")
+            recipe_id = ""
+            try:
+                valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
+                if not filename:
+                    raise ValueError("file is required")
+                if not isinstance(content, (bytes, bytearray)) or not content:
+                    raise ValueError("file is empty")
+                if not (filename.lower().endswith(".json") or filename.lower().endswith(".json5")):
+                    raise ValueError("file must be .json or .json5")
+                recipe = _parse_json_or_json5_safe(bytes(content))
+                recipe_id = str(recipe.get("recipe_id", "")).strip()
+                if not recipe_id:
+                    raise ValueError("recipe_id is required in recipe file")
+                existing_ids = {str(row.get("recipe_id", "")).strip() for row in list_recipes(valid_domain)}
+                already_exists = recipe_id in existing_ids
+                if already_exists and not overwrite:
+                    self._json_response(
+                        {"status": "overwrite_required", "error": f"recipe_id already exists: {recipe_id}", "recipe_id": recipe_id},
+                        status=HTTPStatus.CONFLICT,
+                    )
+                    return
+                saved_recipe = upsert_recipe(valid_domain, _compat_recipe_for_storage(recipe))
+                attached = False
+                if attach_to_url:
+                    normalized_url = normalize_seed_url(raw_url)
+                    if not normalized_url:
+                        raise ValueError("url is required when attach_to_url=true")
+                    seed_payload = read_seed_urls(valid_domain)
+                    rows = [row for row in seed_payload.get("urls", []) if isinstance(row, dict)]
+                    match = next((row for row in rows if str(row.get("url", "")) == normalized_url), None)
+                    if match is None:
+                        raise ValueError("url not found in seed_urls")
+                    recipe_ids = sorted({str(item).strip() for item in match.get("recipe_ids", []) if str(item).strip()} | {recipe_id})
+                    merged_rows = [dict(row) for row in rows]
+                    for row in merged_rows:
+                        if str(row.get("url", "")) == normalized_url:
+                            row["recipe_ids"] = recipe_ids
+                    write_seed_rows(valid_domain, merged_rows)
+                    attached = True
+                _register_domain(valid_domain)
+                self._json_response(
+                    {
+                        "status": "ok",
+                        "error": "",
+                        "recipe": saved_recipe,
+                        "recipe_id": recipe_id,
+                        "overwrote": already_exists,
+                        "attached_to_url": attached,
+                        "recipes": list_recipes(valid_domain),
+                    }
+                )
+            except ValueError as exc:
+                self._json_response({"status": "failed", "error": str(exc), "recipe_id": recipe_id}, status=HTTPStatus.BAD_REQUEST)
+            except Exception as exc:
+                self._json_response({"status": "failed", "error": str(exc), "recipe_id": recipe_id}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+
         if self.path == "/api/recipes/delete":
             payload = self._read_json_payload()
             domain = str(payload.get("domain", ""))
@@ -3116,33 +3300,25 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 if not recipe_id:
                     raise ValueError("recipe_id is required")
                 recipes = delete_recipe(valid_domain, recipe_id)
-                self._json_response({"recipes": recipes})
+                seed_payload = read_seed_urls(valid_domain)
+                rows = [row for row in seed_payload.get("urls", []) if isinstance(row, dict)]
+                merged_rows: list[dict] = []
+                changed = False
+                for row in rows:
+                    next_row = dict(row)
+                    current_ids = row.get("recipe_ids", [])
+                    normalized_ids = list(current_ids) if isinstance(current_ids, list) else []
+                    filtered_ids = [rid for rid in normalized_ids if str(rid).strip() and str(rid).strip() != recipe_id]
+                    if filtered_ids != normalized_ids:
+                        changed = True
+                    next_row["recipe_ids"] = filtered_ids
+                    merged_rows.append(next_row)
+                saved = _write_seed_rows_preserve_order(valid_domain, merged_rows) if changed else seed_payload
+                self._json_response({"status": "ok", "error": "", "recipe_id": recipe_id, "recipes": recipes, "seed_urls": saved})
             except ValueError as exc:
-                self._json_response(
-                    {
-                        "status": "failed",
-                        "error": str(exc),
-                        "action": "start_capture",
-                        "previous_state": "not_started",
-                        "resulting_state": "failed",
-                        "next_expected_state": "not_started",
-                        "remediation": ["check capture runner prerequisites", "see logs", "verify env config"],
-                    },
-                    status=HTTPStatus.BAD_REQUEST,
-                )
+                self._json_response({"status": "failed", "error": str(exc), "recipe_id": recipe_id}, status=HTTPStatus.BAD_REQUEST)
             except Exception as exc:
-                self._json_response(
-                    {
-                        "status": "failed",
-                        "error": str(exc),
-                        "action": "start_capture",
-                        "previous_state": "not_started",
-                        "resulting_state": "failed",
-                        "next_expected_state": "not_started",
-                        "remediation": ["check capture runner prerequisites", "see logs", "verify env config"],
-                    },
-                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
-                )
+                self._json_response({"status": "failed", "error": str(exc), "recipe_id": recipe_id}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
 
         if self.path == "/api/seed-urls/row-upsert":
@@ -4234,6 +4410,62 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             chosen = next((value for value in reversed(values) if value != ""), values[-1])
             payload[key] = chosen
         return payload
+
+    def _read_multipart_form_payload(self) -> tuple[dict[str, str], dict[str, dict[str, object]]]:
+        content_type = str(self.headers.get("Content-Type", ""))
+        if "multipart/form-data" not in content_type.lower():
+            return {}, {}
+        fields: dict[str, str] = {}
+        files: dict[str, dict[str, object]] = {}
+        boundary_match = re.search(r'boundary="?([^";]+)"?', content_type, flags=re.IGNORECASE)
+        if not boundary_match:
+            return fields, files
+        boundary = boundary_match.group(1).encode("utf-8")
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0:
+            return fields, files
+        raw = self.rfile.read(length)
+        delimiter = b"--" + boundary
+        parts = raw.split(delimiter)
+        for part in parts:
+            if not part:
+                continue
+            chunk = part
+            if chunk.startswith(b"\r\n"):
+                chunk = chunk[2:]
+            if chunk.endswith(b"--\r\n"):
+                chunk = chunk[:-4]
+            elif chunk.endswith(b"--"):
+                chunk = chunk[:-2]
+            elif chunk.endswith(b"\r\n"):
+                chunk = chunk[:-2]
+            if not chunk:
+                continue
+            if b"\r\n\r\n" not in chunk:
+                continue
+            header_block, body = chunk.split(b"\r\n\r\n", 1)
+            header_lines = header_block.decode("utf-8", errors="ignore").split("\r\n")
+            disposition = next((line for line in header_lines if line.lower().startswith("content-disposition:")), "")
+            if not disposition:
+                continue
+            name_match = re.search(r'name="([^"]+)"', disposition)
+            if not name_match:
+                continue
+            field_name = name_match.group(1)
+            file_match = re.search(r'filename="([^"]*)"', disposition)
+            content_type_line = next((line for line in header_lines if line.lower().startswith("content-type:")), "")
+            part_content_type = content_type_line.split(":", 1)[1].strip() if ":" in content_type_line else ""
+            if file_match:
+                files[field_name] = {
+                    "filename": file_match.group(1),
+                    "content_type": part_content_type,
+                    "content": bytes(body),
+                }
+                continue
+            decoded = body.decode("utf-8", errors="ignore")
+            if field_name not in fields or decoded:
+                fields[field_name] = decoded
+        return fields, files
 
     def log_message(self, format, *args):  # noqa: A002
         pass  # suppress default request logging for cleaner Cloud Run logs

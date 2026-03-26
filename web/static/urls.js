@@ -11,8 +11,21 @@ const statusBox = document.getElementById('statusBox');
 const continueLink = document.getElementById('continueFirstRun');
 const domainSavedToggle = document.getElementById('domainSavedToggle');
 const domainSavedMenu = document.getElementById('domainSavedMenu');
+const recipeDrawer = document.getElementById('recipeDrawer');
+const closeRecipeDrawerButton = document.getElementById('closeRecipeDrawer');
+const recipeDrawerUrl = document.getElementById('recipeDrawerUrl');
+const recipeDomainSelect = document.getElementById('recipeDomainSelect');
+const recipeAttachToggle = document.getElementById('recipeAttachToggle');
+const recipeFileInput = document.getElementById('recipeFileInput');
+const uploadRecipeButton = document.getElementById('uploadRecipeButton');
+const attachedRecipesList = document.getElementById('attachedRecipesList');
+const allRecipesList = document.getElementById('allRecipesList');
 let recipes = [];
+let drawerRecipes = [];
 let savedDomains = [];
+let urlsRows = [];
+let drawerUrl = '';
+let drawerUrlDomain = '';
 
 const SAVE_SUCCESS_TIMEOUT_MS = 2000;
 const ACTIVATION_TIMEOUT_MS = 1200;
@@ -104,6 +117,28 @@ function syncContinueLink() {
   if (!continueLink) return;
   const domain = selectedDomain();
   continueLink.href = `/workflow?${new URLSearchParams({ domain }).toString()}`;
+}
+
+function selectedRecipeDomain() {
+  return (recipeDomainSelect?.value || drawerUrlDomain || selectedDomain()).trim();
+}
+
+function refreshRecipeDomainOptions() {
+  if (!recipeDomainSelect) return;
+  const preferred = selectedRecipeDomain() || selectedDomain();
+  const candidates = new Set([selectedDomain(), ...savedDomains].map((value) => String(value || '').trim()).filter(Boolean));
+  recipeDomainSelect.innerHTML = '';
+  for (const domain of candidates) {
+    const option = document.createElement('option');
+    option.value = domain;
+    option.textContent = domain;
+    recipeDomainSelect.appendChild(option);
+  }
+  if (preferred && candidates.has(preferred)) {
+    recipeDomainSelect.value = preferred;
+  } else if (selectedDomain() && candidates.has(selectedDomain())) {
+    recipeDomainSelect.value = selectedDomain();
+  }
 }
 
 function setStatus(message, type = 'info') {
@@ -293,8 +328,144 @@ function createAdvancedDetails(row, hasRecipe, invalid) {
   return details;
 }
 
+function closeRecipeDrawer() {
+  if (!recipeDrawer) return;
+  recipeDrawer.classList.add('hidden');
+  recipeDrawer.setAttribute('aria-hidden', 'true');
+  drawerUrl = '';
+}
+
+function openRecipeDrawer(url) {
+  if (!recipeDrawer) return;
+  drawerUrl = String(url || '').trim();
+  drawerUrlDomain = selectedDomain();
+  recipeDrawer.classList.remove('hidden');
+  recipeDrawer.setAttribute('aria-hidden', 'false');
+  if (recipeDrawerUrl) {
+    recipeDrawerUrl.textContent = `URL: ${drawerUrl || '-'} (from ${drawerUrlDomain || '-'})`;
+  }
+  if (recipeDomainSelect) {
+    recipeDomainSelect.value = drawerUrlDomain || selectedDomain();
+  }
+}
+
+function rowByUrl(url) {
+  return urlsRows.find((row) => String(row.url || '') === String(url || ''));
+}
+
+function attachedRecipeIdsForDrawer() {
+  const row = rowByUrl(drawerUrl);
+  if (!row || !Array.isArray(row.recipe_ids)) return [];
+  return row.recipe_ids.map((value) => String(value).trim()).filter(Boolean);
+}
+
+async function upsertRowRecipes(url, recipeIds) {
+  const row = rowByUrl(url);
+  if (!row) {
+    throw new Error('url row not found');
+  }
+  return callApi('/api/seed-urls/row-upsert', 'POST', {
+    domain: drawerUrlDomain || selectedDomain(),
+    row: {
+      url,
+      description: row.description || null,
+      active: row.active !== false,
+      recipe_ids: recipeIds,
+    },
+  });
+}
+
+function renderDrawerLists() {
+  if (!attachedRecipesList || !allRecipesList) return;
+  const attached = attachedRecipeIdsForDrawer();
+  attachedRecipesList.innerHTML = '';
+  allRecipesList.innerHTML = '';
+
+  if (!attached.length) {
+    attachedRecipesList.textContent = t('urls.recipes.none_attached', 'No recipes attached to this URL');
+  }
+
+  for (const recipeId of attached) {
+    const line = document.createElement('div');
+    line.className = 'recipe-line';
+    const label = document.createElement('span');
+    label.textContent = recipeId;
+    const detachButton = document.createElement('button');
+    detachButton.className = 'ui-action-button';
+    detachButton.textContent = t('urls.button.detach', 'Detach');
+      detachButton.addEventListener('click', async () => {
+        try {
+        const payload = await upsertRowRecipes(drawerUrl, attached.filter((value) => value !== recipeId));
+        render(payload);
+        renderDrawerLists();
+        setStatus(t('urls.status.detached', 'Recipe detached.'), 'success');
+      } catch (error) {
+        setError(error.message || t('urls.status.detach_failed', 'Detach failed.'));
+      }
+    });
+    const deleteButton = document.createElement('button');
+    deleteButton.className = 'ui-action-button';
+      deleteButton.textContent = t('urls.button.delete_recipe', 'Delete recipe in selected domain');
+      deleteButton.addEventListener('click', async () => {
+      if (!window.confirm(`Delete recipe '${recipeId}' from ${selectedRecipeDomain()}?`)) return;
+      try {
+        await callApi('/api/recipes/delete', 'POST', { domain: selectedRecipeDomain(), recipe_id: recipeId });
+        await loadRecipeManagementData();
+        if (selectedRecipeDomain() === (drawerUrlDomain || selectedDomain())) {
+          await load();
+        } else {
+          renderDrawerLists();
+        }
+        setStatus(t('urls.status.deleted', 'Deleted.'), 'success');
+      } catch (error) {
+        setError(error.message || t('urls.status.delete_failed', 'Delete failed.'));
+      }
+    });
+    line.append(label, detachButton, deleteButton);
+    attachedRecipesList.appendChild(line);
+  }
+
+  if (!drawerRecipes.length) {
+    allRecipesList.textContent = t('urls.recipes.none_domain', 'No recipes found for this domain');
+    return;
+  }
+
+  for (const recipe of drawerRecipes) {
+    const recipeId = String(recipe.recipe_id || '').trim();
+    if (!recipeId) continue;
+    const line = document.createElement('div');
+    line.className = 'recipe-line';
+    const label = document.createElement('span');
+    label.textContent = recipeId;
+    const attachButton = document.createElement('button');
+    const alreadyAttached = attached.includes(recipeId);
+    attachButton.className = 'ui-action-button';
+    attachButton.textContent = alreadyAttached ? t('urls.recipes.attached', 'Attached') : t('urls.button.attach', 'Attach');
+    attachButton.disabled = alreadyAttached;
+    attachButton.addEventListener('click', async () => {
+      try {
+        await upsertRowRecipes(drawerUrl, Array.from(new Set([...attached, recipeId])));
+        await load();
+        renderDrawerLists();
+        setStatus(t('urls.status.saved', 'URLs saved'), 'success');
+      } catch (error) {
+        setError(error.message || t('urls.status.save_failed', 'Save failed.'));
+      }
+    });
+    line.append(label, attachButton);
+    allRecipesList.appendChild(line);
+  }
+}
+
+async function loadRecipeManagementData() {
+  const domain = selectedRecipeDomain();
+  drawerRecipes = (await callApi(`/api/recipes?domain=${encodeURIComponent(domain)}`, 'GET')).recipes || [];
+  renderDrawerLists();
+}
+
 function render(data) {
   const urls = Array.isArray(data.urls) ? data.urls : [];
+  urlsRows = urls;
   updatedAt.textContent = formatUpdatedAt(data.updated_at);
   urlsMultiline.value = urls.map((row) => row.url || '').filter(Boolean).join('\n');
   savedUrlsBody.innerHTML = '';
@@ -321,6 +492,30 @@ function render(data) {
     activeField.checked = row.active !== false;
     activeCell.appendChild(activeField);
 
+    const recipeCountCell = document.createElement('td');
+    const recipeCount = Array.isArray(row.recipe_ids) ? row.recipe_ids.filter((value) => String(value || '').trim()).length : 0;
+    recipeCountCell.textContent = String(recipeCount);
+
+    const manageCell = document.createElement('td');
+    const manageButton = document.createElement('button');
+    manageButton.className = 'ui-action-button';
+    manageButton.textContent = t('urls.button.manage_recipes', 'Manage recipes');
+    manageButton.addEventListener('click', async () => {
+      setError('');
+      setStatus('');
+      refreshRecipeDomainOptions();
+      if (recipeDomainSelect) {
+        recipeDomainSelect.value = selectedDomain();
+      }
+      openRecipeDrawer(row.url || '');
+      try {
+        await loadRecipeManagementData();
+      } catch (error) {
+        setError(error.message || t('urls.errors.load_failed', 'Failed to load'));
+      }
+    });
+    manageCell.appendChild(manageButton);
+
     const saveCell = document.createElement('td');
     const saveButton = document.createElement('button');
     saveButton.className = 'save-row ui-action-button';
@@ -335,11 +530,11 @@ function render(data) {
     deleteButton.dataset.defaultLabel = t('urls.button.delete', 'Delete');
     deleteCell.appendChild(deleteButton);
 
-    tr.append(urlCell, activeCell, saveCell, deleteCell);
+    tr.append(urlCell, activeCell, recipeCountCell, manageCell, saveCell, deleteCell);
 
     const advancedTr = document.createElement('tr');
     const advancedTd = document.createElement('td');
-    advancedTd.colSpan = 4;
+    advancedTd.colSpan = 6;
     advancedTd.appendChild(createAdvancedDetails(row, hasRecipe, invalid));
     advancedTr.appendChild(advancedTd);
 
@@ -462,6 +657,7 @@ async function maybeLoadDomains() {
     if (domainInput && !selectedDomain()) {
       domainInput.value = preferredDefault;
     }
+    refreshRecipeDomainOptions();
   } catch (_error) {
     // keep typed/empty domain value when domains list is unavailable
   }
@@ -519,6 +715,94 @@ async function mutate(path, payload, button, labels) {
   }
 }
 
+async function uploadRecipeFile(overwrite = false) {
+  const file = recipeFileInput?.files?.[0];
+  if (!file) {
+    throw new Error('file is required');
+  }
+  const filename = String(file.name || '').toLowerCase();
+  if (!(filename.endsWith('.json') || filename.endsWith('.json5'))) {
+    throw new Error('file must be .json or .json5');
+  }
+  const form = new FormData();
+  form.append('file', file);
+  const recipeDomain = selectedRecipeDomain();
+  const shouldAttachInUpload = Boolean(recipeAttachToggle?.checked) && recipeDomain === (drawerUrlDomain || selectedDomain());
+  form.append('domain_id', recipeDomain);
+  form.append('attach_to_url', shouldAttachInUpload ? 'true' : 'false');
+  if (shouldAttachInUpload) {
+    form.append('url', drawerUrl);
+  }
+  if (overwrite) {
+    form.append('overwrite', 'true');
+  }
+  const response = await fetch('/api/recipes/upload', { method: 'POST', body: form });
+  const payload = await safeReadPayload(response);
+  if (!response.ok) {
+    const error = new Error(payload.error || `Request failed: ${response.status}`);
+    error.payload = payload;
+    throw error;
+  }
+  return payload;
+}
+
+async function uploadRecipeWithOverwritePrompt() {
+  try {
+    return await uploadRecipeFile(false);
+  } catch (error) {
+    if (error?.payload?.status !== 'overwrite_required') {
+      throw error;
+    }
+    const confirmed = window.confirm(`Recipe '${error.payload.recipe_id}' already exists. Overwrite?`);
+    if (!confirmed) {
+      return { status: 'cancelled' };
+    }
+    return uploadRecipeFile(true);
+  }
+}
+
+if (uploadRecipeButton) {
+  uploadRecipeButton.addEventListener('click', async () => {
+    setError('');
+    setStatus('');
+    try {
+      const uploaded = await uploadRecipeWithOverwritePrompt();
+      if (uploaded.status === 'cancelled') {
+        setStatus('Upload cancelled.', 'info');
+        return;
+      }
+      const recipeId = String(uploaded.recipe_id || '').trim();
+      if (recipeAttachToggle?.checked && selectedRecipeDomain() !== (drawerUrlDomain || selectedDomain()) && recipeId) {
+        const currentAttached = attachedRecipeIdsForDrawer();
+        const payload = await upsertRowRecipes(drawerUrl, Array.from(new Set([...currentAttached, recipeId])));
+        render(payload);
+      }
+      setStatus(uploaded.overwrote ? 'Recipe overwritten.' : 'Recipe uploaded.', 'success');
+      if (recipeFileInput) recipeFileInput.value = '';
+      await loadRecipeManagementData();
+      await load();
+    } catch (error) {
+      setError(error.message || 'Upload failed');
+    }
+  });
+}
+
+if (recipeDomainSelect) {
+  recipeDomainSelect.addEventListener('change', async () => {
+    setError('');
+    setStatus('');
+    try {
+      await loadRecipeManagementData();
+    } catch (error) {
+      setError(error.message || t('urls.errors.load_failed', 'Failed to load'));
+    }
+  });
+}
+
+if (closeRecipeDrawerButton) {
+  closeRecipeDrawerButton.addEventListener('click', closeRecipeDrawer);
+}
+
 loadButton.classList.add('ui-action-button');
 replaceButton.classList.add('ui-action-button');
 addButton.classList.add('ui-action-button');
@@ -548,6 +832,7 @@ if (domainInput) {
   domainInput.addEventListener('change', () => {
     syncContinueLink();
     renderSavedDomainsMenu(selectedDomain());
+    refreshRecipeDomainOptions();
   });
   domainInput.addEventListener('input', () => {
     syncContinueLink();
@@ -599,6 +884,7 @@ if (domainSavedMenu) {
 document.addEventListener('pw:i18n:ready', async () => {
   await maybeLoadDomains();
   syncContinueLink();
+  refreshRecipeDomainOptions();
   if (selectedDomain()) {
     await load();
   }

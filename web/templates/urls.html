@@ -35,10 +35,31 @@
 
     <h2>Domain URL config</h2>
     <table>
-      <thead><tr><th>URL</th><th>Active</th><th>Save</th><th>Delete</th></tr></thead>
+      <thead><tr><th>URL</th><th>Active</th><th>Recipes</th><th>Manage</th><th>Save</th><th>Delete</th></tr></thead>
       <tbody id="savedUrlsBody"></tbody>
     </table>
   </main>
+  <aside id="recipeDrawer" class="recipe-drawer hidden" aria-hidden="true">
+    <div class="recipe-drawer-panel">
+      <div class="recipe-drawer-header">
+        <h3>Manage recipes</h3>
+        <button id="closeRecipeDrawer" type="button" class="ui-action-button">Close</button>
+      </div>
+      <p id="recipeDrawerUrl" class="inline-help">URL: -</p>
+      <label for="recipeDomainSelect">Recipe domain</label>
+      <select id="recipeDomainSelect"></select>
+      <label for="recipeAttachToggle"><input id="recipeAttachToggle" type="checkbox" checked /> Attach uploaded recipe to this URL</label>
+      <label for="recipeFileInput">Recipe file (.json / .json5)</label>
+      <input id="recipeFileInput" type="file" accept=".json,.json5,application/json" />
+      <button id="uploadRecipeButton" type="button" class="ui-action-button">Upload recipe file</button>
+      <h4>Attached recipes</h4>
+      <p class="inline-help">These are attached to the current URL row in the selected /urls domain.</p>
+      <div id="attachedRecipesList"></div>
+      <h4>All recipes in selected domain</h4>
+      <p class="inline-help">This list and delete actions are scoped to the recipe domain selector above.</p>
+      <div id="allRecipesList"></div>
+    </div>
+  </aside>
   <script src="/static/i18n.js"></script>
   <script src="/static/urls.js"></script>
   <script src="/static/nav-active.js"></script>

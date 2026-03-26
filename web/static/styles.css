@@ -94,6 +94,40 @@ input[data-field="URL"] { width: 100%; box-sizing: border-box; }
   padding: 0;
 }
 .recipe-chip-empty { color: #64748b; font-size: 12px; }
+.recipe-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: min(520px, 96vw);
+  background: rgba(15, 23, 42, 0.24);
+  z-index: 110;
+}
+.recipe-drawer-panel {
+  margin-left: auto;
+  height: 100%;
+  width: 100%;
+  background: #fff;
+  padding: 14px;
+  overflow-y: auto;
+  border-left: 1px solid #cbd5e1;
+  box-sizing: border-box;
+}
+.recipe-drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.recipe-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+}
+.recipe-line > span {
+  flex: 1;
+  font-family: monospace;
+}
 @media (max-width: 900px) {
   .url-cell { min-width: 240px; }
 }
