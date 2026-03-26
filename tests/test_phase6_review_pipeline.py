@@ -269,7 +269,7 @@ class _PrefetchAwareProvider:
     def prefetch_reviews(self, pairs, language):
         self.prefetched.update((text_en, text_target, language) for text_en, text_target in pairs)
 
-    def review_spelling_grammar(self, text_en, text_target, language):
+    def review_spelling_grammar(self, text_en, text_target, language, **kwargs):
         from pipeline.phase6_providers import SpellingGrammarSignals
 
         key = (text_en, text_target, language)
@@ -277,7 +277,7 @@ class _PrefetchAwareProvider:
             self.misses.append(key)
         return SpellingGrammarSignals(spelling_score=0.0, grammar_score=0.0, notes=[])
 
-    def review_meaning(self, text_en, text_target, language):
+    def review_meaning(self, text_en, text_target, language, **kwargs):
         from pipeline.phase6_providers import MeaningSignals
 
         key = (text_en, text_target, language)
@@ -376,7 +376,7 @@ def test_llm_mode_enriches_evidence_metadata_when_response_valid(monkeypatch):
             "choices": [
                 {
                     "message": {
-                        "content": '{"results": [{"item_id": "item_0", "spelling_score": 0.82, "grammar_score": 0.1, "meaning_mismatch_score": 0.2, "notes": ["possible typo", "uncertain due to short text"]}]}'
+                        "content": '{"r":[[0,82,10,20,1]]}'
                     }
                 }
             ]
@@ -404,16 +404,16 @@ def test_llm_mode_enriches_evidence_metadata_when_response_valid(monkeypatch):
         "grammar_score": 0.1,
         "meaning_mismatch_score": 0.2,
     }
-    assert spelling_issue["evidence"]["provider_notes"] == ["possible typo", "uncertain due to short text"]
+    assert spelling_issue["evidence"]["provider_notes"] == ["spell"]
 
 
 class _HighMeaningProvider:
-    def review_spelling_grammar(self, text_en, text_target, language):
+    def review_spelling_grammar(self, text_en, text_target, language, **kwargs):
         from pipeline.phase6_providers import SpellingGrammarSignals
 
         return SpellingGrammarSignals(spelling_score=0.0, grammar_score=0.0, notes=[])
 
-    def review_meaning(self, text_en, text_target, language):
+    def review_meaning(self, text_en, text_target, language, **kwargs):
         from pipeline.phase6_providers import MeaningSignals
 
         return MeaningSignals(meaning_mismatch_score=0.92, notes=["forced_mismatch"])
@@ -537,11 +537,11 @@ def test_run_phase6_persists_llm_review_stats_artifact():
     captured = {}
 
     class _Provider:
-        def review_spelling_grammar(self, text_en, text_target, language):
+        def review_spelling_grammar(self, text_en, text_target, language, **kwargs):
             from pipeline.phase6_providers import SpellingGrammarSignals
             return SpellingGrammarSignals(spelling_score=0.0, grammar_score=0.0, notes=[])
 
-        def review_meaning(self, text_en, text_target, language):
+        def review_meaning(self, text_en, text_target, language, **kwargs):
             from pipeline.phase6_providers import MeaningSignals
             return MeaningSignals(meaning_mismatch_score=0.0, notes=[])
 

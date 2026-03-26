@@ -77,15 +77,7 @@ def test_llm_provider_malformed_response_degrades_safely_and_reuses_fallback_onc
 def test_llm_provider_parses_and_clamps_json_response():
     def good_request(endpoint, api_key, timeout_s, payload):
         response_payload = {
-            "results": [
-                {
-                    "item_id": "item_0",
-                    "spelling_score": 1.4,
-                    "grammar_score": 0.42,
-                    "meaning_mismatch_score": -2,
-                    "notes": ["likely typo", "low context confidence"],
-                }
-            ]
+            "r": [[0, 140, 42, -2, 1]]
         }
         return {"choices": [{"message": {"content": json.dumps(response_payload)}}]}
 
@@ -95,7 +87,7 @@ def test_llm_provider_parses_and_clamps_json_response():
 
     assert sg.spelling_score == 1.0
     assert sg.grammar_score == 0.42
-    assert sg.notes == ["likely typo", "low context confidence"]
+    assert sg.notes == ["spell"]
     assert sg.provider_meta["fallback_used"] is False
     assert sg.provider_meta["provider_score_summary"] == {
         "spelling_score": 1.0,
@@ -118,15 +110,7 @@ def test_llm_provider_reuses_single_ai_request_for_same_pair():
         nonlocal attempts
         attempts += 1
         response_payload = {
-            "results": [
-                {
-                    "item_id": "item_0",
-                    "spelling_score": 0.2,
-                    "grammar_score": 0.4,
-                    "meaning_mismatch_score": 0.6,
-                    "notes": ["single-call"],
-                }
-            ]
+            "r": [[0, 20, 40, 60, 0]]
         }
         return {"choices": [{"message": {"content": json.dumps(response_payload)}}]}
 
@@ -146,18 +130,10 @@ def test_llm_provider_cache_separates_different_pairs():
         attempts += 1
         user = json.loads(payload["messages"][1]["content"])
         result_rows = []
-        for item in user["items"]:
-            result_rows.append(
-                {
-                    "item_id": item["item_id"],
-                    "spelling_score": 0.2,
-                    "grammar_score": 0.4,
-                    "meaning_mismatch_score": 0.6,
-                    "notes": [item["text_target"]],
-                }
-            )
+        for item in user["i"]:
+            result_rows.append([int(item[0]), 20, 40, 60, 3 if item[2].lower() == "hola" else 0])
         response_payload = {
-            "results": result_rows,
+            "r": result_rows,
         }
         return {"choices": [{"message": {"content": json.dumps(response_payload)}}]}
 
@@ -177,24 +153,15 @@ def test_llm_provider_batch_prefetch_single_request_multiple_pairs():
         nonlocal attempts
         attempts += 1
         user = json.loads(payload["messages"][1]["content"])
-        assert "language" in user
-        assert len(user["items"]) == 2
+        assert "l" in user
+        assert len(user["i"]) == 2
         return {
             "choices": [
                 {
                     "message": {
                         "content": json.dumps(
                             {
-                                "results": [
-                                    {
-                                        "item_id": item["item_id"],
-                                        "spelling_score": 0.1,
-                                        "grammar_score": 0.2,
-                                        "meaning_mismatch_score": 0.3,
-                                        "notes": ["batched"],
-                                    }
-                                    for item in user["items"]
-                                ]
+                                "r": [[int(item[0]), 10, 20, 30, 0] for item in user["i"]]
                             }
                         )
                     }
@@ -236,7 +203,7 @@ def test_llm_stats_success_with_usage_payload():
             "choices": [{
                 "message": {
                     "content": json.dumps(
-                        {"results": [{"item_id": "item_0", "spelling_score": 0.1, "grammar_score": 0.2, "meaning_mismatch_score": 0.3, "notes": []}]}
+                        {"r": [[0, 10, 20, 30, 0]]}
                     )
                 }
             }],
@@ -260,7 +227,7 @@ def test_llm_stats_success_without_usage_payload():
             "choices": [{
                 "message": {
                     "content": json.dumps(
-                        {"results": [{"item_id": "item_0", "spelling_score": 0.1, "grammar_score": 0.2, "meaning_mismatch_score": 0.3, "notes": []}]}
+                        {"r": [[0, 10, 20, 30, 0]]}
                     )
                 }
             }],
@@ -310,7 +277,7 @@ def test_llm_stats_mixed_multi_batch_execution():
         if attempts == 1:
             return {
                 "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-                "choices": [{"message": {"content": json.dumps({"results": [{"item_id": "item_0", "spelling_score": 0.1, "grammar_score": 0.1, "meaning_mismatch_score": 0.1, "notes": []}]})}}],
+                "choices": [{"message": {"content": json.dumps({"r": [[0, 10, 10, 10, 0]]})}}],
             }
         raise URLError("timeout")
 
@@ -337,3 +304,102 @@ def test_failed_batch_status_is_not_overwritten_by_fallback_status():
     assert stats["fallback_batches"] == 1
     assert stats["batches"][0]["status"] == "failed"
     assert stats["batches"][0]["fallback_used"] is True
+
+
+def test_compact_request_encoding_and_dedupe_fanout():
+    seen = {}
+
+    def good_request(endpoint, api_key, timeout_s, payload):
+        nonlocal seen
+        seen = json.loads(payload["messages"][1]["content"])
+        return {"choices": [{"message": {"content": json.dumps({"r": [[0, 55, 15, 5, 4]]})}}]}
+
+    provider = LLMReviewProvider(api_key="k", request_fn=good_request)
+    provider.prefetch_reviews(
+        [
+            {"text_en": " Buy now ", "text_target": "Acheter", "kind_code": 0, "context_code": 7, "masked_flag": 0, "low_pairing_confidence_flag": 0},
+            {"text_en": "Buy  now", "text_target": "Acheter", "kind_code": 0, "context_code": 7, "masked_flag": 0, "low_pairing_confidence_flag": 0},
+        ],
+        "fr",
+    )
+    sg = provider.review_spelling_grammar(
+        " Buy now ",
+        "Acheter",
+        "fr",
+        kind_code=0,
+        context_code=7,
+        masked_flag=0,
+        low_pairing_confidence_flag=0,
+    )
+    assert seen["l"] == "fr"
+    assert len(seen["i"]) == 1
+    assert seen["i"][0][3:] == [0, 7, 0, 0]
+    assert sg.notes == ["untranslated"]
+
+
+def test_note_code_translation():
+    def good_request(endpoint, api_key, timeout_s, payload):
+        return {"choices": [{"message": {"content": json.dumps({"r": [[0, 5, 5, 5, 9]]})}}]}
+
+    provider = LLMReviewProvider(api_key="k", request_fn=good_request)
+    result = provider.review_spelling_grammar("hello", "hola", "es")
+    assert result.notes == ["adult_ok"]
+
+
+def test_context_aware_cache_key_keeps_same_text_rows_separate():
+    attempts = 0
+
+    def good_request(endpoint, api_key, timeout_s, payload):
+        nonlocal attempts
+        attempts += 1
+        user = json.loads(payload["messages"][1]["content"])
+        rows = []
+        for row in user["i"]:
+            note_code = 1 if int(row[4]) == 0 else 2
+            rows.append([int(row[0]), 20, 20, 20, note_code])
+        return {"choices": [{"message": {"content": json.dumps({"r": rows})}}]}
+
+    provider = LLMReviewProvider(api_key="k", request_fn=good_request)
+    provider.prefetch_reviews(
+        [
+            {"text_en": "Join", "text_target": "Rejoindre", "kind_code": 0, "context_code": 0, "masked_flag": 0, "low_pairing_confidence_flag": 0},
+            {"text_en": "Join", "text_target": "Rejoindre", "kind_code": 0, "context_code": 7, "masked_flag": 0, "low_pairing_confidence_flag": 0},
+        ],
+        "fr",
+    )
+
+    nav = provider.review_spelling_grammar("Join", "Rejoindre", "fr", kind_code=0, context_code=0, masked_flag=0, low_pairing_confidence_flag=0)
+    cta = provider.review_spelling_grammar("Join", "Rejoindre", "fr", kind_code=0, context_code=7, masked_flag=0, low_pairing_confidence_flag=0)
+    assert attempts == 1
+    assert nav.notes == ["spell"]
+    assert cta.notes == ["grammar"]
+
+
+def test_masked_flag_fallback_still_detects_mask_patterns_without_explicit_flag():
+    captured = {}
+
+    def good_request(endpoint, api_key, timeout_s, payload):
+        nonlocal captured
+        captured = json.loads(payload["messages"][1]["content"])
+        return {"choices": [{"message": {"content": json.dumps({"r": [[0, 0, 0, 0, 8]]})}}]}
+
+    provider = LLMReviewProvider(api_key="k", request_fn=good_request)
+    provider.prefetch_reviews([("Price", "***")], "fr")
+    assert captured["i"][0][5] == 1
+
+
+def test_kind_code_4_contract_is_short_text():
+    provider = LLMReviewProvider(api_key="k")
+    assert "4=short_text" in provider._system_prompt
+
+
+def test_custom_prompt_still_appends_compact_contract_once():
+    provider = LLMReviewProvider(api_key="k", system_prompt="Custom brief instruction.")
+    assert provider._system_prompt.startswith("Custom brief instruction.")
+    assert provider._system_prompt.count('{"r":[[id,s,g,m,n]]}') == 1
+    assert "scores. Bands: 0..15 no meaningful issue" in provider._system_prompt
+
+
+def test_default_prompt_includes_compact_contract_once():
+    provider = LLMReviewProvider(api_key="k")
+    assert provider._system_prompt.count('{"r":[[id,s,g,m,n]]}') == 1
