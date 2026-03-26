@@ -6,7 +6,7 @@ Use the following as the replacement or source text for the `/about` page.
 
 Polyglot Watchdog is a contract-first localization QA pipeline and operator console for comparing baseline and target-language web experiences.
 
-The project already includes real persisted artifacts and multiple implemented pipeline flows. It is not just a UI mock or static prototype. At the same time, it is still **pre-production**: some operator surfaces are already artifact-backed, while release readiness remains gated by documented criteria and documentation alignment.
+The project already includes real persisted artifacts and multiple implemented pipeline flows. It is not just a UI mock or static prototype. At the same time, it is still **pre-production**: some operator surfaces are already artifact-backed, some flows are still being hardened, and release readiness remains gated by documented criteria and documentation alignment.
 
 ### What the product already does
 

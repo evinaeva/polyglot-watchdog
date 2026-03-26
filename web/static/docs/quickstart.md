@@ -10,4 +10,4 @@ A typical operator flow is:
 6. Capture target-language pages and run comparison (Phase 6).
 7. Search issues from `/` by applying a query.
 
-Note: several phase triggers exist as backend APIs even when a page currently exposes a mock-backed surface.
+Note: several phase triggers exist as backend APIs even when a page remains pre-production or internal-operator-oriented.

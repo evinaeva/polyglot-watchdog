@@ -22,7 +22,7 @@ Polyglot Watchdog addresses this by:
 4. Building a filtered English reference dataset.
 5. Comparing target-language captures against that dataset.
 
-<div class="doc-note"><strong>Note on current UI:</strong> The backend can generate structured issue artifacts (for example <code>issues.json</code>), but parts of the visible UI still use mock-backed data paths.</div>
+<div class="doc-note"><strong>Note on current UI:</strong> The backend generates structured issue artifacts (for example <code>issues.json</code>), while some UI surfaces remain operator-console-in-progress and are still being hardened.</div>
 
 ## System pipeline
 
@@ -92,10 +92,10 @@ Artifacts are organized per domain and run.
 
 ## Current UI state
 
-The UI includes useful operator tooling, but some screens are still scaffolded or exploratory.
+The UI includes useful operator tooling, but some screens are still exploratory or not fully release-hardened.
 
-- `/crawler` currently reads URL inventory from a mock path in the page JS.
-- `/pulling` currently loads mock capture rows and writes decision rules to a mock in-memory route.
-- `/` (Issues) stays empty until a query is applied and can return mock issues depending on filters.
+- `/crawler` is still positioned as inventory-inspection tooling rather than a release-ready operator workflow surface.
+- `/pulling` remains an internal-oriented review harness and is not the sole canonical workflow surface for release messaging.
+- `/` (Issues) is operator-facing and artifact-backed, but still pre-production overall.
 
-Treat the interface as an operator/development console, not a fully integrated production dashboard.
+Treat the interface as an operator/development console during pre-production, not a production-ready dashboard.
