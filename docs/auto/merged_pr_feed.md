@@ -2088,3 +2088,33 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c4e6b4a404832cb12b0e5fb6225d38)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #159 — 2026-03-26T08:45:32Z
+
+- Title: Support gs:// LLM input artifacts for check-languages Phase 6 and add tests
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/159
+- Author: evinaeva
+- Base branch: main
+- Head branch: zpmt9s-codex/fix-llm_input_artifact-uri-generation
+- Merge commit: 4ca8fe93ee7b5c9e289e606c19e96cdf6d0233df
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  - Allow prepared Phase 6 payloads to reference large LLM input payloads stored in GCS via a `gs://` artifact URI instead of storing them inline in the run directory.
+  - Validate and read those GCS-stored JSON artifacts when executing the Phase 6 LLM run to enable offloading large payloads to object storage.
+  
+  ### Description
+  - Added helper `_read_json_artifact_from_gs_uri` to validate `gs://` URIs, parse `gs://<bucket>/<domain>/<run_id>/<filename>` paths, and call `pipeline.storage.read_json_artifact` to load the JSON artifact.
+  - Updated `_run_check_languages_llm_async` to accept a `llm_input_artifact` field in the prepared payload; if present and non-empty it will be loaded via `_read_json_artifact_from_gs_uri`, otherwise it falls back to reading the local `check_languages_llm_input.json` artifact.
+  - Added validation that rejects non-`gs://` URIs (raising a `ValueError`) and rejects invalid artifact path shapes.
+  - Added unit tests to cover the new behavior and preparation flow changes in `tests/test_check_languages_page.py`.
+  
+  ### Testing
+  - Ran the new unit tests: `pytest -q tests/test_check_languages_page.py::test_run_llm_uses_gs_llm_input_artifact_from_prepared_payload tests/test_check_languages_page.py::test_run_llm_rejects_http_style_llm_input_artifact tests/test_check_languages_page.py::test_prepare_payload_uses_written_gs_uri_for_llm_input_artifact` and they passed.
+  - Ran related existing test `tests/test_check_languages_page.py::test_run_llm_uses_prepared_payload_as_actual_input` which continued to pass.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c4ef30870c832c89948519ccf02d08)
+- Notes: Auto-generated from merged PR metadata.
