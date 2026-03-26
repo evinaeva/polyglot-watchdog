@@ -2347,3 +2347,34 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c51ae334e4832c996fcea4afb4fdf0)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #168 — 2026-03-26T12:47:03Z
+
+- Title: docs: reconcile secondary architecture and route docs
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/168
+- Author: evinaeva
+- Base branch: main
+- Head branch: ya6wj7-codex/update-secondary-documentation-alignment
+- Merge commit: bcd9e418769411d514bf8814e786c2d181e3971c
+- Changed files:
+  - docs/End-to-End Architecture Diagram.md
+  - web/static/docs/about.md
+  - web/static/docs/quickstart.md
+- Description:
+  ### Motivation
+  - Align secondary architecture diagrams and operator-facing route docs with the currently implemented routes and the canonical truth surfaces to remove stale references and reduce confusion.
+  - Remove leftover route names and operator-flow wording that implied obsolete surfaces (`/recipes`, `/capture-review`, `/rerun-context`) while preserving factual product-state language from the canonical docs.
+  
+  ### Description
+  - Updated `docs/End-to-End Architecture Diagram.md` to replace stale UI route entries with the current operator workflow surfaces (`/urls`, `/workflow`, `/contexts`, `/pulls`, `/check-languages`, `/` (issues)).
+  - Updated `web/static/docs/quickstart.md` to reflect the real operator flow (start/monitor from `/workflow`, review contexts on `/contexts`, annotation on `/pulls`, run checks on `/check-languages`, and evidence drilldown on `/issues/detail`).
+  - Updated `web/static/docs/about.md` to explicitly list canonical multi-page workflow surfaces and mark `/crawler` and `/pulling` as auxiliary/internal tooling rather than the primary release workflow.
+  
+  ### Testing
+  - Verified canonical truth docs first by reading `README.md`, `docs/PRODUCT_TRUTHSET.md`, and `docs/ABOUT_PAGE_COPY.md`, and confirmed consistency with edits (succeeded).
+  - Inspected implemented server routes in `app/skeleton_server.py` and enumerated registered page paths with a short Python check to ensure the docs reflect actual routes (commands used: `sed`, `rg`, and a small Python route-extraction script; all succeeded).
+  - Ran repo-wide searches for stale terms and route names before and after edits using `rg` to ensure removed references no longer appear in edited secondary docs and that remaining mentions (e.g., `/crawler`, `/pulling`) are intentionally described as auxiliary (succeeded).
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c526755784832c88da8a2aefdf0c43)
+- Notes: Auto-generated from merged PR metadata.
