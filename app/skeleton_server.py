@@ -1,9 +1,10 @@
-"""Minimal deterministic skeleton UI server for Polyglot Watchdog.
+"""Operator server for Polyglot Watchdog (contract-first localization QA pipeline).
 
-Phase 0 and Phase 1 are wired to real pipeline modules.
-Phase 2 (template_rules) and Phase 3 (eligible_dataset) are wired to real pipeline modules.
-Other phases remain as stubs or mock data.
-AUTH_MODE = "ON"
+This repository is not a blank scaffold: it already includes real, artifact-backed
+pipeline/storage components and partial operator UI integration.
+Current stage is late prototype / pre-production / operator-console-in-progress.
+Some operator flows remain incomplete or partially mock-backed, so no
+production-ready claims are valid yet.
 """
 
 from __future__ import annotations
