@@ -2017,3 +2017,41 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c434b77bc8832c90d3eb2b8bb1ba26)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #157 — 2026-03-26T07:37:13Z
+
+- Title: Two-step check-languages: prepare payload + run LLM review, with hashing and diagnostics
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/157
+- Author: evinaeva
+- Base branch: main
+- Head branch: 679f50-codex/refactor-/check-languages-workflow
+- Merge commit: cec58dd2c2bac327468279022228e4e41aec681f
+- Changed files:
+  - app/skeleton_server.py
+  - pipeline/run_phase1.py
+  - pipeline/run_phase6.py
+  - tests/test_check_languages_page.py
+  - web/templates/check-languages.html
+- Description:
+  ### Motivation
+  - Make the language-check orchestration explicit and robust by splitting the composed flow into a preparation phase that assembles and validates an LLM input payload, and a separate LLM review phase that consumes that prepared payload.
+  - Improve resiliency and observability for replay/capture failures by adding stable artifact hashing, replay-unit diagnostics, persisted failure artifacts, and safer error handling during target capture.
+  - Allow Phase 6 to accept pre-built LLM payloads and avoid recomputing pairing/contexts when a prepared payload is provided.
+  
+  ### Description
+  - Introduced a two-step orchestration: `prepare` (payload preparation) implemented in `_prepare_check_languages_async` and `run_llm_review` implemented in `_run_check_languages_llm_async`, and a composite backward-compatible `_run_check_languages_async` that runs both sequentially.
+  - Added stable JSON hashing via `_stable_json_hash` and source hash checks (`_check_languages_source_hashes`) to detect stale prepared payloads and gate LLM execution; prepared payload is written as `check_languages_prepared_payload.json` and input as `check_languages_llm_input.json`.
+  - Enhanced failure handling during Phase 1 replay: Phase 1 can be invoked with `continue_on_error=True`; when set, capture errors are recorded and skipped rather than triggering `SystemExit`, and a final failure is raised if all replay units fail; added replay-unit diagnostics (`_replay_unit_diagnostics`) and persisted failure artifacts (`_persist_check_languages_failure_artifacts`).
+  - Added diagnostic helpers `_build_exception_diagnostics` and integrated traceback capture for persisted failure artifacts; imported `traceback` where needed.
+  - Modified `pipeline.run_phase6.run` to accept an optional `prepared_llm_payload` and use it if provided, and added `build_prepared_llm_payload` to prepare and persist the LLM input payload from existing artifacts.
+  - Updated UI and template `check-languages.html` to expose two buttons (`Prepare language check payload` and `Run LLM review`), preview prepared payload, show workflow state, and disable/enable the LLM button based on payload readiness and hashes; added client-side logic for the new buttons.
+  - Updated `pipeline.run_phase1.main` signature to accept `continue_on_error: bool = False` and to append capture error records when skipping failures.
+  - Updated and added tests in `tests/test_check_languages_page.py` to reflect the new prepare/run flow, payload preview, stale-prepared-payload blocking, replay diagnostics, and LLM-run behavior.
+  
+  ### Testing
+  - Ran the modified test file `tests/test_check_languages_page.py` (and full test suite during development); tests exercising the new prepare/run behavior, payload preview, staleness checks, and replay diagnostics were added or updated and passed locally. 
+  - Exercised Phase 6 `build_prepared_llm_payload` and `run(..., prepared_llm_payload=...)` paths via unit tests that mock `PHASE6_REVIEW_PROVIDER` and verify the prepared payload is forwarded to Phase 6, which succeeded.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c4da456970832c9a559761f07e4861)
+- Notes: Auto-generated from merged PR metadata.
