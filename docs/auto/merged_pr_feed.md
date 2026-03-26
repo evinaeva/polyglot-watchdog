@@ -2305,3 +2305,45 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c50b0b8b2c832cbe8facb3eebff63e)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #167 — 2026-03-26T12:28:22Z
+
+- Title: Compact LLM wire format, context flags, dedupe/fanout, and UI docs for Phase6 review
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/167
+- Author: evinaeva
+- Base branch: main
+- Head branch: 2783ex-codex/implement-compact-llm-wire-format
+- Merge commit: 4a82b50883d823731b0c200fc7ca1bf21078590e
+- Changed files:
+  - pipeline/phase6_providers.py
+  - pipeline/phase6_review.py
+  - pipeline/run_phase6.py
+  - tests/test_check_languages_page.py
+  - tests/test_phase6_providers.py
+  - tests/test_phase6_review_pipeline.py
+  - tests/test_run_phase6_compact_flags.py
+  - web/templates/about.html
+  - web/templates/check-languages.html
+- Description:
+  ### Motivation
+  - Reduce LLM token usage and add contextual signals to improve review accuracy by encoding request/response in a compact wire format and including content/context flags. 
+  - Ensure stable caching and correct fan-out when multiple identical rows are requested with different metadata. 
+  - Surface the new compact contract in the UI so operators understand the LLM request/response shape. 
+  
+  ### Description
+  - Extended the `Phase6ReviewProvider` interface to accept `kind_code`, `context_code`, `masked_flag`, and `low_pairing_confidence_flag` and threaded those flags through `DeterministicOfflineProvider`, `DisabledReviewProvider`, and `LLMReviewProvider` implementations. 
+  - Reworked `LLMReviewProvider` to send/receive compact JSON keys (`l`, `i` request and `r` response), dedupe rows before sending, maintain a fanout map to map LLM replies back to original items, include context in the cache key, normalize texts for caching, and use separators/`ensure_ascii=False` to minimize payload size. 
+  - Introduced mapping from numeric note codes to labels, percent-to-score conversion, a mask-detection regex, improved system prompt composition, and safer token estimation/usage bookkeeping. 
+  - Updated `run_phase6.py` to infer and attach `llm_kind_code`, `llm_context_code`, `llm_masked_flag`, and `llm_low_pairing_confidence_flag` to `evidence_base`, to choose compact `prefetch_reviews` payloads for `LLMReviewProvider`, and added helper functions `_kind_code`, `_context_code`, and `_resolve_masked_flag`. 
+  - Added UI documentation in `about.html` and a link in `check-languages.html` describing the compact wire format. 
+  - Updated and added unit tests to reflect the new compact wire format, dedupe/fanout behavior, note code translation, masked-flag resolution, and prompt composition changes. 
+  
+  ### Testing
+  - Ran the unit test modules including `tests/test_phase6_providers.py`, `tests/test_phase6_review_pipeline.py`, `tests/test_check_languages_page.py`, and the new `tests/test_run_phase6_compact_flags.py`, which exercise parsing, caching, dedupe/fanout, mask flag resolution, and UI changes. 
+  - Verified LLM parsing/clamping, compact payload encoding, dedupe fanout behavior, note-code mapping, and prompt contract presence via the updated provider tests. 
+  - Confirmed integration-level phase6 review pipeline tests that exercise `run_phase6` and template rendering pass with the modified provider contract. 
+  - All automated tests executed against the modified codebase passed.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c51ae334e4832c996fcea4afb4fdf0)
+- Notes: Auto-generated from merged PR metadata.
