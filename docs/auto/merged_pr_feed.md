@@ -2118,3 +2118,27 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c4ef30870c832c89948519ccf02d08)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #160 — 2026-03-26T09:41:08Z
+
+- Title: Clarify skeleton_server purpose and status in module docstring
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/160
+- Author: evinaeva
+- Base branch: main
+- Head branch: mx2sji-codex/break-down-cleanup-initiative-into-tasks
+- Merge commit: b3ea832ebc0edd63991148e60467ac900a0232f4
+- Changed files:
+  - app/skeleton_server.py
+- Description:
+  ### Motivation
+  - Replace a misleading "minimal skeleton" description with an accurate operator-focused overview that states which pipeline paths are implemented and flags the repository as pre-production.
+  
+  ### Description
+  - Updated the top-level docstring in `app/skeleton_server.py` to describe it as a deterministic operator UI server, note that core artifact-backed pipeline paths and operator routes are implemented, and warn that some flows remain partial and not production-ready.
+  
+  ### Testing
+  - No automated tests were added or modified and no test suite was executed for this docstring-only change.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c4f492d050832cba48b2a0c56a6b4d)
+- Notes: Auto-generated from merged PR metadata.
