@@ -2378,3 +2378,38 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c526755784832c88da8a2aefdf0c43)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #169 — 2026-03-26T12:54:36Z
+
+- Title: Prioritize canonical truth-surface in AI docs sync and extend docs contract checks
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/169
+- Author: evinaeva
+- Base branch: main
+- Head branch: 8hsng9-codex/update-docs-automation-and-contract
+- Merge commit: bd07aa9c04e5182a880dbc538b28aea1d70f0fb1
+- Changed files:
+  - .github/docs_autoupdate/prompts/docs_sync_prompt.txt
+  - .github/docs_autoupdate/scripts/docs_ai_sync.py
+  - tests/test_docs_alignment.py
+  - tests/test_docs_autoupdate_scripts.py
+- Description:
+  ### Motivation
+  - Repair docs-automation and enforcement logic after prior cleanup so CI-facing docs logic matches the current doc set and priorities.
+  - Ensure the AI-driven snapshot always includes the canonical truth-surface files so automated updates do not drift past the repository truth sources.
+  - Extend the docs-alignment contract to cover the release criteria document so messaging and gating remain consistent.
+  
+  ### Description
+  - Add `PRIORITY_DOC_FILES` and prefer those files when building the allowlisted docs snapshot in `.github/docs_autoupdate/scripts/docs_ai_sync.py` so `README.md`, `docs/ABOUT_PAGE_COPY.md`, `docs/PRODUCT_TRUTHSET.md`, and `RELEASE_CRITERIA.md` are prioritized. (`.github/docs_autoupdate/scripts/docs_ai_sync.py`)
+  - Strengthen the AI sync prompt with an explicit canonical truth-surface consistency guard. (`.github/docs_autoupdate/prompts/docs_sync_prompt.txt`)
+  - Extend test coverage to include `RELEASE_CRITERIA.md` in the docs-alignment suite and update forbidden-phrase checks to iterate the expanded sync surfaces. (`tests/test_docs_alignment.py`)
+  - Add a unit test that verifies the docs-autoupdate snapshot includes the canonical truth-surface files. (`tests/test_docs_autoupdate_scripts.py`)
+  
+  ### Testing
+  - Ran `pytest -q tests/test_docs_alignment.py tests/test_docs_autoupdate_scripts.py` and received `24 passed` (all modified/related tests passed).
+  - Executed `python .github/docs_autoupdate/scripts/check_new_merged_prs.py` which ran (it reports `should_run=false` locally when `GITHUB_TOKEN`/`GITHUB_REPOSITORY` are not set as expected in CI).
+  - Ran `python .github/docs_autoupdate/scripts/validate_docs_diff.py --help` successfully to validate script interface.
+  - Performed repository searches for stale/legacy references; no problematic legacy references were found in the docs-automation surface.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c52ac17cc8832cb044c22c2f9468c2)
+- Notes: Auto-generated from merged PR metadata.
