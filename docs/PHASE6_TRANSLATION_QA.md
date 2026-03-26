@@ -254,7 +254,7 @@ Phase 6 has been refactored into a modular deterministic translation QA pipeline
 
 Phase 6 now supports batched LLM review requests to improve efficiency and enable prefetching of review results before per-item review calls.
 
-- `LLMReviewProvider` implements `prefetch_reviews` to batch items into size-aware requests and populate an internal cache (`_pair_reviews`).
+- `LLMReviewProvider` implements `prefetch_reviews` to batch items into size-aware requests and populate an internal cache (`_pair_reviews`). To reduce token usage and improve review accuracy, the provider uses a compact wire format for requests/responses, includes contextual flags in the payload, and de-duplicates identical items before sending (fanning out results upon receipt).
 - Batching is controlled by configurable token budgeting parameters: `hard_context_tokens`, `token_reserve_ratio`, `fixed_token_margin`, `estimated_output_tokens_per_item`.
 - The default LLM endpoint and model have been switched to OpenRouter-compatible configuration: `openrouter/free` model at `https://openrouter.ai/api/v1/chat/completions`.
 - System prompt and token budgeting are now configurable via environment variables (`PHASE6_REVIEW_*` prefix).
