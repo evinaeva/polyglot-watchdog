@@ -8,9 +8,11 @@
                     │           UI Layer           │
                     │                              │
                     │  /urls                       │
-                    │  /recipes                    │
-                    │  /capture-review             │
-                    │  /rerun-context              │
+                    │  /workflow                   │
+                    │  /contexts                   │
+                    │  /pulls                      │
+                    │  /check-languages            │
+                    │  / (issues)                  │
                     │                              │
                     └──────────────┬───────────────┘
                                    │
