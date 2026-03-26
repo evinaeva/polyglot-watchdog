@@ -49,8 +49,8 @@ These documents must describe the same product state:
 
 Current audit interpretation:
 - release-readiness wording has been updated to the same pre-production framing used elsewhere;
-- canonical truth-surface alignment still requires explicit re-audit before Criterion 8 can move to `pass`;
-- remaining gate blockers include the still-unknown required criteria (review/annotation canonical visible flow verification, official workflow coherence verification, and final docs-alignment re-audit).
+- canonical truth-surface alignment re-audit is complete and Criterion 8 is now `pass`;
+- remaining gate blockers include the still-unknown required criteria (review/annotation canonical visible flow verification and official workflow coherence verification).
 
 ## Stage D conclusion
 
