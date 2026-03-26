@@ -2530,3 +2530,37 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c54b08e760832c9c4a9923fc98e3cd)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #174 — 2026-03-26T16:03:56Z
+
+- Title: Merge and dedupe collected_items with baseline precedence; add tests
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/174
+- Author: evinaeva
+- Base branch: main
+- Head branch: 5gaxce-codex/implement-deduplication-layer-for-api
+- Merge commit: 6535eb4ea86feb380a2568963fc8ca070607ee6c
+- Changed files:
+  - pipeline/run_phase1.py
+  - tests/test_phase1_merge_dedupe.py
+  - tests/test_stage_a_read_routes_api.py
+- Description:
+  ### Motivation
+  
+  - Prevent duplicate `collected_items` rows when both baseline and recipe captures produce the same `item_id` by making the final artifact flat and deterministic with baseline precedence. 
+  
+  ### Description
+  
+  - Add `merge_and_dedupe_items` to combine baseline and recipe item lists, keeping the first-seen baseline row on `item_id` collisions and preserving rows missing `item_id` as passthrough entries.
+  - Split collection into `baseline_collected_items` and `recipe_collected_items` during capture and replace the previous single-list sort with `all_collected_items = merge_and_dedupe_items(...)`.
+  - Ensure merged output is deterministically sorted by `(item_id, url, state)` and preserve non-dict rows safely by skipping them.
+  - Add unit tests in `tests/test_phase1_merge_dedupe.py` and adjust an existing API test assertion in `tests/test_stage_a_read_routes_api.py` to reflect the updated payload shape.
+  
+  ### Testing
+  
+  - Added and ran the new unit tests in `tests/test_phase1_merge_dedupe.py`, which validate baseline precedence, inclusion of recipe-only `item_id`s, and preservation of rows missing `item_id`, and they passed.
+  - Updated `tests/test_stage_a_read_routes_api.py` and ran the affected API tests which passed with the revised expectations.
+  - Ran the test suite with `pytest` for the modified modules and the tests involving these changes completed successfully.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c54d001f54832c868ca82c61154a8d)
+- Notes: Auto-generated from merged PR metadata.
