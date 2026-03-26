@@ -2599,3 +2599,36 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c558efc2ec832c97343acbefe00579)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #176 — 2026-03-26T21:07:43Z
+
+- Title: Make recipe upload attach-to-url atomic, avoid unnecessary seed rewrites, and preserve seed row order
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/176
+- Author: evinaeva
+- Base branch: main
+- Head branch: kizan8-codex/audit-and-implement-fixes-for-pr-review
+- Merge commit: 86752b08dea2ae6f60375737fcfbd942fce474e0
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_stage_b_operator_flow_api.py
+- Description:
+  ### Motivation
+  
+  - Prevent saving a recipe if attaching it to a seed URL fails and avoid unnecessary rewrites of seed rows when the recipe set is unchanged.
+  - Ensure seed row ordering is preserved when attaching recipes so external ordering expectations are not broken.
+  
+  ### Description
+  
+  - Detect whether attaching a recipe to a seed URL would change the `recipe_ids` set and only write seed rows if there is an actual change, using `_write_seed_rows_preserve_order` to keep row order.
+  - Normalize and compare existing `recipe_ids` canonically before updating to avoid spurious updates when the same IDs are present in different orders.
+  - Perform seed-URL validation and change-detection before calling `upsert_recipe` so that a failed attach (e.g. missing URL) prevents the recipe from being persisted (atomic upload+attach behavior).
+  - Adjusted upload flow to set `attached_to_url` only when attach logic ran and succeeded.
+  
+  ### Testing
+  
+  - Added and ran tests in `tests/test_stage_b_operator_flow_api.py` covering noop attach behavior, order-insensitive no-op, atomic failure (attach failure does not persist a recipe), and preservation of seed row order; all added tests passed.
+  - Ran the operator API test file with `pytest tests/test_stage_b_operator_flow_api.py` and observed success for the full suite.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c58aa4eeb0832c9976c36672d75336)
+- Notes: Auto-generated from merged PR metadata.
