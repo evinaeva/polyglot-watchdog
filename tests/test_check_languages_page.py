@@ -933,10 +933,70 @@ def test_orchestrator_converts_phase1_system_exit_to_failed_capture(monkeypatch)
     assert str(failed[-1].get("error", "")).strip()
     assert "All replay units failed during target capture" in str(failed[-1].get("error", "")) or str(failed[-1].get("error", "")).strip()
     assert not any(str(rec.get("stage")) == "running_llm_review" for rec in updates)
-    assert _jobs["job1"]["status"] == "error"
+    assert _jobs["job1"]["status"] == "failed"
     assert _jobs["job1"].get("error", "").strip()
     assert _jobs["job1"]["error"] != ""
 
+
+
+
+def test_target_capture_replay_exception_immediately_marks_terminal_failure_and_writes_artifacts(api_env, monkeypatch):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    updates = []
+
+    monkeypatch.setattr("app.skeleton_server._replay_scope_from_reference_run", lambda *_args, **_kwargs: ["j1"])
+
+    async def _fake_main(*_args, **_kwargs):
+        raise RuntimeError("All replay units failed")
+
+    monkeypatch.setattr("pipeline.run_phase1.main", _fake_main)
+    monkeypatch.setattr("app.skeleton_server._upsert_job_status", lambda _d, _r, rec: updates.append(rec))
+
+    from app.skeleton_server import _run_check_languages_async
+
+    _run_check_languages_async("job1", domain, "run-en", "fr", target_run_id, "https://fr.bongacams.com/")
+
+    failed = [rec for rec in updates if str(rec.get("stage")) == "running_target_capture_failed"]
+    assert failed
+    assert str(failed[-1].get("status")) == "failed"
+    assert "All replay units failed" in str(failed[-1].get("error", ""))
+    assert not any(str(rec.get("stage")) == "running_target_capture" and str(rec.get("status")) in {"running", "queued"} for rec in updates[updates.index(failed[-1]) + 1 :])
+
+    artifacts = storage.list_run_artifacts(domain, target_run_id)
+    assert f"{domain}/{target_run_id}/check_languages_replay_failure.json" in artifacts
+    assert f"{domain}/{target_run_id}/check_languages_replay_failure.traceback.txt" in artifacts
+
+    failure_payload = storage.read_json_artifact(domain, target_run_id, "check_languages_replay_failure.json")
+    assert failure_payload["message"] == "All replay units failed"
+    assert "Traceback" in failure_payload["traceback"]
+
+
+
+def test_target_capture_failure_still_terminal_when_failure_artifact_persistence_raises(monkeypatch):
+    updates = []
+    monkeypatch.setattr("app.skeleton_server._replay_scope_from_reference_run", lambda *_args, **_kwargs: ["j1"])
+
+    async def _fake_main(*_args, **_kwargs):
+        raise RuntimeError("All replay units failed")
+
+    monkeypatch.setattr("pipeline.run_phase1.main", _fake_main)
+    monkeypatch.setattr(
+        "app.skeleton_server._persist_check_languages_failure_artifacts",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("artifact write failed")),
+    )
+    monkeypatch.setattr("app.skeleton_server._upsert_job_status", lambda _d, _r, rec: updates.append(rec))
+
+    from app.skeleton_server import _jobs, _prepare_check_languages_async
+
+    _prepare_check_languages_async("job-prep", "https://bongacams.com/", "run-en", "fr", "run-en-check-fr", "https://fr.bongacams.com/")
+
+    failed = [rec for rec in updates if rec.get("stage") == "running_target_capture_failed"]
+    assert failed
+    assert failed[-1].get("status") == "failed"
+    assert str(failed[-1].get("error", "")).strip()
+    assert failed[-1].get("failure_artifact_error") == "artifact write failed"
+    assert _jobs["job-prep"]["status"] == failed[-1].get("status")
 
 def test_orchestrator_fails_when_capture_returns_without_required_artifacts(monkeypatch):
     calls = []

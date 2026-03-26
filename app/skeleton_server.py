@@ -837,6 +837,13 @@ def _persist_check_languages_failure_artifacts(domain: str, run_id: str, diagnos
     }
 
 
+def _persist_check_languages_failure_artifacts_safe(domain: str, run_id: str, diagnostics: dict) -> tuple[dict, str | None]:
+    try:
+        return _persist_check_languages_failure_artifacts(domain, run_id, diagnostics), None
+    except Exception as artifact_exc:
+        return {}, str(artifact_exc)
+
+
 def _replay_unit_diagnostics(exc: Exception, replay_jobs: list[dict], *, target_url: str, en_run_id: str, target_run_id: str, target_language: str) -> dict:
     message = str(exc)
     matched_job: dict | None = None
@@ -1897,11 +1904,13 @@ def _prepare_check_languages_async(job_id: str, domain: str, en_run_id: str, tar
             target_language=target_language,
         )
         diagnostics = _build_exception_diagnostics(exc, stage="running_target_capture_failed", substage="phase1_replay", replay_context=replay_context)
-        artifact_refs = _persist_check_languages_failure_artifacts(domain, target_run_id, diagnostics)
+        artifact_refs, artifact_error = _persist_check_languages_failure_artifacts_safe(domain, target_run_id, diagnostics)
         error = f"{diagnostics['exception_class']}: {diagnostics['message']}"
-        _jobs[job_id]["status"] = "error"
+        if artifact_error:
+            error = f"{error} (failure artifact persistence warning: {artifact_error})"
+        _jobs[job_id]["status"] = "failed"
         _jobs[job_id]["error"] = error
-        _upsert_job_status(domain, target_run_id, {
+        failed_record = {
             "job_id": job_id,
             "status": "failed",
             "type": "check_languages",
@@ -1913,7 +1922,10 @@ def _prepare_check_languages_async(job_id: str, domain: str, en_run_id: str, tar
             "error": error,
             "error_details": diagnostics,
             "failure_artifacts": artifact_refs,
-        })
+        }
+        if artifact_error:
+            failed_record["failure_artifact_error"] = artifact_error
+        _upsert_job_status(domain, target_run_id, failed_record)
         return
 
     try:
