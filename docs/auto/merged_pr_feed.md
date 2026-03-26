@@ -2564,3 +2564,38 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c54d001f54832c868ca82c61154a8d)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #175 — 2026-03-26T19:34:28Z
+
+- Title: Add recipe management UI and server support for JSON/JSON5 uploads, attach, and delete
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/175
+- Author: evinaeva
+- Base branch: main
+- Head branch: rihojk-codex/implement-ui-and-backend-for-recipe-management
+- Merge commit: 41874e96e3b8b76a345b9d51268aa7a0c06e9dbd
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_operator_ui_runtime_regressions.py
+  - tests/test_stage_b_operator_flow_api.py
+  - web/static/styles.css
+  - web/static/urls.js
+  - web/templates/urls.html
+- Description:
+  ### Motivation
+  - Provide a way to upload recipe files (JSON/JSON5) from the UI, optionally attach them to a seed URL, and manage recipes per-domain without breaking seed row ordering or other row fields.
+  - Support common upload ergonomics like JSON5 comments/trailing commas, multipart/form-data uploads (including quoted boundary), overwrite confirmation, and minimal recipe payload normalization for storage compatibility.
+  
+  ### Description
+  - Server: add multipart parsing (`_read_multipart_form_payload`), JSON/JSON5 tolerant parsing (`_parse_json_or_json5_safe`, `_strip_json5_comments`), recipe normalization (`_compat_recipe_for_storage`), UTC timestamp helper (`_utc_now_rfc3339`) and ordered seed-writes (`_write_seed_rows_preserve_order`), and register the `/api/recipes/upload` handler to validate, parse, upsert and optionally attach recipes; update `/api/recipes/delete` to clear recipe associations while preserving row order and unrelated fields.
+  - Integrations: import and use `pipeline.storage` and `pipeline.runtime_config.validate_seed_urls_payload` to store artifacts and validate payloads.
+  - UI: add a recipe drawer in `web/templates/urls.html` and styles in `web/static/styles.css`, and implement drawer behavior and recipe management in `web/static/urls.js` including domain-scoped recipe listing, attach/detach, upload with overwrite prompt, and row-scoped upsert via `/api/seed-urls/row-upsert`.
+  - Tests: extend `tests/test_stage_b_operator_flow_api.py` with multipart upload helpers and tests for JSON5 handling, attach/overwrite flows, delete cleanup order preservation and minimal payload normalization, and add a JS-driven regression test in `tests/test_operator_ui_runtime_regressions.py` for domain handling when changing the recipe domain selection.
+  
+  ### Testing
+  - Ran API and integration tests in `tests/test_stage_b_operator_flow_api.py` including `test_recipe_upload_supports_json5_attach_and_overwrite_confirmation`, `test_recipe_upload_json_and_delete_clears_seed_url_associations`, `test_recipe_upload_accepts_minimal_payload_via_compat_normalization`, `test_recipe_upload_multipart_handles_quoted_boundary_and_empty_field`, and `test_recipe_delete_cleanup_preserves_row_order_and_unrelated_fields`, all of which succeeded under the fake GCS test client.
+  - Ran UI regression test `tests/test_operator_ui_runtime_regressions.py::test_urls_drawer_keeps_url_domain_for_row_mutations_when_recipe_domain_changes` which passed in the headless VM harness validating fetch call behavior and domain scoping.
+  - Executed the larger test suite via `pytest` to verify no regressions, and the modified tests passed (no failures reported).
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c558efc2ec832c97343acbefe00579)
+- Notes: Auto-generated from merged PR metadata.
