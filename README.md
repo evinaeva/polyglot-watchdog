@@ -28,7 +28,7 @@ What is already real in the repository:
 - deterministic pipeline/storage conventions for run-level artifacts;
 - implemented phase runners for key contract-aligned flows, including Phase 1, Phase 3, Phase 4, and Phase 6;
 - a `/urls` operator surface for managing seed URLs with persisted domain selection and last-used first-run domain memory;
-- a `/check-languages` operator surface for running phase-six language checks with target-language selection, GitHub Pages project site support, and job orchestration;
+- a `/check-languages` operator surface for running phase-six language checks with a two-step orchestration (payload preparation and LLM review), target-language selection, GitHub Pages project site support, and job orchestration;
 - operator-facing issue exploration backed by persisted issue artifacts;
 - operator workflow pages are now visibly linked via global navigation;
 - Phase 6 image-text review coverage tracking via `coverage_gaps.json` with statuses (`image_text_reviewed`, `image_text_not_reviewed`, `image_text_review_blocked`);

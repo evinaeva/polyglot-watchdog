@@ -21,6 +21,8 @@ Closed blocking gaps:
 - Added visible review + annotation persistence actions on required pages.
 - Updated workflow status contract to expose standardized state values used by UI rendering.
 - Acceptance now enforces truthful failure when capture runner prerequisites are unavailable and blocks downstream workflow progression.
+- Phase 1 `SystemExit` during target capture is now explicitly handled, persisting a failed job record with `stage="running_target_capture_failed"` and a clear error message.
+- Phase 1 replay failure handling is enhanced with `continue_on_error` support, allowing capture errors to be recorded and skipped for individual replay units, with replay-unit diagnostics and persisted failure artifacts.
 - Added `Dockerfile.e2e` + `scripts/run_e2e_happy_path.sh` providing a single-command, clean-environment happy-path E2E runner. Playwright is pre-installed at image build time; no host prerequisites required.
 
 ## E2E acceptance runner

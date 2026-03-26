@@ -260,6 +260,8 @@ Phase 6 now supports batched LLM review requests to improve efficiency and enabl
 - System prompt and token budgeting are now configurable via environment variables (`PHASE6_REVIEW_*` prefix).
 - JSON response contract has been expanded to expect a `results` array with `item_id` keys for batched responses.
 - Fallback handling is hardened with `_llm_result` and `_fallback_result` helper methods for deterministic offline fallback when the API is unavailable or response is malformed.
+- Telemetry for AI-assisted reviews now includes detailed batch outcomes, token usage, costs, and fallback reasons, with `llm_review_stats.json` always persisted in a unified shape across `LLMReviewProvider`, `DeterministicOfflineProvider`, and `DisabledReviewProvider`.
+- Error classification for LLM requests is improved to distinguish transport, parse, and provider failures, and to explicitly mark fallback usage.
 
 ### 12.1 Pipeline architecture
 
@@ -267,7 +269,7 @@ The Phase 6 pipeline consists of:
 
 - **Provider layer** (`phase6_providers.py`): supplies curated EN and target-language items, pairing metadata, and evidence sources. Includes `LLMReviewProvider` with batched review support and configurable token budgeting.
 - **Review layer** (`phase6_review.py`): runs deterministic and AI-assisted checks over paired items to identify suspicious localization cases. Includes `PreparedReviewInputs` dataclass and `prepare_review_inputs` function to centralize normalization, OCR selection/quality assessment, and dynamic counter normalization.
-- **Runner** (`run_phase6.py`): orchestrates the pipeline, manages artifact I/O, and persists issues. Precomputes `prepare_review_inputs` for finalized item pairs and calls `provider.prefetch_reviews` when available to warm a single batched request before per-item review calls.
+- **Runner** (`run_phase6.py`): orchestrates the pipeline, manages artifact I/O, and persists issues. It can now accept an optional `prepared_llm_payload` to avoid recomputing pairing/contexts, and precomputes `prepare_review_inputs` for finalized item pairs and calls `provider.prefetch_reviews` when available to warm a single batched request before per-item review calls.
 
 ### 12.2 Dynamic counter normalization
 
