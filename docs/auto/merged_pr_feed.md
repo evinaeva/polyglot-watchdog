@@ -2202,3 +2202,32 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c4f7c3472c832c9bf1671245a55b81)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #164 — 2026-03-26T10:01:17Z
+
+- Title: Clarify release-readiness audit wording and enumerate pending verification criteria in docs
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/164
+- Author: evinaeva
+- Base branch: main
+- Head branch: dynmxg-codex/align-canonical-truth-surfaces-with-implementation-status
+- Merge commit: 1310a2d0ad98cbb171cc4609e58c3cfd17b4de34
+- Changed files:
+  - docs/RELEASE_EVIDENCE.md
+  - docs/RELEASE_READINESS.md
+- Description:
+  ### Motivation
+  - Make the Stage D release audit language more precise about which criteria remain unverified and why production wording is blocked.
+  - Ensure release-facing documentation consistently uses `pre_production` messaging until all required criteria are explicitly `pass` and re-audits are completed.
+  - Surface the specific remaining verification gaps (review/annotation flow and multi-page operator workflow) so they are clearly tracked as blockers for Criterion 8.
+  
+  ### Description
+  - Add a `Current audit interpretation` section to `docs/RELEASE_EVIDENCE.md` that documents the reworded release-readiness framing and enumerates remaining gate blockers. 
+  - Update `docs/RELEASE_READINESS.md` gate decision `Why` text to reflect that production wording is blocked because required criteria are not fully verified, and adjust the Criterion 8 row to reference the canonical docs files (`README.md`, `docs/ABOUT_PAGE_COPY.md`, `docs/PRODUCT_TRUTHSET.md`) and the need for a re-audit.
+  - Clarify blocking conditions and the final gate-state language to state that the gate remains **failed** until every required criterion is explicitly `pass`, including workflow verification criteria.
+  
+  ### Testing
+  - Documentation-only change; no automated tests were modified or executed as part of this PR.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c501367e10832ca85636a1e70a338b)
+- Notes: Auto-generated from merged PR metadata.
