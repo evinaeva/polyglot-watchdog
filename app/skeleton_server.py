@@ -3773,6 +3773,11 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         issues_exists = False
         issues_missing_after_completion = False
         latest_job = None
+        target_run_domain_for_page = domain
+        prepared_manifest_for_page = None
+        llm_input_exists_for_page = False
+        hashes_ok_for_page = False
+        llm_running = False
         llm_review_block = "<p>LLM telemetry is not available for this selection yet.</p>"
         payload_preview_block = "<p>Payload not prepared yet.</p>"
         page_state = "input_incomplete"
@@ -3830,10 +3835,17 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         if selected_en_run_id and target_language and target_run_id and not errors:
             latest_job = _latest_check_languages_job(domain, target_run_id)
             target_run_domain = str((run_map.get(target_run_id) or {}).get("domain", "")).strip() or str((latest_job or {}).get("domain", "")).strip() or domain
+            target_run_domain_for_page = target_run_domain
             issues_exists = _artifact_exists(target_run_domain, target_run_id, "issues.json")
             llm_stats_exists = _artifact_exists(target_run_domain, target_run_id, "llm_review_stats.json")
             llm_stats_payload = _read_json_safe(target_run_domain, target_run_id, "llm_review_stats.json", None) if llm_stats_exists else None
             workflow_state = str((latest_job or {}).get("workflow_state", "")).strip().lower()
+            latest_status = str((latest_job or {}).get("status", "")).strip().lower()
+            stage = str((latest_job or {}).get("stage", "")).strip().lower()
+            llm_running = (
+                workflow_state == "running_llm_review"
+                or (stage in {"queued_llm_review", "running_llm_review"} and latest_status in {"running", "queued"})
+            )
             if not workflow_state:
                 stage_state_map = {
                     "queued_preparation": "idle",
@@ -3877,8 +3889,6 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 else:
                     errors.append("issues.json is malformed.")
 
-            latest_status = str((latest_job or {}).get("status", "")).strip().lower()
-            stage = str((latest_job or {}).get("stage", "")).strip().lower()
             if workflow_state:
                 page_state = workflow_state
             elif latest_status in {"failed", "error"}:
@@ -3900,10 +3910,17 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 page_state = "ready_to_start"
 
             prepared_manifest = _read_json_safe(target_run_domain, target_run_id, "check_languages_prepared_payload.json", None)
+            prepared_manifest_for_page = prepared_manifest
             llm_input_exists = _artifact_exists(target_run_domain, target_run_id, "check_languages_llm_input.json")
+            llm_input_exists_for_page = llm_input_exists
             llm_input_payload = _read_json_safe(target_run_domain, target_run_id, "check_languages_llm_input.json", None) if llm_input_exists else None
             source_hashes = prepared_manifest.get("source_hashes") if isinstance(prepared_manifest, dict) and isinstance(prepared_manifest.get("source_hashes"), dict) else {}
+            has_hashes = bool(source_hashes)
             stale = bool(source_hashes and source_hashes != _check_languages_source_hashes(target_run_domain, selected_en_run_id, target_run_id))
+            hashes_ok_for_page = has_hashes and not stale
+            payload_prepared_evidence = isinstance(prepared_manifest, dict) and isinstance(llm_input_payload, dict) and hashes_ok_for_page
+            if payload_prepared_evidence and page_state in {"queued", "preparing_payload"}:
+                page_state = "prepared_for_llm"
             llm_input_status = "pending" if page_state in {"preparing_payload", "running_target_capture", "preparing_target_run"} and not llm_input_exists else "missing"
             llm_status_note = "Will be created after target capture and payload preparation complete." if llm_input_status == "pending" else ""
             llm_preview = "—"
@@ -4020,23 +4037,33 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             css = "ok" if level == "ok" else "warning" if level == "warning" else "error"
             notices.append(f'<li class="{css}">{_h(message)}</li>')
         if target_run_id:
-            prepared_manifest_notice = _read_json_safe(domain, target_run_id, "check_languages_prepared_payload.json", None)
+            prepared_manifest_notice = prepared_manifest_for_page if isinstance(prepared_manifest_for_page, dict) else _read_json_safe(target_run_domain_for_page, target_run_id, "check_languages_prepared_payload.json", None)
             if isinstance(prepared_manifest_notice, dict):
                 expected_notice = prepared_manifest_notice.get("source_hashes") if isinstance(prepared_manifest_notice.get("source_hashes"), dict) else {}
-                if expected_notice and selected_en_run_id and expected_notice != _check_languages_source_hashes(domain, selected_en_run_id, target_run_id):
+                if expected_notice and selected_en_run_id and expected_notice != _check_languages_source_hashes(target_run_domain_for_page, selected_en_run_id, target_run_id):
                     notices.append('<li class="warning">Prepared payload is stale and LLM review is disabled. Re-run preparation.</li>')
         notices.extend([f'<li class="error">{_h(err)}</li>' for err in errors])
         notices_html = f"<ul>{''.join(notices)}</ul>" if notices else "<p>—</p>"
 
         prepare_enabled = bool(domain and selected_en_run_id and target_language and not errors and str((latest_job or {}).get("status", "")).lower() not in {"running", "queued"})
         prepare_disabled_attr = "" if prepare_enabled else ' disabled="disabled"'
-        prepared_manifest = _read_json_safe(domain, target_run_id, "check_languages_prepared_payload.json", None) if target_run_id else None
-        llm_input_exists = bool(target_run_id and _artifact_exists(domain, target_run_id, "check_languages_llm_input.json"))
-        hashes_ok = False
-        if isinstance(prepared_manifest, dict):
-            expected = prepared_manifest.get("source_hashes") if isinstance(prepared_manifest.get("source_hashes"), dict) else {}
-            hashes_ok = (not expected) or expected == _check_languages_source_hashes(domain, selected_en_run_id, target_run_id)
-        llm_enabled = prepare_enabled and llm_input_exists and hashes_ok and page_state not in {"preparing_payload", "running_llm_review"}
+        if target_run_id and not isinstance(prepared_manifest_for_page, dict):
+            prepared_manifest_for_page = _read_json_safe(target_run_domain_for_page, target_run_id, "check_languages_prepared_payload.json", None)
+        if target_run_id and not llm_input_exists_for_page:
+            llm_input_exists_for_page = bool(_artifact_exists(target_run_domain_for_page, target_run_id, "check_languages_llm_input.json"))
+        if target_run_id and isinstance(prepared_manifest_for_page, dict) and not hashes_ok_for_page:
+            expected = prepared_manifest_for_page.get("source_hashes") if isinstance(prepared_manifest_for_page.get("source_hashes"), dict) else {}
+            hashes_ok_for_page = bool(expected) and expected == _check_languages_source_hashes(target_run_domain_for_page, selected_en_run_id, target_run_id)
+        llm_enabled = bool(
+            domain
+            and selected_en_run_id
+            and target_language
+            and target_run_id
+            and not errors
+            and llm_input_exists_for_page
+            and hashes_ok_for_page
+            and not llm_running
+        )
         llm_disabled_attr = "" if llm_enabled else ' disabled="disabled"'
 
         self._serve_template(
