@@ -30,6 +30,7 @@ This means:
 
 - the codebase contains real pipeline and artifact-backed implementation;
 - some operator surfaces are already backed by persisted data;
+- some operator-facing flows are still being hardened for pre-production;
 - the product is not yet production-ready.
 
 It does **not** mean that the product must expose a single-page workflow to be considered coherent.

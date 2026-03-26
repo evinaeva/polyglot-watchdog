@@ -2,6 +2,8 @@
 
 The `/testbench` page is an **INTERNAL TEST PAGE / NON-PRODUCTION** manual harness for pipeline modules.
 
+It is intended for currently registered modules in `app/testbench.py`; it is not a placeholder page for unreleased future phases.
+
 ## Route
 
 - Path: `/testbench`

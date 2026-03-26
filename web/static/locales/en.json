@@ -186,7 +186,7 @@
   "testbench.page_help.li2": "Load a test case to inspect inputs/expected data.",
   "testbench.page_help.li3": "Run test executes the selected module case and shows assertions/validation output.",
   "testbench.page_help.p2": "This is exploratory tooling and not part of the normal operator production flow.",
-  "testbench.note": "Manual module testing console for current and future Polyglot Watchdog phases.",
+  "testbench.note": "Manual module testing console for current implemented Polyglot Watchdog phases.",
   "testbench.status.implemented": "Implemented",
   "testbench.status.partial": "Partial",
   "testbench.status.not_implemented": "NOT IMPLEMENTED",

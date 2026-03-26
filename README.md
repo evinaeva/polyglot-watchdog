@@ -4,7 +4,7 @@ Polyglot Watchdog is a contract-first operator console and pipeline for localiza
 
 This repository is **not** a blank scaffold. It already contains a real artifact model, canonical storage paths, multiple implemented phase runners, and operator-facing UI surfaces backed in part by persisted artifacts.
 
-At the same time, it is **not yet production-ready**. Some operator flows are still incomplete or partially mock-backed, and release-facing documentation must remain aligned with the actual state of the codebase.
+At the same time, it is **not yet production-ready**. Some operator flows remain incomplete or pre-production hardening is still in progress, and release-facing documentation must remain aligned with the actual state of the codebase.
 
 This README is the product truth-set entry point for contributors.
 
@@ -38,7 +38,7 @@ What is already real in the repository:
 
 What is not yet complete:
 
-- some operator-visible flows are still incomplete or partially mock-backed;
+- some operator-visible flows are still incomplete or still being hardened for pre-production;
 - not all required v1.0 screens are fully release-ready;
 - release-facing messaging must stay aligned with actual implementation status.
 

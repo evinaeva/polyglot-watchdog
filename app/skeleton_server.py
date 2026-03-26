@@ -4,8 +4,8 @@ The repository is not a blank scaffold: core artifact-backed pipeline paths
 and operator routes are implemented, while release readiness remains
 pre-production and gated by documented criteria.
 
-Some operator-visible flows are still partial and must not be presented as
-production-ready.
+Some operator-visible flows are still incomplete or under pre-production
+hardening and must not be presented as production-ready.
 """
 
 from __future__ import annotations
