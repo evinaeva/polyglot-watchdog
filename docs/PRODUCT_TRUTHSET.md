@@ -36,7 +36,7 @@ It does **not** mean that the product must expose a single-page workflow to be c
 
 ## Operator workflow model
 
-The canonical v1.0 operator workflow is **multi-page / multi-tab by design**.
+The canonical v1.0 operator workflow is **multi-surface / multi-step (multi-page / multi-tab) by design**.
 
 This means:
 

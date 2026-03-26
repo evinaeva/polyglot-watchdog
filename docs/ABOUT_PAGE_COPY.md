@@ -20,7 +20,7 @@ Polyglot Watchdog already includes:
 
 ### How the operator workflow works
 
-The operator workflow is intentionally distributed across multiple dedicated pages/tabs.
+The operator workflow is **multi-surface / multi-step (multi-page / multi-tab) by design** and is intentionally distributed across multiple dedicated pages/tabs.
 
 For example, an operator may:
 - add and manage URLs on one page;
@@ -43,7 +43,7 @@ For the documented v1.0 scope, the required product flow includes:
 The following are intentionally not required to declare the documented v1.0 scope complete:
 
 - OCR / Phase 4 work;
-- manual seed URL workflow;
+- crawler improvements beyond the accepted manual seed URL workflow;
 - UX polish beyond the core documented operator workflow.
 
 ### Current stage
