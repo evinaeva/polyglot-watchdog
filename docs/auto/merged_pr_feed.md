@@ -2055,3 +2055,36 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c4da456970832c9a559761f07e4861)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #158 — 2026-03-26T08:17:52Z
+
+- Title: Include LLM input artifact URI in manifest and improve preview/status handling
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/158
+- Author: evinaeva
+- Base branch: main
+- Head branch: 9w9vex-codex/fix-ui-bug-in-payload-preview
+- Merge commit: 7b59471f41d446bef92347b2edee4a44b31f3e74
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  
+  - Surface the real storage URI for `check_languages_llm_input.json` in the prepared payload manifest so the UI can show an accurate artifact path. 
+  - Prevent showing a fake or misleading local path while a payload is still being prepared and make the preview status clearer during the capture/preparation flow.
+  
+  ### Description
+  
+  - Capture the return value of `write_json_artifact` for `check_languages_llm_input.json` and store it in the prepared payload as `llm_input_artifact` instead of composing a domain/run path. 
+  - Make the page rendering check whether the artifact actually exists using `_artifact_exists` and show `status: pending` with a note when payload preparation is in progress. 
+  - Prefer the manifest `llm_input_artifact` URI when presenting the artifact path, and fall back to constructing a `gs://` path via `BUCKET_NAME` and `artifact_path` only when the manifest URI is missing. 
+  - Add handling to avoid rendering a fake domain/run path when the manifest does not provide an explicit artifact URI.
+  
+  ### Testing
+  
+  - Added and ran `tests/test_check_languages_page.py` new tests: `test_payload_preview_is_pending_without_fake_path_during_preparation`, `test_payload_preview_shows_real_artifact_path_when_input_exists`, and `test_payload_preview_avoids_fake_path_when_manifest_uri_missing`, and they all passed. 
+  - Existing page-rendering and LLM-run tests in the same test file were run and remained green.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c4e6b4a404832cb12b0e5fb6225d38)
+- Notes: Auto-generated from merged PR metadata.
