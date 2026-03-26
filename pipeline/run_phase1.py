@@ -401,6 +401,7 @@ async def main(
     user_tier: str | None,
     jobs_override: list[CaptureJob] | None = None,
     rerun_provenance: dict | None = None,
+    continue_on_error: bool = False,
 ) -> None:
     print(f"[Phase 1] Starting data collection domain={domain} run_id={run_id} lang={language}")
     planning_snapshot_provenance: dict[str, str] = {}
@@ -507,6 +508,23 @@ async def main(
                     })
                     print(f"[Phase 1] WARN: exact-context capture NOT FOUND for {url}: {exc}")
                     continue
+                if continue_on_error:
+                    error_records.append({
+                        "type": "CAPTURE_ERROR",
+                        "url": url,
+                        "viewport_kind": job.context.viewport_kind,
+                        "state": job.context.state,
+                        "user_tier": job.context.user_tier,
+                        "message": str(exc),
+                        "exception_class": exc.__class__.__name__,
+                        "non_fatal": True,
+                    })
+                    print(f"[Phase 1] WARN: capture failed and will be skipped for {url}: {exc}")
+                    try:
+                        await page.close()
+                    except Exception:
+                        pass
+                    continue
                 print(f"[Phase 1] STOP: Failed to pull {url}: {exc}", file=sys.stderr)
                 raise SystemExit(1) from exc
 
@@ -558,6 +576,13 @@ async def main(
             representative_page_ids[url] = capture_result["page"]["page_id"]
 
         await browser.close()
+
+    if continue_on_error and error_records and not all_page_screenshots:
+        first = error_records[0]
+        raise RuntimeError(
+            "All replay units failed during target capture: "
+            f"{first.get('exception_class') or first.get('type')}: {first.get('message')}"
+        )
 
     # Sort for determinism — Contract §1
     all_page_screenshots.sort(key=lambda r: (r["url"], r["viewport_kind"], r["state"], r["user_tier"] or ""))

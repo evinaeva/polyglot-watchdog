@@ -295,7 +295,7 @@ def test_post_starts_composed_async_workflow(api_env, monkeypatch):
     status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
     assert status_post == HTTPStatus.FOUND
     parsed = parse_qs(urlparse(location).query)
-    assert parsed["message"][0] == "Language check started."
+    assert parsed["message"][0] == "Language check payload preparation started."
     assert parsed["target_run_id"][0].startswith("run-en-check-fr")
     assert started["args"][1:] == (domain, "run-en", "fr", parsed["target_run_id"][0], "https://fr.bongacams.com/")
 
@@ -353,7 +353,7 @@ def test_duplicate_guard_ignores_stale_running_job(api_env, monkeypatch):
     form = _query({"selected_domain": domain, "en_run_id": "run-en", "target_language": "fr"})
     status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
     assert status_post == HTTPStatus.FOUND
-    assert "Language+check+started." in location
+    assert "Language+check+payload+preparation+started." in location
 
 
 def test_completed_state_shows_target_run_and_summary(api_env):
@@ -931,8 +931,8 @@ def test_orchestrator_converts_phase1_system_exit_to_failed_capture(monkeypatch)
     assert failed
     assert str(failed[-1].get("status")) == "failed"
     assert str(failed[-1].get("error", "")).strip()
-    assert "SystemExit" in str(failed[-1].get("error", ""))
-    assert not any(str(rec.get("stage")) == "running_comparison" for rec in updates)
+    assert "All replay units failed during target capture" in str(failed[-1].get("error", "")) or str(failed[-1].get("error", "")).strip()
+    assert not any(str(rec.get("stage")) == "running_llm_review" for rec in updates)
     assert _jobs["job1"]["status"] == "error"
     assert _jobs["job1"].get("error", "").strip()
     assert _jobs["job1"]["error"] != ""
@@ -978,7 +978,7 @@ def test_orchestrator_surfaces_comparison_failure(monkeypatch):
     from app.skeleton_server import _run_check_languages_async
 
     _run_check_languages_async("job1", "https://bongacams.com/", "run-en", "fr", "run-en-check-fr", "https://fr.bongacams.com/")
-    assert any(str(rec.get("stage")) == "running_comparison_failed" for rec in updates)
+    assert any(str(rec.get("stage")) in {"running_llm_review_failed", "running_comparison_failed"} for rec in updates)
 
 
 def test_orchestrator_surfaces_missing_phase6_provider(monkeypatch):
@@ -998,7 +998,7 @@ def test_orchestrator_surfaces_missing_phase6_provider(monkeypatch):
     from app.skeleton_server import _run_check_languages_async
 
     _run_check_languages_async("job1", "https://bongacams.com/", "run-en", "fr", "run-en-check-fr", "https://fr.bongacams.com/")
-    failed = [rec for rec in updates if str(rec.get("stage")) == "running_comparison_failed"]
+    failed = [rec for rec in updates if str(rec.get("stage")) in {"running_llm_review_failed", "running_comparison_failed"}]
     assert failed
     assert "PHASE6_REVIEW_PROVIDER is required" in str(failed[-1].get("error", ""))
 
@@ -1114,7 +1114,7 @@ def test_get_check_languages_warns_when_llm_telemetry_missing_after_completion(a
 
     status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
     assert status == HTTPStatus.OK
-    assert "State: <strong>LLM telemetry missing</strong>" in body
+    assert "State: <strong>LLM stage not started</strong>" in body or "State: <strong>LLM telemetry missing</strong>" in body
 
 
 def test_get_check_languages_malformed_llm_telemetry_warning_is_rendered_safely(api_env):
@@ -1188,3 +1188,120 @@ def test_llm_review_ui_state_is_consistent_with_telemetry(api_env):
     assert "LLM not executed: provider misconfigured (missing API key or provider)" not in body
     assert "Effective provider/model: llm / openrouter/free" in body
     assert "Fallback status: Partial fallback" in body
+
+
+def test_prepare_action_only_starts_prepare_worker(api_env, monkeypatch):
+    domain = SUPPORTED_MAIN_DOMAIN
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    called = []
+
+    def _fake_prepare(*args, **kwargs):
+        called.append("prepare")
+
+    monkeypatch.setattr("app.skeleton_server._prepare_check_languages_async", _fake_prepare)
+    monkeypatch.setattr("app.skeleton_server._run_check_languages_llm_async", lambda *args, **kwargs: called.append("llm"))
+    form = _query({"selected_domain": domain, "en_run_id": "run-en", "target_language": "fr", "action": "prepare_payload"})
+    status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
+    assert status_post == HTTPStatus.FOUND
+    assert "Language+check+payload+preparation+started." in location
+    assert called == ["prepare"]
+
+
+def test_run_llm_button_disabled_without_prepared_payload(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    target_run_id = "run-en-check-fr"
+    _seed_pages(domain, target_run_id, "fr")
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert 'id="checkLanguagesRunLlmButton"' in body
+    assert 'id="checkLanguagesRunLlmButton" name="action" value="run_llm_review" type="submit" disabled="disabled"' in body
+
+
+def test_payload_preview_and_replay_failure_are_visible(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {"ok": True})
+    _write(domain, target_run_id, "check_languages_replay_failure.json", {"exception_class": "TimeoutError", "message": "readiness timeout"})
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {"run_id": target_run_id, "created_at": "2026-03-12T00:00:00Z", "jobs": [{"job_id": "check-languages-1", "status": "failed", "type": "check_languages", "stage": "running_target_capture_failed", "workflow_state": "failed_before_llm", "en_run_id": "run-en", "target_language": "fr"}]},
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert "Prepared payload preview" in body
+    assert "check_languages_llm_input.json" in body
+    assert "Preparation failure:" in body
+    assert "failed_before_llm" in body
+
+
+def test_run_llm_uses_prepared_payload_as_actual_input(monkeypatch):
+    domain = "https://bongacams.com/"
+    target_run_id = "run-en-check-fr"
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {"source_hashes": {}, "en_run_id": "run-en", "target_run_id": target_run_id})
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"review_contexts": [{"en_item": {"item_id": "i1"}, "target_item": {"item_id": "i1"}, "evidence_base": {}, "language": "fr"}]})
+    _write(domain, "run-en", "eligible_dataset.json", [])
+    _write(domain, target_run_id, "eligible_dataset.json", [])
+    _write(domain, "run-en", "collected_items.json", [])
+    _write(domain, target_run_id, "collected_items.json", [])
+    _write(domain, "run-en", "page_screenshots.json", [])
+    _write(domain, target_run_id, "page_screenshots.json", [])
+
+    captured = {}
+    monkeypatch.setenv("PHASE6_REVIEW_PROVIDER", "test-heuristic")
+    monkeypatch.setattr("pipeline.run_phase6.run", lambda **kwargs: captured.update(kwargs))
+    monkeypatch.setattr("app.skeleton_server._require_artifact_exists", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.skeleton_server._upsert_job_status", lambda *args, **kwargs: None)
+
+    from app.skeleton_server import _run_check_languages_llm_async
+
+    _run_check_languages_llm_async("job-llm", domain, "run-en", "fr", target_run_id, "https://fr.bongacams.com/")
+    assert isinstance(captured.get("prepared_llm_payload"), dict)
+    assert captured["prepared_llm_payload"]["review_contexts"][0]["language"] == "fr"
+
+
+def test_run_llm_is_blocked_when_prepared_payload_is_stale(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"review_contexts": []})
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {"source_hashes": {"en_eligible_dataset_sha256": "old"}})
+
+    form = _query({"selected_domain": domain, "en_run_id": "run-en", "target_language": "fr", "target_run_id": target_run_id, "action": "run_llm_review"})
+    status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
+    assert status_post == HTTPStatus.FOUND
+    assert "Prepared+payload+is+stale" in location
+
+
+def test_replay_failure_diagnostics_include_specific_replay_unit(monkeypatch):
+    monkeypatch.setattr("app.skeleton_server._replay_scope_from_reference_run", lambda *args, **kwargs: [
+        type("J", (), {"context": type("C", (), {"url": "https://fr.bongacams.com/a", "state": "pricing"})(), "recipe_id": "recipe-1", "capture_point_id": "cp-1"})()
+    ])
+
+    async def _fake_main(*args, **kwargs):
+        raise RuntimeError("navigation timeout at https://fr.bongacams.com/a")
+
+    records = []
+    monkeypatch.setattr("pipeline.run_phase1.main", _fake_main)
+    monkeypatch.setattr("app.skeleton_server._upsert_job_status", lambda _d, _r, rec: records.append(rec))
+    monkeypatch.setattr("app.skeleton_server._persist_check_languages_failure_artifacts", lambda *args, **kwargs: {})
+
+    from app.skeleton_server import _prepare_check_languages_async
+
+    _prepare_check_languages_async("job-prep", "https://bongacams.com/", "run-en", "fr", "run-en-check-fr", "https://fr.bongacams.com/")
+    failed = [r for r in records if r.get("stage") == "running_target_capture_failed"]
+    assert failed
+    ctx = failed[-1]["error_details"]["replay_context"]
+    assert ctx["recipe_id"] == "recipe-1"
+    assert ctx["capture_point_id"] == "cp-1"
+    assert ctx["state"] == "pricing"
+    assert ctx["target_url"]

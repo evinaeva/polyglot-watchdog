@@ -43,7 +43,8 @@
           </div>
         </div>
         <p>
-          <button id="checkLanguagesStartButton" type="submit"{{start_disabled}}>Start language check</button>
+          <button id="checkLanguagesPrepareButton" name="action" value="prepare_payload" type="submit"{{prepare_disabled}}>Prepare language check payload</button>
+          <button id="checkLanguagesRunLlmButton" name="action" value="run_llm_review" type="submit"{{run_llm_disabled}}>Run LLM review</button>
         </p>
       </form>
     </section>
@@ -72,6 +73,10 @@
     <section>
       <h2>Job status</h2>
       {{latest_job}}
+      <details>
+        <summary>Prepared payload preview</summary>
+        {{payload_preview}}
+      </details>
     </section>
 
     <section>
@@ -96,8 +101,9 @@
   <script>
     (() => {
       const form = document.getElementById("checkLanguagesForm");
-      const startButton = document.getElementById("checkLanguagesStartButton");
-      if (!form || !startButton) return;
+      const prepareButton = document.getElementById("checkLanguagesPrepareButton");
+      const runLlmButton = document.getElementById("checkLanguagesRunLlmButton");
+      if (!form || !prepareButton || !runLlmButton) return;
 
       const stateEl = document.getElementById("checkLanguagesState");
       const updateStartButtonState = () => {
@@ -106,7 +112,11 @@
         const targetLanguage = String((form.elements.namedItem("target_language") || {}).value || "").trim();
         const state = String((stateEl || {}).textContent || "").trim().toLowerCase();
         const inProgress = state === "queued" || state.startsWith("running_");
-        startButton.disabled = !(selectedDomain && enRunId && targetLanguage) || inProgress;
+        const baseDisabled = !(selectedDomain && enRunId && targetLanguage) || inProgress;
+        prepareButton.disabled = baseDisabled;
+        if (baseDisabled) {
+          runLlmButton.disabled = true;
+        }
       };
 
       form.elements.namedItem("selected_domain")?.addEventListener("change", updateStartButtonState);

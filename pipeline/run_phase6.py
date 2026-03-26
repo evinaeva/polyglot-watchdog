@@ -36,6 +36,11 @@ from pipeline.storage import BUCKET_NAME, read_json_artifact, write_json_artifac
 _IMAGE_TAGS = {"img", "image"}
 
 
+def _stable_json_hash(payload: Any) -> str:
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def _is_image_item(item: dict) -> bool:
     tag = str(item.get("tag", "")).strip().lower()
     element_type = str(item.get("element_type", "")).strip().lower()
@@ -383,78 +388,89 @@ def run(
     review_mode: str | None = None,
     *,
     require_explicit_mode: bool = True,
+    prepared_llm_payload: dict[str, Any] | None = None,
 ) -> list[dict]:
     resolved_review_mode = _resolve_review_mode(review_mode, require_explicit_mode=require_explicit_mode)
-    en_eligible = read_json_artifact(domain, en_run_id, "eligible_dataset.json")
-    target_eligible = read_json_artifact(domain, target_run_id, "eligible_dataset.json")
-
-    en_collected = read_json_artifact(domain, en_run_id, "collected_items.json")
-    target_collected = read_json_artifact(domain, target_run_id, "collected_items.json")
-
-    en_screens = read_json_artifact(domain, en_run_id, "page_screenshots.json")
-    target_screens = read_json_artifact(domain, target_run_id, "page_screenshots.json")
-
-    en_by_item = {i["item_id"]: i for i in en_eligible if i.get("language") == "en"}
-    target_by_item = {i["item_id"]: dict(i) for i in target_eligible if i.get("language") != "en"}
-    ocr_by_item = _load_phase4_ocr_by_item(domain, target_run_id)
-    for item_id, item in target_by_item.items():
-        ocr_row = ocr_by_item.get(item_id, {})
-        # OCR text applies only to approved image-backed items and is supporting
-        # evidence for EN↔target review, not a standalone issue generator.
-        if not _is_image_item(item):
-            continue
-        if ocr_row.get("status") == "ok":
-            item["ocr_text"] = str(ocr_row.get("ocr_text", "")).strip()
-            item["ocr_engine"] = f"{ocr_row.get('ocr_provider', '')}:{ocr_row.get('ocr_engine', '')}".strip(":")
-            notes = ocr_row.get("ocr_notes", [])
-            if isinstance(notes, list):
-                item["ocr_notes"] = [str(note).strip() for note in notes if str(note).strip()]
-    en_collected_by_item = _index_collected(en_collected)
-    en_screens_by_page = _index_screenshots(en_screens)
-    target_collected_by_item = _index_collected(target_collected)
-    target_screens_by_page = _index_screenshots(target_screens)
-    target_language = next((str(item.get("language", "")).strip() for item in target_eligible if str(item.get("language", "")).strip() and str(item.get("language", "")).lower() != "en"), "")
-    blocked_pages = _load_blocked_overlay_pages(domain, target_language, target_screens) if target_language else []
-    blocked_item_ids: set[str] = set()
-    blocked_urls = {str(row.get("url", "")).strip() for row in blocked_pages}
-    for item in target_eligible:
-        item_id = str(item.get("item_id", "")).strip()
-        if item_id and str(item.get("url", "")).strip() in blocked_urls:
-            blocked_item_ids.add(item_id)
+    if prepared_llm_payload is None:
+        en_eligible = read_json_artifact(domain, en_run_id, "eligible_dataset.json")
+        target_eligible = read_json_artifact(domain, target_run_id, "eligible_dataset.json")
+        en_collected = read_json_artifact(domain, en_run_id, "collected_items.json")
+        target_collected = read_json_artifact(domain, target_run_id, "collected_items.json")
+        en_screens = read_json_artifact(domain, en_run_id, "page_screenshots.json")
+        target_screens = read_json_artifact(domain, target_run_id, "page_screenshots.json")
+        ocr_by_item = _load_phase4_ocr_by_item(domain, target_run_id)
+        target_language = next((str(item.get("language", "")).strip() for item in target_eligible if str(item.get("language", "")).strip() and str(item.get("language", "")).lower() != "en"), "")
+        blocked_pages = _load_blocked_overlay_pages(domain, target_language, target_screens) if target_language else []
+        en_by_item = {i["item_id"]: i for i in en_eligible if i.get("language") == "en"}
+        target_by_item = {i["item_id"]: dict(i) for i in target_eligible if i.get("language") != "en"}
+        for item_id, item in target_by_item.items():
+            ocr_row = ocr_by_item.get(item_id, {})
+            if not _is_image_item(item):
+                continue
+            if ocr_row.get("status") == "ok":
+                item["ocr_text"] = str(ocr_row.get("ocr_text", "")).strip()
+                item["ocr_engine"] = f"{ocr_row.get('ocr_provider', '')}:{ocr_row.get('ocr_engine', '')}".strip(":")
+        en_collected_by_item = _index_collected(en_collected)
+        en_screens_by_page = _index_screenshots(en_screens)
+        target_collected_by_item = _index_collected(target_collected)
+        target_screens_by_page = _index_screenshots(target_screens)
+        used_target_ids: set[str] = set()
+        target_candidates = [target_by_item[item_id] for item_id in sorted(target_by_item.keys())]
+        review_context_rows: list[dict[str, Any]] = []
+        pairing_meta_by_target_item_id: dict[str, dict[str, Any]] = {}
+        for item_id in sorted(en_by_item.keys()):
+            en_item = en_by_item[item_id]
+            t_item, pairing_meta = _pair_target_items(en_item, target_candidates, used_target_ids)
+            if t_item:
+                used_target_ids.add(str(t_item.get("item_id")))
+                pairing_meta_by_target_item_id[str(t_item.get("item_id"))] = dict(pairing_meta)
+            evidence_base = _build_evidence(t_item, target_collected_by_item, target_screens_by_page) if t_item else _build_missing_target_evidence(en_item, en_collected_by_item, en_screens_by_page)
+            evidence_base.update(pairing_meta)
+            review_context_rows.append({"en_item": en_item, "target_item": t_item, "evidence_base": evidence_base, "language": target_language})
+        blocked_item_ids: set[str] = set()
+        blocked_urls = {str(row.get("url", "")).strip() for row in blocked_pages}
+        for item in target_eligible:
+            item_id = str(item.get("item_id", "")).strip()
+            if item_id and str(item.get("url", "")).strip() in blocked_urls:
+                blocked_item_ids.add(item_id)
+    else:
+        review_context_rows = list(prepared_llm_payload.get("review_contexts", []))
+        target_language = str(prepared_llm_payload.get("target_language", "")).strip()
+        blocked_pages = list(prepared_llm_payload.get("blocked_pages", []))
+        target_eligible = list(prepared_llm_payload.get("target_eligible", []))
+        target_collected_by_item = _index_collected(list(prepared_llm_payload.get("target_collected", [])))
+        ocr_by_item = dict(prepared_llm_payload.get("ocr_by_item", {}))
+        blocked_item_ids = {str(v) for v in prepared_llm_payload.get("blocked_item_ids", [])}
+        pairing_meta_by_target_item_id = {
+            str(k): dict(v) for k, v in dict(prepared_llm_payload.get("pairing_meta_by_target_item_id", {})).items()
+        }
     provider = build_provider(mode=resolved_review_mode)
     if hasattr(provider, "prefetch_reviews"):
         prefetch_pairs = []
-        used_target_ids_for_prefetch: set[str] = set()
-        target_candidates = [target_by_item[item_id] for item_id in sorted(target_by_item.keys())]
-        for item_id in sorted(en_by_item.keys()):
-            matched, _ = _pair_target_items(en_by_item[item_id], target_candidates, used_target_ids_for_prefetch)
-            if not matched:
+        for row in review_context_rows:
+            en_item = row.get("en_item") if isinstance(row, dict) else None
+            target_item = row.get("target_item") if isinstance(row, dict) else None
+            if not isinstance(en_item, dict) or not isinstance(target_item, dict):
                 continue
-            used_target_ids_for_prefetch.add(str(matched.get("item_id")))
-            prepared = prepare_review_inputs(en_by_item[item_id], matched)
+            prepared = prepare_review_inputs(en_item, target_item)
             prefetch_pairs.append((prepared.en_text, prepared.target_text))
         provider.prefetch_reviews(prefetch_pairs, target_language)
 
     issues: list[dict] = []
-    used_target_ids: set[str] = set()
-    target_candidates = [target_by_item[item_id] for item_id in sorted(target_by_item.keys())]
-    pairing_meta_by_target_item_id: dict[str, dict[str, Any]] = {}
-
-    for item_id in sorted(en_by_item.keys()):
-        en_item = en_by_item[item_id]
-        t_item, pairing_meta = _pair_target_items(en_item, target_candidates, used_target_ids)
-        if t_item:
-            used_target_ids.add(str(t_item.get("item_id")))
-            pairing_meta_by_target_item_id[str(t_item.get("item_id"))] = dict(pairing_meta)
-        evidence_base = _build_evidence(t_item, target_collected_by_item, target_screens_by_page) if t_item else _build_missing_target_evidence(en_item, en_collected_by_item, en_screens_by_page)
-        evidence_base.update(pairing_meta)
+    for row in review_context_rows:
+        en_item = row.get("en_item") if isinstance(row, dict) else None
+        t_item = row.get("target_item") if isinstance(row, dict) else None
+        evidence_base = row.get("evidence_base") if isinstance(row, dict) else None
+        row_language = str(row.get("language", target_language)).strip() if isinstance(row, dict) else target_language
+        if not isinstance(en_item, dict) or not isinstance(evidence_base, dict):
+            continue
         issues.extend(
             review_pair(
                 ReviewContext(
                     en_item=en_item,
-                    target_item=t_item,
+                    target_item=t_item if isinstance(t_item, dict) else None,
                     evidence_base=evidence_base,
-                    language=target_language,
+                    language=row_language,
                 ),
                 provider=provider,
             )
@@ -507,6 +523,72 @@ def run(
     }
     write_phase_manifest(domain, target_run_id, "phase6", manifest)
     return issues
+
+
+def build_prepared_llm_payload(domain: str, en_run_id: str, target_run_id: str) -> dict[str, Any]:
+    en_eligible = read_json_artifact(domain, en_run_id, "eligible_dataset.json")
+    target_eligible = read_json_artifact(domain, target_run_id, "eligible_dataset.json")
+    en_collected = read_json_artifact(domain, en_run_id, "collected_items.json")
+    target_collected = read_json_artifact(domain, target_run_id, "collected_items.json")
+    en_screens = read_json_artifact(domain, en_run_id, "page_screenshots.json")
+    target_screens = read_json_artifact(domain, target_run_id, "page_screenshots.json")
+    target_language = next((str(item.get("language", "")).strip() for item in target_eligible if str(item.get("language", "")).strip() and str(item.get("language", "")).lower() != "en"), "")
+    blocked_pages = _load_blocked_overlay_pages(domain, target_language, target_screens) if target_language else []
+    ocr_by_item = _load_phase4_ocr_by_item(domain, target_run_id)
+    en_by_item = {i["item_id"]: i for i in en_eligible if i.get("language") == "en"}
+    target_by_item = {i["item_id"]: dict(i) for i in target_eligible if i.get("language") != "en"}
+    for item_id, item in target_by_item.items():
+        ocr_row = ocr_by_item.get(item_id, {})
+        if _is_image_item(item) and ocr_row.get("status") == "ok":
+            item["ocr_text"] = str(ocr_row.get("ocr_text", "")).strip()
+            item["ocr_engine"] = f"{ocr_row.get('ocr_provider', '')}:{ocr_row.get('ocr_engine', '')}".strip(":")
+    en_collected_by_item = _index_collected(en_collected)
+    en_screens_by_page = _index_screenshots(en_screens)
+    target_collected_by_item = _index_collected(target_collected)
+    target_screens_by_page = _index_screenshots(target_screens)
+    used_target_ids: set[str] = set()
+    target_candidates = [target_by_item[item_id] for item_id in sorted(target_by_item.keys())]
+    pairing_meta_by_target_item_id: dict[str, dict[str, Any]] = {}
+    review_contexts: list[dict[str, Any]] = []
+    for item_id in sorted(en_by_item.keys()):
+        en_item = en_by_item[item_id]
+        t_item, pairing_meta = _pair_target_items(en_item, target_candidates, used_target_ids)
+        if t_item:
+            used_target_ids.add(str(t_item.get("item_id")))
+            pairing_meta_by_target_item_id[str(t_item.get("item_id"))] = dict(pairing_meta)
+        evidence_base = _build_evidence(t_item, target_collected_by_item, target_screens_by_page) if t_item else _build_missing_target_evidence(en_item, en_collected_by_item, en_screens_by_page)
+        evidence_base.update(pairing_meta)
+        review_contexts.append({"en_item": en_item, "target_item": t_item, "evidence_base": evidence_base, "language": target_language})
+    blocked_urls = {str(row.get("url", "")).strip() for row in blocked_pages}
+    blocked_item_ids = sorted({
+        str(item.get("item_id", "")).strip()
+        for item in target_eligible
+        if str(item.get("item_id", "")).strip() and str(item.get("url", "")).strip() in blocked_urls
+    })
+    source_hashes = {
+        "en_eligible_dataset_sha256": _stable_json_hash(en_eligible),
+        "target_eligible_dataset_sha256": _stable_json_hash(target_eligible),
+        "en_collected_items_sha256": _stable_json_hash(en_collected),
+        "target_collected_items_sha256": _stable_json_hash(target_collected),
+        "en_page_screenshots_sha256": _stable_json_hash(en_screens),
+        "target_page_screenshots_sha256": _stable_json_hash(target_screens),
+    }
+    return {
+        "schema_version": "v1.0",
+        "domain": domain,
+        "en_run_id": en_run_id,
+        "target_run_id": target_run_id,
+        "target_language": target_language,
+        "source_hashes": source_hashes,
+        "review_contexts": review_contexts,
+        "blocked_pages": blocked_pages,
+        "target_eligible": target_eligible,
+        "target_collected": target_collected,
+        "ocr_by_item": ocr_by_item,
+        "blocked_item_ids": blocked_item_ids,
+        "pairing_meta_by_target_item_id": pairing_meta_by_target_item_id,
+        "review_context_count": len(review_contexts),
+    }
 
 
 if __name__ == "__main__":
