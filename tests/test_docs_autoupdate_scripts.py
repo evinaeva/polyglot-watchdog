@@ -286,6 +286,23 @@ def test_docs_ai_rejects_malformed_ai_model_before_api_call(monkeypatch, tmp_pat
     assert not out_state.exists()
 
 
+def test_docs_ai_snapshot_prioritizes_truth_surfaces(monkeypatch, tmp_path):
+    mod = load_docs_ai_module()
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "ABOUT_PAGE_COPY.md").write_text("about\n", encoding="utf-8")
+    (tmp_path / "docs" / "PRODUCT_TRUTHSET.md").write_text("truth\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("readme\n", encoding="utf-8")
+    (tmp_path / "RELEASE_CRITERIA.md").write_text("criteria\n", encoding="utf-8")
+
+    snapshot, _meta = mod.gather_allowlisted_files(candidate_paths=[])
+
+    assert "README.md" in snapshot
+    assert "docs/ABOUT_PAGE_COPY.md" in snapshot
+    assert "docs/PRODUCT_TRUTHSET.md" in snapshot
+    assert "RELEASE_CRITERIA.md" in snapshot
+
+
 def _run_docs_ai_main(mod, tmp_path: Path, monkeypatch, ai_response: str):
     (tmp_path / "docs").mkdir(exist_ok=True)
     (tmp_path / "docs" / "a.md").write_text("alpha\nbeta\n", encoding="utf-8")

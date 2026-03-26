@@ -4,6 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
 ABOUT = ROOT / "docs/ABOUT_PAGE_COPY.md"
 TRUTHSET = ROOT / "docs/PRODUCT_TRUTHSET.md"
+RELEASE_CRITERIA = ROOT / "RELEASE_CRITERIA.md"
 AUDIT = ROOT / "docs/RELEASE_READINESS.md"
 EVIDENCE = ROOT / "docs/RELEASE_EVIDENCE.md"
 MESSAGING = ROOT / "docs/MESSAGING_STATE.md"
@@ -16,6 +17,7 @@ PROD_PHRASE = "production-ready for the documented v1.0 scope"
 
 
 TRUTH_SURFACES = [README, ABOUT, TRUTHSET]
+SYNC_SURFACES = [README, ABOUT, TRUTHSET, RELEASE_CRITERIA]
 
 
 def _text(path: Path) -> str:
@@ -45,6 +47,15 @@ def test_deferred_scope_is_explicit_on_truth_surfaces() -> None:
         )
 
 
+def test_release_criteria_is_in_sync_with_truth_surfaces_stage_and_deferred_scope() -> None:
+    text = _text(RELEASE_CRITERIA)
+    assert PRE_PROD_PHRASE in text, "missing pre-production phrase in RELEASE_CRITERIA.md"
+    assert "OCR / Phase 4" in text, "missing OCR deferred-scope statement in RELEASE_CRITERIA.md"
+    assert "manual seed URL workflow" in text, (
+        "missing manual-seed deferred-scope statement in RELEASE_CRITERIA.md"
+    )
+
+
 def test_forbidden_phrases_not_present() -> None:
     forbidden_phrases = [
         "mostly production-ready",
@@ -53,7 +64,7 @@ def test_forbidden_phrases_not_present() -> None:
         "all mock",
         "no phases implemented",
     ]
-    for path in TRUTH_SURFACES:
+    for path in SYNC_SURFACES:
         lower = _text(path).lower()
         for phrase in forbidden_phrases:
             assert phrase not in lower, f"forbidden phrase '{phrase}' found in {path}"

@@ -9,6 +9,11 @@ Hard constraints:
 - Preserve existing style and structure unless changes clearly require updates.
 - Do not invent behavior not supported by provided data.
 - Never perform broad rewrites for cleanliness.
+- Preserve canonical truth-surface consistency across:
+  - README.md
+  - docs/ABOUT_PAGE_COPY.md
+  - docs/PRODUCT_TRUTHSET.md
+  - RELEASE_CRITERIA.md
 
 File constraints:
 - Allowed paths: contract/schemas/**, docs/**, spec/**

@@ -18,6 +18,12 @@ from typing import Any
 ALLOWED_PREFIXES = ("docs/", "spec/", "contract/schemas/")
 MACHINE_MANAGED_PREFIXES = ("docs/auto/",)
 ALLOWED_ROOT_FILES = {"RELEASE_CRITERIA.md", "README.md", "APPLYING_STREAM1.md"}
+PRIORITY_DOC_FILES = (
+    "README.md",
+    "docs/ABOUT_PAGE_COPY.md",
+    "docs/PRODUCT_TRUTHSET.md",
+    "RELEASE_CRITERIA.md",
+)
 BLACKLIST = {
     "contract/watchdog_contract_v1.0.md",
     "Dockerfile",
@@ -125,6 +131,9 @@ def gather_allowlisted_files(candidate_paths: list[str]) -> tuple[dict[str, str]
     for root_file in sorted(ALLOWED_ROOT_FILES):
         if root_file in all_paths and root_file not in prioritized:
             prioritized.append(root_file)
+    for priority_file in PRIORITY_DOC_FILES:
+        if priority_file in all_paths and priority_file not in prioritized:
+            prioritized.append(priority_file)
     for path in all_paths:
         if path not in prioritized:
             prioritized.append(path)
