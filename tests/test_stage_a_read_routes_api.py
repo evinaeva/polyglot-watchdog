@@ -119,6 +119,7 @@ def test_pulls_happy_path_with_universal_and_decisions(api_env):
     assert payload["missing_universal_sections"] is False
     assert [r["item_id"] for r in payload["rows"]] == ["i1", "universal-header"]
     row = payload["rows"][0]
+    assert "canonical" not in row and "occurrences" not in row
     assert row["decision"] == "MASK_VARIABLE"
     assert row["user_tier"] == "guest"
     assert row["page_id"] == "p1"
