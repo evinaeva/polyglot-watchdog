@@ -2263,3 +2263,45 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c5040893cc832cb14435c63ebbe5e0)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #166 — 2026-03-26T11:53:55Z
+
+- Title: Conservative cleanup: align docs, remove testbench placeholder wording, clarify OCR path
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/166
+- Author: evinaeva
+- Base branch: main
+- Head branch: sng0h9-codex/perform-conservative-legacy-cleanup-with-4-commits
+- Merge commit: 9d543e731b19366e776317432d03844225ca978a
+- Changed files:
+  - README.md
+  - app/skeleton_server.py
+  - docs/ABOUT_PAGE_COPY.md
+  - docs/PRODUCT_TRUTHSET.md
+  - docs/architecture.md
+  - docs/testbench.md
+  - web/static/docs/about.md
+  - web/static/docs/quickstart.md
+  - web/static/locales/en.json
+  - web/static/locales/ru.json
+  - web/templates/testbench.html
+- Description:
+  ### Motivation
+  - Bring canonical documentation into precise alignment with the repository's actual late-prototype / pre-production status and remove confusing placeholder-only wording. 
+  - Remove confirmed placeholder language and ambiguous legacy references that cause reviewer/operator confusion while preserving all live wiring and implementation code. 
+  
+  ### Description
+  - Updated canonical truth surfaces (`README.md`, `docs/PRODUCT_TRUTHSET.md`, `docs/ABOUT_PAGE_COPY.md`) and the top-level server docstring in `app/skeleton_server.py` to consistently describe the project as "late prototype / pre-production / operator-console-in-progress." 
+  - Removed placeholder-style wording from the testbench UI and locale strings (`web/templates/testbench.html`, `web/static/locales/en.json`, `web/static/locales/ru.json`) to state it is a harness for current implemented modules rather than an open “future phases” placeholder. 
+  - Clarified the canonical Phase 4 OCR implementation in `docs/architecture.md` to point to `pipeline/phase4_ocr.py` + `pipeline/phase4_ocr_provider.py` and explicitly removed ambiguity about a parallel `app/ocr.py` app-layer path. 
+  - Reconciled secondary docs and runbook text (`web/static/docs/about.md`, `web/static/docs/quickstart.md`, `docs/testbench.md`) to remove stale mock/placeholder framing and reflect the cleaned repo state; all edits were conservative and no production code was deleted. 
+  - Changes were applied in exactly four commits with the required messages: `docs: align canonical truth surfaces with current implementation status`, `cleanup: remove placeholder-only legacy from testbench`, `cleanup: remove unused parallel legacy OCR layer`, and `docs: reconcile secondary architecture docs and final dead references`. 
+  
+  ### Testing
+  - Ran `pytest -q tests/test_docs_alignment.py` which passed (6 passed). 
+  - Ran `pytest -q tests/test_docs_alignment.py tests/test_docs_autoupdate_scripts.py` which passed (22 passed). 
+  - Attempted to run OCR-focused tests with `PYTHONPATH=. pytest -q tests/test_phase4_ocr_provider.py tests/test_phase4_ocr.py` but collection failed due to missing environment dependencies (`httpx` / `PIL`) in the test runner. 
+  - Attempted `PYTHONPATH=. pytest -q tests/test_check_languages_page.py tests/test_docs_alignment.py` but collection failed due to a missing `jsonschema` dependency in the environment; no repository regressions were introduced by the edits.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c50b0b8b2c832cbe8facb3eebff63e)
+- Notes: Auto-generated from merged PR metadata.
