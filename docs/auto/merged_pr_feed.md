@@ -2172,3 +2172,33 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c4f70777dc832cbbe361bd62716487)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #163 — 2026-03-26T09:44:23Z
+
+- Title: Remove unused legacy app OCR module
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/163
+- Author: evinaeva
+- Base branch: main
+- Head branch: 3s6e87-codex/conduct-targeted-audit-on-app/ocr.py
+- Merge commit: 86a60b37ae6d26dcd62145b058d642fb58197b5f
+- Changed files:
+  - app/ocr.py
+- Description:
+  ### Motivation
+  - Провести целевой аудит и убрать неиспользуемый старый модуль OCR, чтобы удалить мёртвый код и снизить поверхность поддерживаемого кода.
+  - Аудит проверял импорты/вызовы по репо, упоминания в `scripts`/`docs`/workflows/manual runbooks и возможный CLI entry usage.
+  - Нахождение неявных runtime/test/manual зависимостей считалось критерием для сохранения файла; таких зависимостей не обнаружено.
+  
+  ### Description
+  - Удалён файл `app/ocr.py` целиком как неиспользуемый модуль OCR (Google/Azure/OCR.Space реализации и вспомогательные функции).
+  - Выполнены поисковые проверки по коду и документации на предмет ссылок на `app.ocr`, `run_ocr`, `run_ocr_multi`, `OCRResult` и `emit_startup_warnings`, и прямых ссылок не найдено.
+  - Никаких других файлов с изменениями; минимальная docs-корректировка не потребовалась, так как прямых упоминаний удалённого пути не обнаружено.
+  
+  ### Testing
+  - Выполнены repository scans с `rg` для импортов и упоминаний, все заверши́лись без найденных прямых ссылок на `app/ocr.py` или его символы.
+  - Попытка запустить тестовый файл `pytest -q tests/test_phase4_ocr_provider.py` без `PYTHONPATH` упала на импорте пакетов, а с `PYTHONPATH=.` `PYTHONPATH=. pytest -q tests/test_phase4_ocr_provider.py` упала из-за отсутствующей зависимости `httpx` в окружении, поэтому unit-тесты в CI-окружении не были полностью прогнаны локально.
+  - Результат аудита и отсутствие рантайм/тест/ручных зависимостей классифицируют удаление как низкорисковое действие.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c4f7c3472c832c9bf1671245a55b81)
+- Notes: Auto-generated from merged PR metadata.
