@@ -2142,3 +2142,33 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c4f492d050832cba48b2a0c56a6b4d)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #162 — 2026-03-26T09:42:04Z
+
+- Title: Remove future placeholder module from testbench registry
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/162
+- Author: evinaeva
+- Base branch: main
+- Head branch: xpuwk0-codex/remove-moduleconfig-for-phase_future_placeholder
+- Merge commit: 462c0ea350c0d029b843d6242fc4f0301532036d
+- Changed files:
+  - app/testbench.py
+  - web/static/locales/en.json
+  - web/static/locales/ru.json
+- Description:
+  ### Motivation
+  - Remove the reserved "future" placeholder from the internal testbench registry and clean up its UI/localization traces so active phase modules and the testbench framework remain focused on real modules.
+  
+  ### Description
+  - Deleted the `ModuleConfig` entry for `phase_future_placeholder` from `app/testbench.py` so the placeholder is no longer listed in `MODULE_REGISTRY`.
+  - Removed the `testbench.modules.future.title` and `testbench.modules.future.description` i18n keys from `web/static/locales/en.json` and `web/static/locales/ru.json`.
+  - Verified there are no remaining direct references to the removed placeholder in `app/`, `web/`, or `docs/` paths and did not change `get_modules` or `run_module_test` signatures or behavior.
+  
+  ### Testing
+  - Ran `python -m py_compile app/testbench.py` to validate Python syntax, which succeeded.
+  - Ran `python - <<'PY' ... json.load(...) ... PY` to parse `web/static/locales/en.json` and `web/static/locales/ru.json`, which succeeded.
+  - Ran `rg` searches to confirm the placeholder and i18n keys were removed and to confirm `get_modules`/`run_module_test` are present, which returned expected results.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c4f70777dc832cbbe361bd62716487)
+- Notes: Auto-generated from merged PR metadata.
