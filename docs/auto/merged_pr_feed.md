@@ -2500,3 +2500,33 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c533902804832c89fd63e9826f5e6e)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #173 — 2026-03-26T15:13:42Z
+
+- Title: check-languages: honor prepared payload artifacts for LLM readiness and refine enable/disable logic
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/173
+- Author: evinaeva
+- Base branch: main
+- Head branch: m9s2m4-codex/investigate-ui-state-bug-in-check-languages-flow
+- Merge commit: 98b36d50b5c22285ee83c3dd184d72d17edc81b1
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  - Make the check-languages page reflect actual prepared payload artifacts so a run can be marked `prepared_for_llm` when a prepared manifest and LLM input exist and hashes match. 
+  - Prevent incorrectly enabling the LLM run while a capture/job is actively running and improve detection of an ongoing LLM run.
+  
+  ### Description
+  - Introduced page-scoped variables `target_run_domain_for_page`, `prepared_manifest_for_page`, `llm_input_exists_for_page`, `hashes_ok_for_page`, and `llm_running` and populated them from job metadata and artifacts. 
+  - Compute `llm_running` from `workflow_state`, job `stage`, and job `status` so active LLM work is detected more reliably. 
+  - Treat a run as `prepared_for_llm` when a prepared manifest and LLM input artifact exist and source hashes match, and use the prepared-manifest/domain values when building notices and hash checks. 
+  - Centralized and tightened the `llm_enabled` calculation to require `llm_input_exists`, `hashes_ok`, and `not llm_running`, and avoid creating fake artifact paths when a real artifact URI is present.
+  
+  ### Testing
+  - Added unit tests `test_prepared_payload_artifacts_override_stale_preparing_state_and_enable_llm` and `test_payload_artifacts_do_not_override_active_capture_state` in `tests/test_check_languages_page.py` to verify prepared payloads promote state to `prepared_for_llm` and that active capture prevents enabling LLM. 
+  - Ran the test suite for the modified file and the new tests, and they passed locally (all assertions succeeded).
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c54b08e760832c9c4a9923fc98e3cd)
+- Notes: Auto-generated from merged PR metadata.
