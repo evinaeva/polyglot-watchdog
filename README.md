@@ -62,7 +62,7 @@ The following are explicitly **deferred** from blocking v1.0:
 
 ## Operator workflow model
 
-The v1.0 operator workflow is **intentionally multi-page by design**.
+The v1.0 operator workflow is **multi-surface / multi-step (multi-page / multi-tab) by design**.
 
 This means the operator may complete the workflow across multiple dedicated pages or tabs, for example:
 
@@ -100,7 +100,7 @@ Use these statements consistently:
 - "Polyglot Watchdog is a contract-first localization QA pipeline and operator console."
 - "The repository contains real artifact-backed pipeline components and partial operator UI integration."
 - "The project is pre-production and not yet production-ready."
-- "The operator workflow is multi-page by design."
+- "The operator workflow is multi-surface / multi-step (multi-page / multi-tab) by design."
 - "OCR beyond the current narrow approved image-backed handoff scope is deferred from v1.0."
 - "OCR remains non-blocking/additive for v1.0 scope; when OCR handoff exists, Phase 6 may use usable OCR text as canonical comparison text for approved image-backed items and otherwise falls back to normalized DOM text."
 - "Manual seed URL workflow is valid for v1.0."
