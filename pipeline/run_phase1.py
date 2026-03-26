@@ -64,6 +64,40 @@ def _hash_payload(value: object) -> dict[str, str]:
     }
 
 
+def merge_and_dedupe_items(baseline_items: list[dict], recipe_items: list[dict]) -> list[dict]:
+    """Return a flat, deterministic collected_items list with baseline precedence.
+
+    Dedupe is done before writing collected_items.json so /api/pulls can stay flat and
+    avoid duplicate rows when baseline and recipe captures contain the same item_id.
+    """
+    final_by_item_id: dict[str, dict] = {}
+    passthrough_without_id: list[dict] = []
+
+    for row in baseline_items:
+        if not isinstance(row, dict):
+            continue
+        item_id = str(row.get("item_id", "")).strip()
+        if not item_id:
+            passthrough_without_id.append(dict(row))
+            continue
+        if item_id not in final_by_item_id:
+            final_by_item_id[item_id] = dict(row)
+
+    for row in recipe_items:
+        if not isinstance(row, dict):
+            continue
+        item_id = str(row.get("item_id", "")).strip()
+        if not item_id:
+            passthrough_without_id.append(dict(row))
+            continue
+        if item_id not in final_by_item_id:
+            final_by_item_id[item_id] = dict(row)
+
+    merged = list(final_by_item_id.values()) + passthrough_without_id
+    merged.sort(key=lambda item: (str(item.get("item_id", "")), str(item.get("url", "")), str(item.get("state", ""))))
+    return merged
+
+
 def _serialize_recipe(recipe: Recipe) -> dict:
     return {
         "recipe_id": recipe.recipe_id,
@@ -439,7 +473,8 @@ async def main(
     from playwright.async_api import async_playwright
 
     all_page_screenshots: list[dict] = []
-    all_collected_items: list[dict] = []
+    baseline_collected_items: list[dict] = []
+    recipe_collected_items: list[dict] = []
     all_items_by_url: dict[str, list[dict]] = {}
     representative_page_ids: dict[str, str] = {}
     error_records: list[dict] = []
@@ -571,7 +606,10 @@ async def main(
                 rerun_provenance_payload["capture_point_id"] = job.capture_point_id
 
             all_page_screenshots.append(capture_result["page"])
-            all_collected_items.extend(capture_result["elements"])
+            if job.mode == "baseline":
+                baseline_collected_items.extend(capture_result["elements"])
+            else:
+                recipe_collected_items.extend(capture_result["elements"])
             all_items_by_url[url] = capture_result["elements"]
             representative_page_ids[url] = capture_result["page"]["page_id"]
 
@@ -586,7 +624,7 @@ async def main(
 
     # Sort for determinism — Contract §1
     all_page_screenshots.sort(key=lambda r: (r["url"], r["viewport_kind"], r["state"], r["user_tier"] or ""))
-    all_collected_items.sort(key=lambda i: (i["item_id"],))
+    all_collected_items = merge_and_dedupe_items(baseline_collected_items, recipe_collected_items)
 
     # Detect universal sections (EN only) — Contract §5
     created_at = run_context.run_started_at
