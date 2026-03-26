@@ -2443,3 +2443,30 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c52da37048832c918e818de299d9f8)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #171 — 2026-03-26T13:28:52Z
+
+- Title: chore(docs): remove residual app/ocr.py mention from architecture.md
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/171
+- Author: evinaeva
+- Base branch: main
+- Head branch: f82jcz-codex/remove-legacy-app-ocr-module
+- Merge commit: 53c8c5fe1e7850c489562815e17fbbe3bee58792
+- Changed files:
+  - docs/architecture.md
+- Description:
+  ### Motivation
+  - Удалить явный остаточный упоминание устаревшего модуля `app/ocr.py` в канонических архитектурных документах, не затрагивая runtime, скрипты, CI или тестовую логику.
+  
+  ### Description
+  - Обновлён только `docs/architecture.md`: удалена фраза про «no parallel `app/ocr.py` layer», остальное описание Phase 4 и canonical OCR-пути (`pipeline/phase4_ocr.py` + `pipeline/phase4_ocr_provider.py`) сохранено без изменений.
+  - Изменение выполнено в одном коммите и не затрагивает код вне документации; файл изменён: `docs/architecture.md`.
+  
+  ### Testing
+  - Выполнен репо-wide поиск на маркеры через `rg` и подтверждено отсутствие ссылок на `app/ocr.py`/`app.ocr` после правки.
+  - Запущен валидатор диффа документации `python .github/docs_autoupdate/scripts/validate_docs_diff.py --ref HEAD` и он прошёл успешно.
+  - Попытка запустить `pytest` для релевантного теста (`PYTHONPATH=. pytest -q tests/test_phase6_review_pipeline.py`) прервана на этапе сбора из-за отсутствующей локальной зависимости `jsonschema`, что не связано с внесёнными документальными изменениями.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c5317ee084832ca9fd0f48c92d1915)
+- Notes: Auto-generated from merged PR metadata.
