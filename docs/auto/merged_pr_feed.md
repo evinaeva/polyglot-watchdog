@@ -2413,3 +2413,33 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c52ac17cc8832cb044c22c2f9468c2)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #170 — 2026-03-26T13:10:45Z
+
+- Title: final dead-reference sweep and consistency pass after legacy cleanup
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/170
+- Author: evinaeva
+- Base branch: main
+- Head branch: abuybq-codex/perform-final-dead-reference-cleanup
+- Merge commit: fe240a1d48cde321ad894354e0886f1a918aea75
+- Changed files:
+  - docs/RELEASE_EVIDENCE.md
+  - docs/RELEASE_READINESS.md
+- Description:
+  ### Motivation
+  - Finalize the cleanup sequence by removing a stale release-docs claim that incorrectly left Criterion 8 (documentation alignment) flagged as pending. 
+  - Ensure canonical truth-surface docs (`README.md`, `docs/ABOUT_PAGE_COPY.md`, `docs/PRODUCT_TRUTHSET.md`, `RELEASE_CRITERIA.md`) are mutually consistent and supported by existing alignment tests. 
+  
+  ### Description
+  - Marked Criterion 8 (Documentation alignment) as `pass` in `docs/RELEASE_READINESS.md` and updated its evidence references to include `RELEASE_CRITERIA.md` and `tests/test_docs_alignment.py`. 
+  - Updated `docs/RELEASE_EVIDENCE.md` to state that the truth-surface re-audit is complete and narrowed the remaining blockers to Criteria 4 and 7. 
+  - Removed stale blocker wording that claimed a docs re-audit was still pending; edits were limited to the two release-facing docs files. 
+  
+  ### Testing
+  - Ran `pytest -q tests/test_docs_alignment.py tests/test_docs_autoupdate_scripts.py`, and all tests passed (`24 passed`). 
+  - Performed targeted repository searches for legacy/stale references (OCR/legacy terms, scaffold/production wording, hidden-route/single-page claims) and verified no unresolved dead references in the touched surfaces. 
+  - Verified referenced artifacts and helper files exist via simple file checks for `Dockerfile.e2e`, `scripts/run_e2e_happy_path.sh`, and CI workflow files; checks succeeded.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c52da37048832c918e818de299d9f8)
+- Notes: Auto-generated from merged PR metadata.
