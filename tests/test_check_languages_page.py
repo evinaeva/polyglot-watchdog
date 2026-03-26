@@ -1337,6 +1337,86 @@ def test_run_llm_uses_prepared_payload_as_actual_input(monkeypatch):
     assert captured["prepared_llm_payload"]["review_contexts"][0]["language"] == "fr"
 
 
+def test_run_llm_uses_gs_llm_input_artifact_from_prepared_payload(monkeypatch):
+    domain = "https://bongacams.com/"
+    target_run_id = "run-en-check-fr"
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {
+        "source_hashes": {},
+        "en_run_id": "run-en",
+        "target_run_id": target_run_id,
+        "llm_input_artifact": f"gs://test-bucket/{domain}/{target_run_id}/check_languages_llm_input.json",
+    })
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"review_contexts": [{"language": "fr"}]})
+    _write(domain, "run-en", "eligible_dataset.json", [])
+    _write(domain, target_run_id, "eligible_dataset.json", [])
+    _write(domain, "run-en", "collected_items.json", [])
+    _write(domain, target_run_id, "collected_items.json", [])
+    _write(domain, "run-en", "page_screenshots.json", [])
+    _write(domain, target_run_id, "page_screenshots.json", [])
+
+    captured = {}
+    monkeypatch.setenv("PHASE6_REVIEW_PROVIDER", "test-heuristic")
+    monkeypatch.setattr("pipeline.run_phase6.run", lambda **kwargs: captured.update(kwargs))
+    monkeypatch.setattr("app.skeleton_server._require_artifact_exists", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.skeleton_server._upsert_job_status", lambda *args, **kwargs: None)
+
+    from app.skeleton_server import _run_check_languages_llm_async
+
+    _run_check_languages_llm_async("job-llm", domain, "run-en", "fr", target_run_id, "https://fr.bongacams.com/")
+    assert captured["prepared_llm_payload"]["review_contexts"][0]["language"] == "fr"
+
+
+def test_run_llm_rejects_http_style_llm_input_artifact(monkeypatch):
+    domain = "https://bongacams.com/"
+    target_run_id = "run-en-check-fr"
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {
+        "source_hashes": {},
+        "llm_input_artifact": f"{domain}/{target_run_id}/check_languages_llm_input.json",
+    })
+
+    monkeypatch.setenv("PHASE6_REVIEW_PROVIDER", "test-heuristic")
+    monkeypatch.setattr("app.skeleton_server._upsert_job_status", lambda *args, **kwargs: None)
+
+    from app.skeleton_server import _jobs, _run_check_languages_llm_async
+
+    _run_check_languages_llm_async("job-llm-http", domain, "run-en", "fr", target_run_id, "https://fr.bongacams.com/")
+    assert _jobs["job-llm-http"]["status"] == "error"
+    assert "not a valid gs:// URI" in _jobs["job-llm-http"]["error"]
+
+
+def test_prepare_payload_uses_written_gs_uri_for_llm_input_artifact(monkeypatch):
+    domain = "https://bongacams.com/"
+    en_run_id = "run-en"
+    target_run_id = "run-en-check-fr"
+    target_language = "fr"
+    llm_input_uri = f"gs://test-bucket/{domain}/{target_run_id}/check_languages_llm_input.json"
+    prepared_payload_record = {}
+
+    def _fake_write_json_artifact(_domain, _run_id, filename, payload):
+        if filename == "check_languages_llm_input.json":
+            return llm_input_uri
+        if filename == "check_languages_prepared_payload.json":
+            prepared_payload_record["payload"] = payload
+            return f"gs://test-bucket/{domain}/{target_run_id}/check_languages_prepared_payload.json"
+        return f"gs://test-bucket/{domain}/{target_run_id}/{filename}"
+
+    monkeypatch.setattr("app.skeleton_server._replay_scope_from_reference_run", lambda *args, **kwargs: [])
+    monkeypatch.setattr("asyncio.run", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("pipeline.run_phase1.main", lambda *args, **kwargs: None)
+    monkeypatch.setattr("pipeline.run_phase3.run", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.skeleton_server._require_artifact_exists", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.skeleton_server._check_languages_payload_status", lambda *args, **kwargs: {"ready": True, "files": []})
+    monkeypatch.setattr("pipeline.run_phase6.build_prepared_llm_payload", lambda *args, **kwargs: {"review_context_count": 2})
+    monkeypatch.setattr("app.skeleton_server._check_languages_source_hashes", lambda *args, **kwargs: {})
+    monkeypatch.setattr("app.skeleton_server._upsert_job_status", lambda *args, **kwargs: None)
+    monkeypatch.setattr("pipeline.storage.write_json_artifact", _fake_write_json_artifact)
+
+    from app.skeleton_server import _prepare_check_languages_async
+
+    _prepare_check_languages_async("job-prep", domain, en_run_id, target_language, target_run_id, "https://fr.bongacams.com/")
+    assert prepared_payload_record["payload"]["llm_input_artifact"] == llm_input_uri
+
+
 def test_run_llm_is_blocked_when_prepared_payload_is_stale(api_env):
     domain = SUPPORTED_MAIN_DOMAIN
     target_run_id = "run-en-check-fr"

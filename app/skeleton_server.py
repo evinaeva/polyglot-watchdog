@@ -214,6 +214,20 @@ def _parse_http_uri(uri: str) -> str | None:
     return None
 
 
+def _read_json_artifact_from_gs_uri(uri: str):
+    from pipeline.storage import read_json_artifact
+
+    parsed_uri = _parse_gs_uri(uri)
+    if not parsed_uri:
+        raise ValueError("llm_input_artifact is not a valid gs:// URI")
+    _, path = parsed_uri
+    parts = path.rsplit("/", 2)
+    if len(parts) != 3:
+        raise ValueError("llm_input_artifact has invalid artifact path")
+    domain, run_id, filename = parts
+    return read_json_artifact(domain, run_id, filename)
+
+
 def _page_screenshot_view_url(domain: str, run_id: str, page_id: str) -> str:
     query = urlencode({"domain": domain, "run_id": run_id, "page_id": page_id})
     return f"/api/page-screenshot?{query}"
@@ -1968,7 +1982,11 @@ def _run_check_languages_llm_async(job_id: str, domain: str, en_run_id: str, tar
         prepared = _read_json_safe(domain, target_run_id, "check_languages_prepared_payload.json", None)
         if not isinstance(prepared, dict):
             raise ValueError("Prepared payload missing. Run Prepare language check payload first.")
-        llm_input_payload = _read_json_safe(domain, target_run_id, "check_languages_llm_input.json", None)
+        llm_input_artifact = str(prepared.get("llm_input_artifact", "")).strip()
+        if llm_input_artifact:
+            llm_input_payload = _read_json_artifact_from_gs_uri(llm_input_artifact)
+        else:
+            llm_input_payload = _read_json_safe(domain, target_run_id, "check_languages_llm_input.json", None)
         if not isinstance(llm_input_payload, dict):
             raise ValueError("Prepared LLM input payload is missing or invalid. Re-run preparation.")
         expected_hashes = prepared.get("source_hashes") if isinstance(prepared.get("source_hashes"), dict) else {}
