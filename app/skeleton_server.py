@@ -1,9 +1,11 @@
-"""Minimal deterministic skeleton UI server for Polyglot Watchdog.
+"""Deterministic operator UI server for Polyglot Watchdog.
 
-Phase 0 and Phase 1 are wired to real pipeline modules.
-Phase 2 (template_rules) and Phase 3 (eligible_dataset) are wired to real pipeline modules.
-Other phases remain as stubs or mock data.
-AUTH_MODE = "ON"
+The repository is not a blank scaffold: core artifact-backed pipeline paths
+and operator routes are implemented, while release readiness remains
+pre-production and gated by documented criteria.
+
+Some operator-visible flows are still partial and must not be presented as
+production-ready.
 """
 
 from __future__ import annotations
