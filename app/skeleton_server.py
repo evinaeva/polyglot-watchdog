@@ -23,6 +23,7 @@ import secrets
 import sys
 import threading
 import time
+import traceback
 import uuid
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -742,7 +743,118 @@ def _coalesce(*values: object):
     return None
 
 
-def _llm_review_display(latest_job: dict | None, telemetry_payload: object, telemetry_exists: bool) -> dict[str, str]:
+def _stable_json_hash(payload: object) -> str:
+    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _check_languages_source_hashes(domain: str, en_run_id: str, target_run_id: str) -> dict[str, str]:
+    return {
+        "en_eligible_dataset_sha256": _stable_json_hash(_read_json_safe(domain, en_run_id, "eligible_dataset.json", [])),
+        "target_eligible_dataset_sha256": _stable_json_hash(_read_json_safe(domain, target_run_id, "eligible_dataset.json", [])),
+        "en_collected_items_sha256": _stable_json_hash(_read_json_safe(domain, en_run_id, "collected_items.json", [])),
+        "target_collected_items_sha256": _stable_json_hash(_read_json_safe(domain, target_run_id, "collected_items.json", [])),
+        "en_page_screenshots_sha256": _stable_json_hash(_read_json_safe(domain, en_run_id, "page_screenshots.json", [])),
+        "target_page_screenshots_sha256": _stable_json_hash(_read_json_safe(domain, target_run_id, "page_screenshots.json", [])),
+    }
+
+
+def _check_languages_payload_status(domain: str, run_id: str) -> dict:
+    files = ["eligible_dataset.json", "collected_items.json", "page_screenshots.json"]
+    rows: list[dict] = []
+    all_present = True
+    for filename in files:
+        exists = _artifact_exists(domain, run_id, filename)
+        payload = _read_json_safe(domain, run_id, filename, None) if exists else None
+        valid = isinstance(payload, list)
+        stale = isinstance(payload, list) and len(payload) == 0
+        status = "present"
+        if not exists:
+            status = "missing"
+            all_present = False
+        elif not valid:
+            status = "invalid"
+            all_present = False
+        elif stale:
+            status = "stale"
+        rows.append(
+            {
+                "filename": filename,
+                "path": f"{domain}/{run_id}/{filename}",
+                "status": status,
+                "payload": payload if isinstance(payload, list) else payload,
+            }
+        )
+    return {"ready": all_present, "files": rows}
+
+
+def _build_exception_diagnostics(exc: Exception, *, stage: str, substage: str, replay_context: dict | None = None) -> dict:
+    root = exc
+    if isinstance(exc, SystemExit) and exc.__cause__ is not None:
+        cause = exc.__cause__
+        if isinstance(cause, Exception):
+            root = cause
+    diag = {
+        "stage": stage,
+        "substage": substage,
+        "exception_class": root.__class__.__name__,
+        "message": str(root),
+        "traceback": "".join(traceback.format_exception(type(exc), exc, exc.__traceback__)),
+        "failure_timestamp": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    if replay_context:
+        diag["replay_context"] = replay_context
+    return diag
+
+
+def _persist_check_languages_failure_artifacts(domain: str, run_id: str, diagnostics: dict) -> dict:
+    from pipeline.storage import write_json_artifact, write_text_artifact, BUCKET_NAME
+
+    failure_uri = write_json_artifact(domain, run_id, "check_languages_replay_failure.json", diagnostics)
+    traceback_uri = write_text_artifact(domain, run_id, "check_languages_replay_failure.traceback.txt", str(diagnostics.get("traceback", "")))
+    return {
+        "failure_json": failure_uri,
+        "traceback": traceback_uri,
+        "failure_json_path": f"{domain}/{run_id}/check_languages_replay_failure.json",
+        "traceback_path": f"{domain}/{run_id}/check_languages_replay_failure.traceback.txt",
+        "bucket": BUCKET_NAME,
+    }
+
+
+def _replay_unit_diagnostics(exc: Exception, replay_jobs: list[dict], *, target_url: str, en_run_id: str, target_run_id: str, target_language: str) -> dict:
+    message = str(exc)
+    matched_job: dict | None = None
+    for job in replay_jobs:
+        ctx = getattr(job, "context", None)
+        job_url = str(getattr(ctx, "url", "")) if ctx is not None else ""
+        if job_url and job_url in message:
+            matched_job = job
+            break
+    if matched_job is None and replay_jobs:
+        matched_job = replay_jobs[0]
+    ctx = getattr(matched_job, "context", None) if matched_job is not None else None
+    recipe_id = _normalize_optional_string(getattr(matched_job, "recipe_id", None)) if matched_job is not None else None
+    capture_point_id = _normalize_optional_string(getattr(matched_job, "capture_point_id", None)) if matched_job is not None else None
+    unit = {
+        "reference_url": str(getattr(ctx, "url", "")) if ctx is not None else "",
+        "target_url": str(getattr(ctx, "url", "")) if ctx is not None else target_url,
+        "state": str(getattr(ctx, "state", "")) if ctx is not None else "baseline",
+        "recipe_id": recipe_id or "",
+        "capture_point_id": capture_point_id or "",
+        "run_id": en_run_id,
+        "target_run_id": target_run_id,
+        "target_language": target_language,
+        "page_classification": "scripted" if recipe_id else "baseline",
+        "replay_unit_id": f"{str(getattr(ctx, 'url', ''))}|{str(getattr(ctx, 'state', ''))}|{recipe_id or 'baseline'}",
+        "failing_url": str(getattr(ctx, "url", "")) if ctx is not None else "",
+        "screenshot_path": None,
+        "html_dump_path": None,
+        "artifact_capture_note": "No browser page object available at orchestration layer for failed replay unit.",
+    }
+    return unit
+
+
+def _llm_review_display(latest_job: dict | None, telemetry_payload: object, telemetry_exists: bool, workflow_state: str) -> dict[str, str]:
     in_progress = str((latest_job or {}).get("status", "")).strip().lower() in {"running", "queued"} or str((latest_job or {}).get("stage", "")).strip().lower() in {
         "queued",
         "preparing_target_run",
@@ -760,7 +872,9 @@ def _llm_review_display(latest_job: dict | None, telemetry_payload: object, tele
     payload = telemetry_payload if isinstance(telemetry_payload, dict) else None
     malformed = telemetry_exists and payload is None
     if not telemetry_exists:
-        if in_progress:
+        if workflow_state in {"preparing_payload", "failed_before_llm", "prepared_for_llm"}:
+            state = "LLM stage not started"
+        elif in_progress:
             state = "LLM review not reached yet"
         elif completed:
             state = "LLM telemetry missing"
@@ -1701,7 +1815,7 @@ def _run_phase6_async(job_id: str, domain: str, run_id: str, en_run_id: str) -> 
 
 
 
-def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_language: str, target_run_id: str, target_url: str) -> None:
+def _prepare_check_languages_async(job_id: str, domain: str, en_run_id: str, target_language: str, target_run_id: str, target_url: str) -> None:
     _jobs[job_id] = {
         "status": "running",
         "phase": "check_languages",
@@ -1713,14 +1827,14 @@ def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_
     }
     from pipeline.run_phase1 import main as phase1_main
     from pipeline.run_phase3 import run as phase3_run
-    from pipeline.run_phase6 import run as phase6_run
 
     try:
         _upsert_job_status(domain, target_run_id, {
             "job_id": job_id,
             "status": "running",
             "type": "check_languages",
-            "stage": "preparing_target_run",
+            "stage": "preparing_payload",
+            "workflow_state": "preparing_payload",
             "en_run_id": en_run_id,
             "target_language": target_language,
             "target_url": target_url,
@@ -1734,6 +1848,7 @@ def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_
             "status": "failed",
             "type": "check_languages",
             "stage": "preparing_target_run_failed",
+            "workflow_state": "failed_before_llm",
             "en_run_id": en_run_id,
             "target_language": target_language,
             "target_url": target_url,
@@ -1747,16 +1862,27 @@ def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_
             "status": "running",
             "type": "check_languages",
             "stage": "running_target_capture",
+            "workflow_state": "preparing_payload",
             "en_run_id": en_run_id,
             "target_language": target_language,
             "target_url": target_url,
             "contexts": len(replay_jobs),
         })
-        asyncio.run(phase1_main(domain, target_run_id, target_language, "desktop", "baseline", None, jobs_override=replay_jobs))
+        asyncio.run(phase1_main(domain, target_run_id, target_language, "desktop", "baseline", None, jobs_override=replay_jobs, continue_on_error=True))
         _require_artifact_exists(domain, target_run_id, "page_screenshots.json")
         _require_artifact_exists(domain, target_run_id, "collected_items.json")
-    except SystemExit as exc:
-        error = f"Phase 1 exited via SystemExit({exc.code})"
+    except Exception as exc:
+        replay_context = _replay_unit_diagnostics(
+            exc,
+            replay_jobs,
+            target_url=target_url,
+            en_run_id=en_run_id,
+            target_run_id=target_run_id,
+            target_language=target_language,
+        )
+        diagnostics = _build_exception_diagnostics(exc, stage="running_target_capture_failed", substage="phase1_replay", replay_context=replay_context)
+        artifact_refs = _persist_check_languages_failure_artifacts(domain, target_run_id, diagnostics)
+        error = f"{diagnostics['exception_class']}: {diagnostics['message']}"
         _jobs[job_id]["status"] = "error"
         _jobs[job_id]["error"] = error
         _upsert_job_status(domain, target_run_id, {
@@ -1764,24 +1890,13 @@ def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_
             "status": "failed",
             "type": "check_languages",
             "stage": "running_target_capture_failed",
+            "workflow_state": "failed_before_llm",
             "en_run_id": en_run_id,
             "target_language": target_language,
             "target_url": target_url,
             "error": error,
-        })
-        return
-    except Exception as exc:
-        _jobs[job_id]["status"] = "error"
-        _jobs[job_id]["error"] = str(exc)
-        _upsert_job_status(domain, target_run_id, {
-            "job_id": job_id,
-            "status": "failed",
-            "type": "check_languages",
-            "stage": "running_target_capture_failed",
-            "en_run_id": en_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-            "error": str(exc),
+            "error_details": diagnostics,
+            "failure_artifacts": artifact_refs,
         })
         return
 
@@ -1790,24 +1905,41 @@ def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_
             "job_id": job_id,
             "status": "running",
             "type": "check_languages",
-            "stage": "running_comparison",
+            "stage": "assembling_payload",
+            "workflow_state": "preparing_payload",
             "en_run_id": en_run_id,
             "target_language": target_language,
             "target_url": target_url,
         })
         phase3_run(domain=domain, run_id=target_run_id)
         _require_artifact_exists(domain, target_run_id, "eligible_dataset.json")
-        review_mode = os.environ.get("PHASE6_REVIEW_PROVIDER", "").strip()
-        if not review_mode:
-            raise ValueError("PHASE6_REVIEW_PROVIDER is required for check-languages Phase 6 execution")
-        phase6_run(domain=domain, en_run_id=en_run_id, target_run_id=target_run_id, review_mode=review_mode)
-        _require_artifact_exists(domain, target_run_id, "issues.json")
+        payload_status = _check_languages_payload_status(domain, target_run_id)
+        if not payload_status.get("ready"):
+            raise ValueError("Prepared payload is incomplete or invalid")
+        from pipeline.storage import write_json_artifact
+        from pipeline.run_phase6 import build_prepared_llm_payload
+
+        llm_input_payload = build_prepared_llm_payload(domain, en_run_id, target_run_id)
+        source_hashes = _check_languages_source_hashes(domain, en_run_id, target_run_id)
+        write_json_artifact(domain, target_run_id, "check_languages_llm_input.json", llm_input_payload)
+        write_json_artifact(domain, target_run_id, "check_languages_prepared_payload.json", {
+            "en_run_id": en_run_id,
+            "target_run_id": target_run_id,
+            "target_language": target_language,
+            "target_url": target_url,
+            "prepared_at": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "payload_files": payload_status.get("files", []),
+            "source_hashes": source_hashes,
+            "llm_input_artifact": f"{domain}/{target_run_id}/check_languages_llm_input.json",
+            "llm_input_count": int(llm_input_payload.get("review_context_count", 0)),
+        })
         _jobs[job_id]["status"] = "done"
         _upsert_job_status(domain, target_run_id, {
             "job_id": job_id,
             "status": "succeeded",
             "type": "check_languages",
-            "stage": "completed",
+            "stage": "prepared_for_llm",
+            "workflow_state": "prepared_for_llm",
             "en_run_id": en_run_id,
             "target_language": target_language,
             "target_url": target_url,
@@ -1819,12 +1951,82 @@ def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_
             "job_id": job_id,
             "status": "failed",
             "type": "check_languages",
-            "stage": "running_comparison_failed",
+            "stage": "preparing_payload_failed",
+            "workflow_state": "failed_before_llm",
             "en_run_id": en_run_id,
             "target_language": target_language,
             "target_url": target_url,
             "error": str(exc),
         })
+
+
+def _run_check_languages_llm_async(job_id: str, domain: str, en_run_id: str, target_language: str, target_run_id: str, target_url: str) -> None:
+    from pipeline.run_phase6 import run as phase6_run
+
+    _jobs[job_id] = {"status": "running", "phase": "check_languages_llm", "domain": domain, "run_id": target_run_id}
+    try:
+        prepared = _read_json_safe(domain, target_run_id, "check_languages_prepared_payload.json", None)
+        if not isinstance(prepared, dict):
+            raise ValueError("Prepared payload missing. Run Prepare language check payload first.")
+        llm_input_payload = _read_json_safe(domain, target_run_id, "check_languages_llm_input.json", None)
+        if not isinstance(llm_input_payload, dict):
+            raise ValueError("Prepared LLM input payload is missing or invalid. Re-run preparation.")
+        expected_hashes = prepared.get("source_hashes") if isinstance(prepared.get("source_hashes"), dict) else {}
+        actual_hashes = _check_languages_source_hashes(domain, en_run_id, target_run_id)
+        if expected_hashes and expected_hashes != actual_hashes:
+            raise ValueError("Prepared payload is stale: source artifacts changed. Re-run preparation.")
+        _upsert_job_status(domain, target_run_id, {
+            "job_id": job_id,
+            "status": "running",
+            "type": "check_languages",
+            "stage": "running_llm_review",
+            "workflow_state": "running_llm_review",
+            "en_run_id": en_run_id,
+            "target_language": target_language,
+            "target_url": target_url,
+        })
+        review_mode = os.environ.get("PHASE6_REVIEW_PROVIDER", "").strip()
+        if not review_mode:
+            raise ValueError("PHASE6_REVIEW_PROVIDER is required for check-languages Phase 6 execution")
+        phase6_run(domain=domain, en_run_id=en_run_id, target_run_id=target_run_id, review_mode=review_mode, prepared_llm_payload=llm_input_payload)
+        _require_artifact_exists(domain, target_run_id, "issues.json")
+        _jobs[job_id]["status"] = "done"
+        _upsert_job_status(domain, target_run_id, {
+            "job_id": job_id,
+            "status": "succeeded",
+            "type": "check_languages",
+            "stage": "completed",
+            "workflow_state": "completed",
+            "en_run_id": en_run_id,
+            "target_language": target_language,
+            "target_url": target_url,
+        })
+    except Exception as exc:
+        _jobs[job_id]["status"] = "error"
+        _jobs[job_id]["error"] = str(exc)
+        _upsert_job_status(domain, target_run_id, {
+            "job_id": job_id,
+            "status": "failed",
+            "type": "check_languages",
+            "stage": "running_llm_review_failed",
+            "workflow_state": "failed_during_llm",
+            "en_run_id": en_run_id,
+            "target_language": target_language,
+            "target_url": target_url,
+            "error": str(exc),
+        })
+
+
+def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_language: str, target_run_id: str, target_url: str) -> None:
+    """Backward-compatible composed flow: prepare payload, then run LLM review."""
+    _prepare_check_languages_async(job_id, domain, en_run_id, target_language, target_run_id, target_url)
+    latest = _latest_check_languages_job(domain, target_run_id)
+    if not isinstance(latest, dict):
+        return
+    if str(latest.get("workflow_state", "")).strip().lower() != "prepared_for_llm":
+        return
+    llm_job_id = f"{job_id}-llm"
+    _run_check_languages_llm_async(llm_job_id, domain, en_run_id, target_language, target_run_id, target_url)
 
 def _workflow_section_status(*, has_artifact: bool, count: int | None = None, pending_on: bool = False) -> str:
     if has_artifact:
@@ -3408,6 +3610,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _start_check_languages(self, payload: dict[str, str]) -> None:
+        action = str(payload.get("action", "prepare_payload")).strip() or "prepare_payload"
         domain = _resolve_check_languages_domain(payload)
         en_run_id = str(payload.get("en_run_id", "")).strip()
         target_language = _normalize_target_language(str(payload.get("target_language", "")))
@@ -3465,25 +3668,59 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             self._redirect_check_languages(existing_payload, message="Language check is already in progress for this selection.", level="warning")
             return
 
-        target_run_id = _generate_target_run_id(run_domain, en_run_id, target_language)
-        job_id = f"check-languages-{target_run_id}-{int(time.time())}"
-        _upsert_job_status(run_domain, target_run_id, {
-            "job_id": job_id,
-            "status": "queued",
-            "type": "check_languages",
-            "stage": "queued",
-            "en_run_id": en_run_id,
-            "target_language": target_language,
-            "target_url": generated_target_url,
-        })
-        t = threading.Thread(target=_run_check_languages_async, args=(job_id, run_domain, en_run_id, target_language, target_run_id, generated_target_url), daemon=True)
-        t.start()
+        requested_target_run_id = str(payload.get("target_run_id", "")).strip()
+        if requested_target_run_id:
+            try:
+                target_run_id = _validate_run_id(requested_target_run_id)
+            except ValueError as exc:
+                self._redirect_check_languages(payload, message=str(exc), level="error")
+                return
+        else:
+            target_run_id = _generate_target_run_id(run_domain, en_run_id, target_language)
+        if action == "run_llm_review":
+            prepared = _read_json_safe(run_domain, target_run_id, "check_languages_prepared_payload.json", None)
+            if not isinstance(prepared, dict):
+                self._redirect_check_languages(payload, message="Prepared payload is missing or invalid. Run preparation first.", level="error")
+                return
+            expected_hashes = prepared.get("source_hashes") if isinstance(prepared.get("source_hashes"), dict) else {}
+            if expected_hashes and expected_hashes != _check_languages_source_hashes(run_domain, en_run_id, target_run_id):
+                self._redirect_check_languages(payload, message="Prepared payload is stale. Re-run preparation before LLM review.", level="error")
+                return
+            job_id = f"check-languages-llm-{target_run_id}-{int(time.time())}"
+            _upsert_job_status(run_domain, target_run_id, {
+                "job_id": job_id,
+                "status": "queued",
+                "type": "check_languages",
+                "stage": "queued_llm_review",
+                "workflow_state": "prepared_for_llm",
+                "en_run_id": en_run_id,
+                "target_language": target_language,
+                "target_url": generated_target_url,
+            })
+            t = threading.Thread(target=_run_check_languages_llm_async, args=(job_id, run_domain, en_run_id, target_language, target_run_id, generated_target_url), daemon=True)
+            t.start()
+            ok_message = "LLM review started from prepared payload."
+        else:
+            job_id = f"check-languages-prepare-{target_run_id}-{int(time.time())}"
+            _upsert_job_status(run_domain, target_run_id, {
+                "job_id": job_id,
+                "status": "queued",
+                "type": "check_languages",
+                "stage": "queued_preparation",
+                "workflow_state": "idle",
+                "en_run_id": en_run_id,
+                "target_language": target_language,
+                "target_url": generated_target_url,
+            })
+            t = threading.Thread(target=_prepare_check_languages_async, args=(job_id, run_domain, en_run_id, target_language, target_run_id, generated_target_url), daemon=True)
+            t.start()
+            ok_message = "Language check payload preparation started."
 
         redirect_payload = dict(payload)
         redirect_payload["selected_domain"] = domain
         redirect_payload["target_run_id"] = target_run_id
         redirect_payload["generated_target_url"] = generated_target_url
-        self._redirect_check_languages(redirect_payload, message="Language check started.", level="ok")
+        self._redirect_check_languages(redirect_payload, message=ok_message, level="ok")
 
     def _serve_check_languages_page(self, query: dict[str, list[str]]) -> None:
         domain = _normalize_check_languages_domain(str(query.get("selected_domain", [""])[0]) or str(query.get("domain", [""])[0]))
@@ -3505,6 +3742,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         issues_missing_after_completion = False
         latest_job = None
         llm_review_block = "<p>LLM telemetry is not available for this selection yet.</p>"
+        payload_preview_block = "<p>Payload not prepared yet.</p>"
         page_state = "input_incomplete"
         en_readiness = {"required": [], "missing": [], "read_error": "", "ready": False}
 
@@ -3563,7 +3801,22 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             issues_exists = _artifact_exists(target_run_domain, target_run_id, "issues.json")
             llm_stats_exists = _artifact_exists(target_run_domain, target_run_id, "llm_review_stats.json")
             llm_stats_payload = _read_json_safe(target_run_domain, target_run_id, "llm_review_stats.json", None) if llm_stats_exists else None
-            llm_display = _llm_review_display(latest_job, llm_stats_payload, llm_stats_exists)
+            workflow_state = str((latest_job or {}).get("workflow_state", "")).strip().lower()
+            if not workflow_state:
+                stage_state_map = {
+                    "queued_preparation": "idle",
+                    "preparing_target_run": "preparing_payload",
+                    "running_target_capture": "preparing_payload",
+                    "assembling_payload": "preparing_payload",
+                    "prepared_for_llm": "prepared_for_llm",
+                    "running_llm_review": "running_llm_review",
+                    "completed": "completed",
+                    "running_target_capture_failed": "failed_before_llm",
+                    "preparing_payload_failed": "failed_before_llm",
+                    "running_llm_review_failed": "failed_during_llm",
+                }
+                workflow_state = stage_state_map.get(str((latest_job or {}).get("stage", "")).strip().lower(), "")
+            llm_display = _llm_review_display(latest_job, llm_stats_payload, llm_stats_exists, workflow_state or page_state)
             warning_html = f'<p class="warning">{_h(llm_display["warning"])}</p>' if llm_display["warning"] else ""
             llm_review_block = (
                 f"<p>{_h(llm_display['process_summary'])}</p>"
@@ -3594,8 +3847,10 @@ class SkeletonHandler(BaseHTTPRequestHandler):
 
             latest_status = str((latest_job or {}).get("status", "")).strip().lower()
             stage = str((latest_job or {}).get("stage", "")).strip().lower()
-            if latest_status in {"failed", "error"}:
-                page_state = "failed"
+            if workflow_state:
+                page_state = workflow_state
+            elif latest_status in {"failed", "error"}:
+                page_state = "failed_before_llm"
             elif latest_status in {"queued"} or stage == "queued":
                 page_state = "queued"
             elif stage == "preparing_target_run":
@@ -3611,6 +3866,36 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 issues_missing_after_completion = True
             else:
                 page_state = "ready_to_start"
+
+            prepared_manifest = _read_json_safe(target_run_domain, target_run_id, "check_languages_prepared_payload.json", None)
+            llm_input_payload = _read_json_safe(target_run_domain, target_run_id, "check_languages_llm_input.json", None)
+            source_hashes = prepared_manifest.get("source_hashes") if isinstance(prepared_manifest, dict) and isinstance(prepared_manifest.get("source_hashes"), dict) else {}
+            stale = bool(source_hashes and source_hashes != _check_languages_source_hashes(target_run_domain, selected_en_run_id, target_run_id))
+            llm_input_status = "missing"
+            llm_preview = "—"
+            if isinstance(llm_input_payload, dict):
+                llm_input_status = "stale" if stale else "valid"
+                preview_payload = {
+                    "target_language": llm_input_payload.get("target_language"),
+                    "review_context_count": llm_input_payload.get("review_context_count"),
+                    "blocked_pages_count": len(llm_input_payload.get("blocked_pages", [])) if isinstance(llm_input_payload.get("blocked_pages"), list) else 0,
+                    "source_hashes": llm_input_payload.get("source_hashes", {}),
+                    "sample_review_context": (llm_input_payload.get("review_contexts") or [None])[0],
+                }
+                llm_preview = json.dumps(preview_payload, ensure_ascii=False, indent=2)
+            payload_preview_block = (
+                "<ul>"
+                f"<li><strong>check_languages_llm_input.json</strong> — status: <strong>{_h(llm_input_status)}</strong><br/>"
+                f"path: <code>{_h(f'{target_run_domain}/{target_run_id}/check_languages_llm_input.json')}</code>"
+                f"<details><summary>Preview</summary><pre>{_h(llm_preview)}</pre></details></li>"
+                "</ul>"
+            )
+            failure_payload = _read_json_safe(target_run_domain, target_run_id, "check_languages_replay_failure.json", None)
+            if isinstance(failure_payload, dict):
+                payload_preview_block += (
+                    "<p class=\"error\">Preparation failure:</p>"
+                    f"<pre>{_h(json.dumps(failure_payload, ensure_ascii=False, indent=2))}</pre>"
+                )
         elif selected_en_run_id and target_language:
             page_state = "ready_to_start"
 
@@ -3654,14 +3939,23 @@ class SkeletonHandler(BaseHTTPRequestHandler):
 
         latest_job_block = "<p>No composed language-check job has been started yet.</p>"
         if isinstance(latest_job, dict):
+            details_block = ""
+            if isinstance(latest_job.get("error_details"), dict):
+                details_block = (
+                    "<details><summary>Failure diagnostics</summary>"
+                    f"<pre>{_h(json.dumps(latest_job.get('error_details'), ensure_ascii=False, indent=2))}</pre>"
+                    "</details>"
+                )
             latest_job_block = (
                 f"<p>Latest job: {_h(latest_job.get('job_id', ''))}</p>"
                 f"<p>Status: <strong>{_h(latest_job.get('status', ''))}</strong></p>"
                 f"<p>Stage: <strong>{_h(latest_job.get('stage', ''))}</strong></p>"
+                f"<p>Workflow state: <strong>{_h(latest_job.get('workflow_state', page_state))}</strong></p>"
                 f"<p>English run: {_h(latest_job.get('en_run_id', ''))}</p>"
                 f"<p>Target language: {_h(latest_job.get('target_language', ''))}</p>"
                 f"<p>Target URL used: {_h(latest_job.get('target_url', generated_target_url))}</p>"
                 f"<p>Error: {_h(latest_job.get('error', '')) or '—'}</p>"
+                f"{details_block}"
             )
 
         run_query = urlencode({"domain": domain, "run_id": target_run_id}) if domain and target_run_id else ""
@@ -3672,11 +3966,25 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         if message:
             css = "ok" if level == "ok" else "warning" if level == "warning" else "error"
             notices.append(f'<li class="{css}">{_h(message)}</li>')
+        if target_run_id:
+            prepared_manifest_notice = _read_json_safe(domain, target_run_id, "check_languages_prepared_payload.json", None)
+            if isinstance(prepared_manifest_notice, dict):
+                expected_notice = prepared_manifest_notice.get("source_hashes") if isinstance(prepared_manifest_notice.get("source_hashes"), dict) else {}
+                if expected_notice and selected_en_run_id and expected_notice != _check_languages_source_hashes(domain, selected_en_run_id, target_run_id):
+                    notices.append('<li class="warning">Prepared payload is stale and LLM review is disabled. Re-run preparation.</li>')
         notices.extend([f'<li class="error">{_h(err)}</li>' for err in errors])
         notices_html = f"<ul>{''.join(notices)}</ul>" if notices else "<p>—</p>"
 
-        start_enabled = bool(domain and selected_en_run_id and target_language and not errors and str((latest_job or {}).get("status", "")).lower() not in {"running", "queued"})
-        disabled_attr = "" if start_enabled else ' disabled="disabled"'
+        prepare_enabled = bool(domain and selected_en_run_id and target_language and not errors and str((latest_job or {}).get("status", "")).lower() not in {"running", "queued"})
+        prepare_disabled_attr = "" if prepare_enabled else ' disabled="disabled"'
+        prepared_manifest = _read_json_safe(domain, target_run_id, "check_languages_prepared_payload.json", None) if target_run_id else None
+        llm_input_exists = bool(target_run_id and _artifact_exists(domain, target_run_id, "check_languages_llm_input.json"))
+        hashes_ok = False
+        if isinstance(prepared_manifest, dict):
+            expected = prepared_manifest.get("source_hashes") if isinstance(prepared_manifest.get("source_hashes"), dict) else {}
+            hashes_ok = (not expected) or expected == _check_languages_source_hashes(domain, selected_en_run_id, target_run_id)
+        llm_enabled = prepare_enabled and llm_input_exists and hashes_ok and page_state not in {"preparing_payload", "running_llm_review"}
+        llm_disabled_attr = "" if llm_enabled else ' disabled="disabled"'
 
         self._serve_template(
             "check-languages.html",
@@ -3707,7 +4015,9 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 "{{llm_review}}": llm_review_block,
                 "{{issues_link}}": _h(issues_link),
                 "{{issues_api_link}}": _h(issues_api_link),
-                "{{start_disabled}}": disabled_attr,
+                "{{prepare_disabled}}": prepare_disabled_attr,
+                "{{run_llm_disabled}}": llm_disabled_attr,
+                "{{payload_preview}}": payload_preview_block,
             },
             extra_set_cookies=[self._build_cookie_header(CSRF_COOKIE, csrf_token, max_age=SESSION_MAX_AGE_SECONDS, http_only=False)],
         )
