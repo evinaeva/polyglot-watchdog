@@ -2470,3 +2470,33 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c5317ee084832ca9fd0f48c92d1915)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #172 — 2026-03-26T13:46:46Z
+
+- Title: Safely persist replay failure artifacts and mark capture failures as terminal 'failed'
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/172
+- Author: evinaeva
+- Base branch: main
+- Head branch: lfiqhi-codex/fix-check-languages-target-capture-failure-handling
+- Merge commit: b094daf80fd3f6002e39b7a495e5d5cd4dabebb4
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  - Ensure that failures writing replay-failure artifacts do not raise secondary exceptions that obscure the original capture failure.
+  - Make target-capture failures consistently recorded as terminal `failed` states (instead of `error`) and surface artifact-write errors in the job record.
+  
+  ### Description
+  - Add `_persist_check_languages_failure_artifacts_safe(domain, run_id, diagnostics)` which wraps `_persist_check_languages_failure_artifacts` and returns `(artifact_refs, artifact_error)` catching any exceptions.
+  - Use the safe persist helper in the `_prepare_check_languages_async` exception handler and include any `failure_artifact_error` in the upserted failure record when artifact writes fail.
+  - Change job in-memory status updates from `"error"` to `"failed"` for target-capture failures and consolidate the `_upsert_job_status` payload into a `failed_record` dict.
+  - Update tests in `tests/test_check_languages_page.py` to expect `failed` status and add tests verifying artifact creation on replay exceptions and behavior when artifact persistence itself raises.
+  
+  ### Testing
+  - Updated and ran the related unit tests in `tests/test_check_languages_page.py` including the two new tests; all tests in that module passed.
+  - Existing tests that expected the terminal state were adjusted to expect `failed` and verified to succeed.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c533902804832c89fd63e9826f5e6e)
+- Notes: Auto-generated from merged PR metadata.
