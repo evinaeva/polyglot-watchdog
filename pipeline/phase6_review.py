@@ -386,7 +386,19 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             )
         )
 
-    spelling_grammar = provider.review_spelling_grammar(en_text, target_text, context.language)
+    llm_kind_code = int(context.evidence_base.get("llm_kind_code", 1) or 1)
+    llm_context_code = int(context.evidence_base.get("llm_context_code", 3) or 3)
+    llm_masked_flag = int(context.evidence_base.get("llm_masked_flag", 0) or 0)
+    llm_low_pairing_confidence_flag = int(context.evidence_base.get("llm_low_pairing_confidence_flag", 0) or 0)
+    spelling_grammar = provider.review_spelling_grammar(
+        en_text,
+        target_text,
+        context.language,
+        kind_code=llm_kind_code,
+        context_code=llm_context_code,
+        masked_flag=llm_masked_flag,
+        low_pairing_confidence_flag=llm_low_pairing_confidence_flag,
+    )
     if spelling_grammar.spelling_score >= 0.8:
         signals = with_ocr_signals({"spelling_score": spelling_grammar.spelling_score})
         reason = "Provider suggests potential spelling issue"
@@ -442,7 +454,15 @@ def review_pair(context: ReviewContext, provider: Phase6ReviewProvider) -> list[
             )
         )
 
-    meaning = provider.review_meaning(en_text, target_text, context.language)
+    meaning = provider.review_meaning(
+        en_text,
+        target_text,
+        context.language,
+        kind_code=llm_kind_code,
+        context_code=llm_context_code,
+        masked_flag=llm_masked_flag,
+        low_pairing_confidence_flag=llm_low_pairing_confidence_flag,
+    )
     if meaning.meaning_mismatch_score >= 0.7 and not (en_text == target_text) and not (ocr_quality and ocr_quality["suppress_meaning_claims"]):
         signals = with_ocr_signals({"meaning_mismatch_score": meaning.meaning_mismatch_score})
         reason = "Provider suggests potential meaning drift"

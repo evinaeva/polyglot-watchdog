@@ -65,6 +65,36 @@
       <p>This tool is intended for localization QA analysts, translators, language leads, and product teams who need clear evidence to review multilingual quality.</p>
       <p>It is also useful for engineering teams that want deterministic, repeatable localization checks in release workflows.</p>
     </section>
+
+    <section id="llm-wire-format-dictionary">
+      <h2>LLM Wire Format Dictionary</h2>
+      <p>The app uses a compact JSON wire format only for the LLM request/response path to reduce token usage. Internally and in the UI, values are decoded back into readable labels.</p>
+      <h3>Request format</h3>
+      <p><code>{"l":"&lt;target_language&gt;","i":[[id,en,tg,k,c,m,p]]}</code></p>
+      <ul>
+        <li><strong>id</strong>: numeric item id</li>
+        <li><strong>en</strong>: English source text</li>
+        <li><strong>tg</strong>: target text</li>
+        <li><strong>k</strong>: kind code</li>
+        <li><strong>c</strong>: context code</li>
+        <li><strong>m</strong>: masked flag (0/1)</li>
+        <li><strong>p</strong>: low pairing confidence flag (0/1)</li>
+      </ul>
+      <h3>Response format</h3>
+      <p><code>{"r":[[id,s,g,m,n]]}</code></p>
+      <ul>
+        <li><strong>s</strong>: spelling risk score (0..100)</li>
+        <li><strong>g</strong>: grammar risk score (0..100)</li>
+        <li><strong>m</strong>: meaning mismatch risk score (0..100)</li>
+        <li><strong>n</strong>: primary note code</li>
+      </ul>
+      <h3>Kind codes (k)</h3>
+      <p><code>0=a, 1=p, 2=h1, 3=img, 4=short_text</code></p>
+      <h3>Context codes (c)</h3>
+      <p><code>0=nav, 1=footer, 2=title, 3=body, 4=img_alt, 5=brand, 6=lang_switcher, 7=cta</code></p>
+      <h3>Note codes (n)</h3>
+      <p><code>0=ok, 1=spell, 2=grammar, 3=meaning, 4=untranslated, 5=partial, 6=brand_ok, 7=same_ok, 8=masked_ok, 9=adult_ok, 10=uncertain</code></p>
+    </section>
   </main>
   <script src="/static/i18n.js"></script>
   <script src="/static/nav-active.js"></script>

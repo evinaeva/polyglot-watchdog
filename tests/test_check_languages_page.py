@@ -1455,3 +1455,25 @@ def test_replay_failure_diagnostics_include_specific_replay_unit(monkeypatch):
     assert ctx["capture_point_id"] == "cp-1"
     assert ctx["state"] == "pricing"
     assert ctx["target_url"]
+
+
+def test_about_page_renders_llm_wire_format_dictionary(api_env):
+    status, body, _ = _request("GET", api_env, "/about")
+    assert status == HTTPStatus.OK
+    assert 'id="llm-wire-format-dictionary"' in body
+    assert "LLM Wire Format Dictionary" in body
+    assert '{"l":"&lt;target_language&gt;","i":[[id,en,tg,k,c,m,p]]}' in body
+    assert '{"r":[[id,s,g,m,n]]}' in body
+    assert "4=short_text" in body
+
+
+def test_check_languages_llm_dictionary_link_is_before_status_block(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr")
+    assert status == HTTPStatus.OK
+    assert '<a href="/about#llm-wire-format-dictionary">View LLM wire format dictionary</a>' in body
+    link_pos = body.index('href="/about#llm-wire-format-dictionary"')
+    state_pos = body.index("State:")
+    assert link_pos < state_pos

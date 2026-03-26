@@ -19,6 +19,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -27,13 +28,14 @@ project_root = str(Path(__file__).resolve().parents[1])
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from pipeline.phase6_providers import build_provider
+from pipeline.phase6_providers import LLMReviewProvider, build_provider
 from pipeline.phase6_review import ReviewContext, overlay_blocked_issue, prepare_review_inputs, review_pair
 from pipeline.interactive_capture import CaptureContext, build_capture_context_id
 from pipeline.schema_validator import SchemaValidationError, validate
 from pipeline.storage import BUCKET_NAME, read_json_artifact, write_json_artifact, write_phase_manifest
 
 _IMAGE_TAGS = {"img", "image"}
+_MASK_HINT_RE = re.compile(r"(\*{2,}|%[^%]+%|\[[^\]]+\]|<[^>]+>)")
 
 
 def _stable_json_hash(payload: Any) -> str:
@@ -45,6 +47,59 @@ def _is_image_item(item: dict) -> bool:
     tag = str(item.get("tag", "")).strip().lower()
     element_type = str(item.get("element_type", "")).strip().lower()
     return tag in _IMAGE_TAGS or element_type in _IMAGE_TAGS
+
+
+def _kind_code(en_item: dict, target_item: dict | None, target_text: str) -> int:
+    source = target_item or en_item
+    tag = str(source.get("tag", "")).strip().lower()
+    element_type = str(source.get("element_type", "")).strip().lower()
+    role_hint = str(source.get("role_hint", "")).strip().lower()
+    if _is_image_item(source) or tag == "svg" or element_type == "img":
+        return 3
+    if tag == "h1":
+        return 2
+    if tag == "a" or "link" in role_hint or "button" in role_hint:
+        return 0
+    if len(target_text.strip()) <= 24:
+        return 4
+    return 1
+
+
+def _context_code(en_item: dict, target_item: dict | None, kind: int) -> int:
+    source = target_item or en_item
+    selector = str(source.get("css_selector", "")).strip().lower()
+    role_hint = str(source.get("role_hint", "")).strip().lower()
+    text = str(source.get("text", "")).strip().lower()
+    if kind == 3:
+        return 4
+    if "nav" in selector or "nav" in role_hint:
+        return 0
+    if "footer" in selector or "footer" in role_hint:
+        return 1
+    if str(source.get("tag", "")).strip().lower() == "h1":
+        return 2
+    if "lang" in selector or "language" in role_hint:
+        return 6
+    if "brand" in role_hint:
+        return 5
+    if "cta" in role_hint or "button" in role_hint:
+        return 7
+    if "copyright" in text:
+        return 5
+    return 3
+
+
+def _resolve_masked_flag(target_item: dict | None, evidence_base: dict | None, target_text: str) -> int:
+    for source in (target_item or {}, evidence_base or {}):
+        for key in ("mask_applied", "is_masked", "masked_flag", "masked"):
+            value = source.get(key) if isinstance(source, dict) else None
+            if isinstance(value, bool):
+                return 1 if value else 0
+            if isinstance(value, (int, float)):
+                return 1 if int(value) else 0
+            if isinstance(value, str) and value.strip().lower() in {"0", "1", "true", "false"}:
+                return 1 if value.strip().lower() in {"1", "true"} else 0
+    return 1 if _MASK_HINT_RE.search(target_text or "") else 0
 
 
 def _load_phase4_ocr_by_item(domain: str, run_id: str) -> dict[str, dict]:
@@ -446,15 +501,36 @@ def run(
         }
     provider = build_provider(mode=resolved_review_mode)
     if hasattr(provider, "prefetch_reviews"):
-        prefetch_pairs = []
+        prefetch_pairs: list[tuple[str, str]] = []
+        prefetch_rows: list[dict[str, Any]] = []
         for row in review_context_rows:
             en_item = row.get("en_item") if isinstance(row, dict) else None
             target_item = row.get("target_item") if isinstance(row, dict) else None
+            evidence_base = row.get("evidence_base") if isinstance(row, dict) else {}
             if not isinstance(en_item, dict) or not isinstance(target_item, dict):
                 continue
             prepared = prepare_review_inputs(en_item, target_item)
+            kind = _kind_code(en_item, target_item, prepared.target_text)
+            context = _context_code(en_item, target_item, kind)
+            low_pairing_confidence = 1 if float((evidence_base or {}).get("pairing_confidence", 1.0) or 0.0) < 0.5 else 0
+            masked_flag = _resolve_masked_flag(target_item, evidence_base, prepared.target_text)
+            if isinstance(evidence_base, dict):
+                evidence_base["llm_kind_code"] = kind
+                evidence_base["llm_context_code"] = context
+                evidence_base["llm_masked_flag"] = masked_flag
+                evidence_base["llm_low_pairing_confidence_flag"] = low_pairing_confidence
             prefetch_pairs.append((prepared.en_text, prepared.target_text))
-        provider.prefetch_reviews(prefetch_pairs, target_language)
+            prefetch_rows.append(
+                {
+                    "text_en": prepared.en_text,
+                    "text_target": prepared.target_text,
+                    "kind_code": kind,
+                    "context_code": context,
+                    "masked_flag": masked_flag,
+                    "low_pairing_confidence_flag": low_pairing_confidence,
+                }
+            )
+        provider.prefetch_reviews(prefetch_rows if isinstance(provider, LLMReviewProvider) else prefetch_pairs, target_language)
 
     issues: list[dict] = []
     for row in review_context_rows:

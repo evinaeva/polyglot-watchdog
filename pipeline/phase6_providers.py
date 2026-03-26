@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import warnings
 from math import ceil
 from dataclasses import dataclass, field
@@ -81,10 +82,30 @@ class _PairReviewResult:
 
 
 class Phase6ReviewProvider(Protocol):
-    def review_spelling_grammar(self, text_en: str, text_target: str, language: str) -> SpellingGrammarSignals:
+    def review_spelling_grammar(
+        self,
+        text_en: str,
+        text_target: str,
+        language: str,
+        *,
+        kind_code: int = 1,
+        context_code: int = 3,
+        masked_flag: int = 0,
+        low_pairing_confidence_flag: int = 0,
+    ) -> SpellingGrammarSignals:
         ...
 
-    def review_meaning(self, text_en: str, text_target: str, language: str) -> MeaningSignals:
+    def review_meaning(
+        self,
+        text_en: str,
+        text_target: str,
+        language: str,
+        *,
+        kind_code: int = 1,
+        context_code: int = 3,
+        masked_flag: int = 0,
+        low_pairing_confidence_flag: int = 0,
+    ) -> MeaningSignals:
         ...
 
 
@@ -100,7 +121,9 @@ class DeterministicOfflineProvider:
         "fallback_used": False,
     }
 
-    def review_spelling_grammar(self, text_en: str, text_target: str, language: str) -> SpellingGrammarSignals:
+    def review_spelling_grammar(
+        self, text_en: str, text_target: str, language: str, **_: Any
+    ) -> SpellingGrammarSignals:
         target_lc = text_target.lower()
         notes: list[str] = []
 
@@ -122,7 +145,7 @@ class DeterministicOfflineProvider:
             provider_meta=dict(self._PROVIDER_META),
         )
 
-    def review_meaning(self, text_en: str, text_target: str, language: str) -> MeaningSignals:
+    def review_meaning(self, text_en: str, text_target: str, language: str, **_: Any) -> MeaningSignals:
         notes: list[str] = []
         score = 0.0
 
@@ -153,10 +176,12 @@ class DeterministicOfflineProvider:
 class DisabledReviewProvider:
     """Provider that emits no AI-assisted signals."""
 
-    def review_spelling_grammar(self, text_en: str, text_target: str, language: str) -> SpellingGrammarSignals:
+    def review_spelling_grammar(
+        self, text_en: str, text_target: str, language: str, **_: Any
+    ) -> SpellingGrammarSignals:
         return SpellingGrammarSignals(spelling_score=0.0, grammar_score=0.0, notes=["provider_disabled"])
 
-    def review_meaning(self, text_en: str, text_target: str, language: str) -> MeaningSignals:
+    def review_meaning(self, text_en: str, text_target: str, language: str, **_: Any) -> MeaningSignals:
         return MeaningSignals(meaning_mismatch_score=0.0, notes=["provider_disabled"])
 
     def get_llm_review_stats(self) -> dict[str, Any]:
@@ -172,16 +197,32 @@ class DisabledReviewProvider:
 class LLMReviewProvider:
     """JSON-only LLM review provider with deterministic offline fallback."""
 
-    _DEFAULT_SYSTEM_PROMPT = (
-        "You review localization text quality for EN to target translations. "
-        "Assess spelling, grammar, and meaning mismatch risk."
-    )
+    _DEFAULT_SYSTEM_PROMPT_BASE = "You are a concise localization QA reviewer."
     _SYSTEM_PROMPT_CONTRACT_SUFFIX = (
-        " Return ONLY JSON object with key results. results must be an array of objects with keys: "
-        "item_id, spelling_score, grammar_score, meaning_mismatch_score, notes. "
-        "Scores must be numeric from 0 to 1 where higher is higher risk. "
-        "notes must be an array of concise strings."
+        "Localization QA for EN -> target. Domain: legal adult webcam site. Adult terminology alone is not an error. "
+        "Judge linguistic quality and meaning only; no literal translation required; short UI labels may have multiple valid translations. "
+        "Unchanged brand names, URLs, acronyms, and copyright strings can be valid. If m=1 (masked) be conservative. "
+        "If p=1 (low pairing confidence) be conservative unless error is obvious. For k=3 or c=4, judge localized alt text only, not image content. "
+        'Input JSON: {"l":"<target_language>","i":[[id,en,tg,k,c,m,p]]}. '
+        "k codes: 0=a,1=p,2=h1,3=img,4=short_text. c codes: 0=nav,1=footer,2=title,3=body,4=img_alt,5=brand,6=lang_switcher,7=cta. "
+        'Output JSON only: {"r":[[id,s,g,m,n]]}. '
+        "s/g/m are integer 0..100 risk scores. Bands: 0..15 no meaningful issue, 20..45 weak suspicion/minor issue, 50..69 likely issue, 70..100 clear issue. "
+        "n primary note code: 0 ok, 1 spell, 2 grammar, 3 meaning, 4 untranslated, 5 partial, 6 brand_ok, 7 same_ok, 8 masked_ok, 9 adult_ok, 10 uncertain."
     )
+    _NOTE_CODE_TO_LABEL = {
+        0: "ok",
+        1: "spell",
+        2: "grammar",
+        3: "meaning",
+        4: "untranslated",
+        5: "partial",
+        6: "brand_ok",
+        7: "same_ok",
+        8: "masked_ok",
+        9: "adult_ok",
+        10: "uncertain",
+    }
+    _MASK_HINT_RE = re.compile(r"(\*{2,}|%[^%]+%|\[[^\]]+\]|<[^>]+>)")
 
     def __init__(
         self,
@@ -208,7 +249,7 @@ class LLMReviewProvider:
         self._estimated_output_tokens_per_item = max(16, int(estimated_output_tokens_per_item))
         self._fallback = fallback_provider or DeterministicOfflineProvider()
         self._request_fn = request_fn or self._default_request
-        self._pair_reviews: dict[tuple[str, str, str], _PairReviewResult] = {}
+        self._pair_reviews: dict[tuple[str, str, str, int, int, int, int], _PairReviewResult] = {}
         self._batch_stats: list[dict[str, Any]] = []
         self._input_cost_per_1m = self._read_cost_env("PHASE6_REVIEW_INPUT_COST_PER_1M_TOKENS")
         self._output_cost_per_1m = self._read_cost_env("PHASE6_REVIEW_OUTPUT_COST_PER_1M_TOKENS")
@@ -227,22 +268,71 @@ class LLMReviewProvider:
         except (TypeError, ValueError):
             return None
 
-    def prefetch_reviews(self, pairs: list[tuple[str, str]], language: str) -> None:
+    def prefetch_reviews(self, pairs: list[tuple[str, str] | dict[str, Any]], language: str) -> None:
         unresolved_items: list[dict[str, Any]] = []
-        for idx, (text_en, text_target) in enumerate(pairs):
-            cache_key = (text_en, text_target, language)
+        for idx, pair in enumerate(pairs):
+            if isinstance(pair, dict):
+                text_en = str(pair.get("text_en", ""))
+                text_target = str(pair.get("text_target", ""))
+                kind_code = int(pair.get("kind_code", 1))
+                context_code = int(pair.get("context_code", 3))
+                masked_flag = int(pair.get("masked_flag", 1 if self._MASK_HINT_RE.search(text_target) else 0))
+                low_pairing_confidence_flag = int(pair.get("low_pairing_confidence_flag", 0))
+            else:
+                text_en, text_target = pair
+                kind_code = 1
+                context_code = 3
+                masked_flag = 1 if self._MASK_HINT_RE.search(text_target) else 0
+                low_pairing_confidence_flag = 0
+            cache_key = self._pair_cache_key(
+                language=language,
+                text_en=text_en,
+                text_target=text_target,
+                kind_code=kind_code,
+                context_code=context_code,
+                masked_flag=masked_flag,
+                low_pairing_confidence_flag=low_pairing_confidence_flag,
+            )
             if cache_key in self._pair_reviews:
                 continue
             unresolved_items.append(
-                {"item_id": f"item_{idx}", "text_en": text_en, "text_target": text_target, "cache_key": cache_key}
+                {
+                    "item_id": f"item_{idx}",
+                    "wire_id": idx,
+                    "text_en": text_en,
+                    "text_target": text_target,
+                    "kind_code": max(0, min(4, kind_code)),
+                    "context_code": max(0, min(7, context_code)),
+                    "masked_flag": 1 if masked_flag else 0,
+                    "low_pairing_confidence_flag": 1 if low_pairing_confidence_flag else 0,
+                    "cache_key": cache_key,
+                }
             )
         if not unresolved_items:
             return
         for batch in self._split_batches(language=language, items=unresolved_items):
             self._execute_batch(language=language, items=batch)
 
-    def review_spelling_grammar(self, text_en: str, text_target: str, language: str) -> SpellingGrammarSignals:
-        pair_review = self._get_pair_review(text_en=text_en, text_target=text_target, language=language)
+    def review_spelling_grammar(
+        self,
+        text_en: str,
+        text_target: str,
+        language: str,
+        *,
+        kind_code: int = 1,
+        context_code: int = 3,
+        masked_flag: int = 0,
+        low_pairing_confidence_flag: int = 0,
+    ) -> SpellingGrammarSignals:
+        pair_review = self._get_pair_review(
+            text_en=text_en,
+            text_target=text_target,
+            language=language,
+            kind_code=kind_code,
+            context_code=context_code,
+            masked_flag=masked_flag,
+            low_pairing_confidence_flag=low_pairing_confidence_flag,
+        )
 
         return SpellingGrammarSignals(
             spelling_score=pair_review.spelling_score,
@@ -251,8 +341,26 @@ class LLMReviewProvider:
             provider_meta=pair_review.provider_meta,
         )
 
-    def review_meaning(self, text_en: str, text_target: str, language: str) -> MeaningSignals:
-        pair_review = self._get_pair_review(text_en=text_en, text_target=text_target, language=language)
+    def review_meaning(
+        self,
+        text_en: str,
+        text_target: str,
+        language: str,
+        *,
+        kind_code: int = 1,
+        context_code: int = 3,
+        masked_flag: int = 0,
+        low_pairing_confidence_flag: int = 0,
+    ) -> MeaningSignals:
+        pair_review = self._get_pair_review(
+            text_en=text_en,
+            text_target=text_target,
+            language=language,
+            kind_code=kind_code,
+            context_code=context_code,
+            masked_flag=masked_flag,
+            low_pairing_confidence_flag=low_pairing_confidence_flag,
+        )
 
         return MeaningSignals(
             meaning_mismatch_score=pair_review.meaning_mismatch_score,
@@ -260,13 +368,41 @@ class LLMReviewProvider:
             provider_meta=pair_review.provider_meta,
         )
 
-    def _get_pair_review(self, text_en: str, text_target: str, language: str) -> _PairReviewResult:
-        cache_key = (text_en, text_target, language)
+    def _get_pair_review(
+        self,
+        text_en: str,
+        text_target: str,
+        language: str,
+        *,
+        kind_code: int,
+        context_code: int,
+        masked_flag: int,
+        low_pairing_confidence_flag: int,
+    ) -> _PairReviewResult:
+        cache_key = self._pair_cache_key(
+            language=language,
+            text_en=text_en,
+            text_target=text_target,
+            kind_code=kind_code,
+            context_code=context_code,
+            masked_flag=masked_flag,
+            low_pairing_confidence_flag=low_pairing_confidence_flag,
+        )
         cached = self._pair_reviews.get(cache_key)
         if cached is not None:
             return cached
 
-        self.prefetch_reviews([(text_en, text_target)], language)
+        self.prefetch_reviews(
+            [{
+                "text_en": text_en,
+                "text_target": text_target,
+                "kind_code": kind_code,
+                "context_code": context_code,
+                "masked_flag": masked_flag,
+                "low_pairing_confidence_flag": low_pairing_confidence_flag,
+            }],
+            language,
+        )
         return self._pair_reviews.get(cache_key) or self._fallback_result(text_en, text_target, language)
 
     def _execute_batch(self, language: str, items: list[dict[str, Any]]) -> None:
@@ -296,8 +432,9 @@ class LLMReviewProvider:
         self._batch_stats.append(batch_stats)
 
     def _review_batch(self, language: str, items: list[dict[str, Any]], batch_index: int) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
-        estimated_prompt_tokens = self._estimate_prompt_tokens() + sum(self._estimate_item_prompt_tokens(language, item) for item in items)
-        estimated_completion_tokens = len(items) * self._estimated_output_tokens_per_item
+        deduped_rows, _ = self._dedupe_rows(language=language, items=items)
+        estimated_prompt_tokens = self._estimate_prompt_tokens() + sum(self._estimate_item_prompt_tokens(language, item) for item in deduped_rows)
+        estimated_completion_tokens = len(deduped_rows) * self._estimated_output_tokens_per_item
         estimated_total_tokens = estimated_prompt_tokens + estimated_completion_tokens
         batch_stats = {
             "batch_index": batch_index,
@@ -324,20 +461,14 @@ class LLMReviewProvider:
             batch_stats["failure_message"] = "missing_api_key"
             return {}, batch_stats
 
-        user_payload = {
-            "language": language,
-            "items": [
-                {"item_id": item["item_id"], "text_en": item["text_en"], "text_target": item["text_target"]}
-                for item in items
-            ],
-        }
+        user_payload = self._compact_request_payload(language=language, items=items)
         payload = {
             "model": self._model,
             "response_format": {"type": "json_object"},
             "temperature": 0,
             "messages": [
                 {"role": "system", "content": self._system_prompt},
-                {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
+                {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False, separators=(",", ":"))},
             ],
         }
 
@@ -381,32 +512,111 @@ class LLMReviewProvider:
             batch_stats["failure_type"] = "provider"
             batch_stats["failure_message"] = str(exc)
             return {}, batch_stats
-        valid = self._parse_batch_results(parsed, {item["item_id"] for item in items})
+        deduped_rows, fanout = self._dedupe_rows(language=language, items=items)
+        valid_by_wire_id = self._parse_batch_results(parsed, {int(item["wire_id"]) for item in deduped_rows})
+        valid: dict[str, dict[str, Any]] = {}
+        for wire_id, row in valid_by_wire_id.items():
+            for item_id in fanout.get(wire_id, []):
+                valid[item_id] = row
         if not valid:
             batch_stats["status"] = "failed"
             batch_stats["failure_type"] = "parse"
             batch_stats["failure_message"] = "empty_or_invalid_results"
         return valid, batch_stats
 
-    def _parse_batch_results(self, parsed: Any, expected_item_ids: set[str]) -> dict[str, dict[str, Any]]:
+    def _dedupe_rows(self, language: str, items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[int, list[str]]]:
+        deduped: list[dict[str, Any]] = []
+        fanout: dict[int, list[str]] = {}
+        seen: dict[tuple[str, str, str, int, int, int, int], int] = {}
+        for item in items:
+            wire_id = int(item["wire_id"])
+            key = self._pair_cache_key(
+                language=language,
+                text_en=item["text_en"],
+                text_target=item["text_target"],
+                kind_code=item.get("kind_code", 1),
+                context_code=item.get("context_code", 3),
+                masked_flag=item.get("masked_flag", 0),
+                low_pairing_confidence_flag=item.get("low_pairing_confidence_flag", 0),
+            )
+            existing_wire_id = seen.get(key)
+            if existing_wire_id is None:
+                seen[key] = wire_id
+                deduped.append(item)
+                fanout[wire_id] = [str(item["item_id"])]
+            else:
+                fanout.setdefault(existing_wire_id, []).append(str(item["item_id"]))
+        return deduped, fanout
+
+    def _compact_request_payload(self, language: str, items: list[dict[str, Any]]) -> dict[str, Any]:
+        deduped_rows, _ = self._dedupe_rows(language=language, items=items)
+        return {
+            "l": language,
+            "i": [
+                [
+                    int(item["wire_id"]),
+                    item["text_en"],
+                    item["text_target"],
+                    int(item.get("kind_code", 1)),
+                    int(item.get("context_code", 3)),
+                    1 if item.get("masked_flag") else 0,
+                    1 if item.get("low_pairing_confidence_flag") else 0,
+                ]
+                for item in deduped_rows
+            ],
+        }
+
+    @staticmethod
+    def _normalized_text(value: Any) -> str:
+        return " ".join(str(value or "").strip().split()).casefold()
+
+    @classmethod
+    def _pair_cache_key(
+        cls,
+        *,
+        language: str,
+        text_en: Any,
+        text_target: Any,
+        kind_code: Any,
+        context_code: Any,
+        masked_flag: Any,
+        low_pairing_confidence_flag: Any,
+    ) -> tuple[str, str, str, int, int, int, int]:
+        return (
+            str(language or "").strip().casefold(),
+            cls._normalized_text(text_en),
+            cls._normalized_text(text_target),
+            max(0, min(4, int(kind_code or 0))),
+            max(0, min(7, int(context_code or 0))),
+            1 if masked_flag else 0,
+            1 if low_pairing_confidence_flag else 0,
+        )
+
+    def _parse_batch_results(self, parsed: Any, expected_item_ids: set[int]) -> dict[int, dict[str, Any]]:
         if not isinstance(parsed, dict):
             return {}
-        results = parsed.get("results")
+        results = parsed.get("r")
         if not isinstance(results, list):
             return {}
-        valid: dict[str, dict[str, Any]] = {}
+        valid: dict[int, dict[str, Any]] = {}
         for row in results:
-            if not isinstance(row, dict):
+            if not isinstance(row, list) or len(row) != 5:
                 continue
-            item_id = str(row.get("item_id", "")).strip()
-            if not item_id or item_id not in expected_item_ids or item_id in valid:
+            item_id = self._safe_int(row[0])
+            if item_id is None or item_id not in expected_item_ids or item_id in valid:
                 continue
-            required_scores = ("spelling_score", "grammar_score", "meaning_mismatch_score")
-            if not all(key in row for key in required_scores):
+            score_vals = row[1:4]
+            note_code = self._safe_int(row[4])
+            if note_code is None:
                 continue
-            if not all(self._is_numeric(row.get(key)) for key in required_scores):
+            if not all(self._is_numeric(val) for val in score_vals):
                 continue
-            valid[item_id] = row
+            valid[item_id] = {
+                "spelling_score": self._score_from_percent(score_vals[0]),
+                "grammar_score": self._score_from_percent(score_vals[1]),
+                "meaning_mismatch_score": self._score_from_percent(score_vals[2]),
+                "notes": [self._note_label(note_code)],
+            }
         return valid
 
     def _llm_result(self, parsed: dict[str, Any]) -> _PairReviewResult:
@@ -485,10 +695,7 @@ class LLMReviewProvider:
         return self._estimate_item_prompt_tokens(language, item) + self._estimated_output_tokens_per_item
 
     def _estimate_item_prompt_tokens(self, language: str, item: dict[str, Any]) -> int:
-        serialized = json.dumps(
-            {"language": language, "items": [{"item_id": item["item_id"], "text_en": item["text_en"], "text_target": item["text_target"]}]},
-            ensure_ascii=False,
-        )
+        serialized = json.dumps({"l": language, "i": [[0, item["text_en"], item["text_target"], item.get("kind_code", 1), item.get("context_code", 3), item.get("masked_flag", 0), item.get("low_pairing_confidence_flag", 0)]]}, ensure_ascii=False, separators=(",", ":"))
         return self._estimate_tokens(serialized) + 24
 
     @staticmethod
@@ -517,14 +724,15 @@ class LLMReviewProvider:
         return round(value, 8)
 
     def _build_system_prompt(self, custom_prompt: str | None) -> str:
-        base = (custom_prompt or "").strip() or self._DEFAULT_SYSTEM_PROMPT
-        return f"{base}{self._SYSTEM_PROMPT_CONTRACT_SUFFIX}"
+        base = (custom_prompt or "").strip() or self._DEFAULT_SYSTEM_PROMPT_BASE
+        base_clean = base.rstrip()
+        return f"{base_clean} {self._SYSTEM_PROMPT_CONTRACT_SUFFIX}"
 
     @staticmethod
     def _default_request(endpoint: str, api_key: str, timeout_s: float, payload: dict[str, Any]) -> dict[str, Any]:
         req = Request(
             endpoint,
-            data=json.dumps(payload).encode("utf-8"),
+            data=json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
             method="POST",
         )
@@ -546,6 +754,18 @@ class LLMReviewProvider:
             return ["llm_response_no_notes"]
         sanitized = [str(n).strip() for n in notes if str(n).strip()]
         return sanitized[:5] if sanitized else ["llm_response_no_notes"]
+
+    @staticmethod
+    def _score_from_percent(value: Any) -> float:
+        try:
+            numeric = int(round(float(value)))
+        except (TypeError, ValueError):
+            return 0.0
+        return max(0.0, min(1.0, numeric / 100.0))
+
+    @classmethod
+    def _note_label(cls, note_code: int) -> str:
+        return cls._NOTE_CODE_TO_LABEL.get(note_code, "uncertain")
 
     @staticmethod
     def _merge_notes(*note_lists: list[str]) -> list[str]:
