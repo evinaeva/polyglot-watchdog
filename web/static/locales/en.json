@@ -256,8 +256,6 @@
   "testbench.modules.phase5.description": "Deterministic text normalization preserving significant spacing.",
   "testbench.modules.phase6.title": "Phase 6: Localization QA / Issues Detection",
   "testbench.modules.phase6.description": "Compares EN and target artifacts and emits issues.json.",
-  "testbench.modules.future.title": "Future Module Placeholder",
-  "testbench.modules.future.description": "Reserved placeholder for upcoming modules.",
   "testbench.case_options.empty_plain": "NO TEST FILES FOUND. Add suite files (*.suite.json / *.tests.json / suite.json).",
   "testbench.status.error": "ERROR",
   "testbench.case.inline_title": "Inline payload",

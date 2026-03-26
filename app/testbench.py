@@ -140,19 +140,6 @@ MODULE_REGISTRY: list[ModuleConfig] = [
         runner=None,
         validator=_schema_only_validator,
     ),
-    ModuleConfig(
-        module_id="phase_future_placeholder",
-        title="Future Module Placeholder",
-        phase="future",
-        status="not_implemented",
-        description="Reserved placeholder for upcoming modules.",
-        input_artifacts=["TBD"],
-        output_artifacts=["TBD"],
-        schema_refs=[],
-        test_data_path="tests/modules/future",
-        runner=None,
-        validator=None,
-    ),
 ]
 
 

@@ -256,8 +256,6 @@
   "testbench.modules.phase5.description": "Детерминированная нормализация текста с сохранением значимых пробелов.",
   "testbench.modules.phase6.title": "Этап 6: Проверка локализации / Поиск проблем",
   "testbench.modules.phase6.description": "Сравнивает английские и целевые артефакты и формирует issues.json.",
-  "testbench.modules.future.title": "Заглушка для будущего модуля",
-  "testbench.modules.future.description": "Зарезервировано для следующих модулей.",
   "testbench.case_options.empty_plain": "ТЕСТОВЫЕ ФАЙЛЫ НЕ НАЙДЕНЫ. Добавьте файлы набора тестов (*.suite.json / *.tests.json / suite.json).",
   "testbench.status.error": "ОШИБКА",
   "testbench.case.inline_title": "Встроенные данные",
