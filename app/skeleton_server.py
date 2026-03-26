@@ -3255,8 +3255,9 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                         status=HTTPStatus.CONFLICT,
                     )
                     return
-                saved_recipe = upsert_recipe(valid_domain, _compat_recipe_for_storage(recipe))
                 attached = False
+                updated_rows: list[dict] = []
+                attach_changed = False
                 if attach_to_url:
                     normalized_url = normalize_seed_url(raw_url)
                     if not normalized_url:
@@ -3266,12 +3267,22 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                     match = next((row for row in rows if str(row.get("url", "")) == normalized_url), None)
                     if match is None:
                         raise ValueError("url not found in seed_urls")
-                    recipe_ids = sorted({str(item).strip() for item in match.get("recipe_ids", []) if str(item).strip()} | {recipe_id})
-                    merged_rows = [dict(row) for row in rows]
-                    for row in merged_rows:
+                    current_ids = match.get("recipe_ids", [])
+                    normalized_ids = list(current_ids) if isinstance(current_ids, list) else []
+                    recipe_ids = sorted({str(item).strip() for item in normalized_ids if str(item).strip()} | {recipe_id})
+                    updated_rows = [dict(row) for row in rows]
+                    for row in updated_rows:
                         if str(row.get("url", "")) == normalized_url:
+                            existing_ids = row.get("recipe_ids", [])
+                            normalized_existing = list(existing_ids) if isinstance(existing_ids, list) else []
+                            canonical_existing = sorted({str(item).strip() for item in normalized_existing if str(item).strip()})
+                            if recipe_ids != canonical_existing:
+                                attach_changed = True
                             row["recipe_ids"] = recipe_ids
-                    write_seed_rows(valid_domain, merged_rows)
+                saved_recipe = upsert_recipe(valid_domain, _compat_recipe_for_storage(recipe))
+                if attach_to_url and attach_changed:
+                    _write_seed_rows_preserve_order(valid_domain, updated_rows)
+                if attach_to_url:
                     attached = True
                 _register_domain(valid_domain)
                 self._json_response(

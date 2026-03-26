@@ -355,6 +355,7 @@ def test_recipe_upload_supports_json5_attach_and_overwrite_confirmation(api_env)
     seed_status, seed_body = _request("GET", api_env, f"/api/seed-urls?domain={domain}")
     assert seed_status == HTTPStatus.OK
     assert seed_body["urls"][0]["recipe_ids"] == ["r-upload"]
+    seed_updated_at_before_conflict = seed_body["updated_at"]
 
     conflict_status, conflict_body = _request_multipart(
         api_env,
@@ -365,6 +366,11 @@ def test_recipe_upload_supports_json5_attach_and_overwrite_confirmation(api_env)
     )
     assert conflict_status == HTTPStatus.CONFLICT
     assert conflict_body["status"] == "overwrite_required"
+    recipes_after_conflict = _request("GET", api_env, f"/api/recipes?domain={domain}")[1]["recipes"]
+    assert [row["recipe_id"] for row in recipes_after_conflict] == ["r-upload"]
+    seed_after_conflict = _request("GET", api_env, f"/api/seed-urls?domain={domain}")[1]
+    assert seed_after_conflict["urls"][0]["recipe_ids"] == ["r-upload"]
+    assert seed_after_conflict["updated_at"] == seed_updated_at_before_conflict
 
     overwrite_status, overwrite_body = _request_multipart(
         api_env,
@@ -375,6 +381,85 @@ def test_recipe_upload_supports_json5_attach_and_overwrite_confirmation(api_env)
     )
     assert overwrite_status == HTTPStatus.OK
     assert overwrite_body["overwrote"] is True
+
+
+def test_recipe_upload_attach_noop_does_not_duplicate_recipe_id_or_rewrite_seed_rows(api_env):
+    domain = "attach-noop.example"
+    _write(
+        domain,
+        "manual",
+        "seed_urls.json",
+        {
+            "domain": domain,
+            "updated_at": "2026-03-01T00:00:00Z",
+            "urls": [{"url": "https://attach-noop.example/p1", "description": None, "recipe_ids": ["m"]}],
+        },
+    )
+    _write(
+        domain,
+        "manual",
+        "seed_url_states.json",
+        {"updated_at": "2026-03-01T00:00:00Z", "states": [{"url": "https://attach-noop.example/p1", "active": True}]},
+    )
+    _write(domain, "manual", "recipes.json", [{"recipe_id": "m", "url_pattern": "*", "steps": [], "capture_points": []}])
+
+    first_status, first_body = _request_multipart(
+        api_env,
+        "/api/recipes/upload",
+        {"domain_id": domain, "attach_to_url": "true", "url": "https://attach-noop.example/p1", "overwrite": "true"},
+        "m.json",
+        b'{"recipe_id":"m"}',
+    )
+    assert first_status == HTTPStatus.OK
+    assert first_body["status"] == "ok"
+    assert first_body["overwrote"] is True
+
+    seed_after_noop = _request("GET", api_env, f"/api/seed-urls?domain={domain}")[1]
+    assert seed_after_noop["urls"][0]["recipe_ids"] == ["m"]
+    assert seed_after_noop["updated_at"] == "2026-03-01T00:00:00Z"
+
+
+def test_recipe_upload_attach_same_recipe_set_different_order_is_noop(api_env):
+    domain = "attach-order-noop.example"
+    _write(
+        domain,
+        "manual",
+        "seed_urls.json",
+        {
+            "domain": domain,
+            "updated_at": "2026-03-01T00:00:00Z",
+            "urls": [{"url": "https://attach-order-noop.example/p1", "description": None, "recipe_ids": ["b", "a"]}],
+        },
+    )
+    _write(
+        domain,
+        "manual",
+        "seed_url_states.json",
+        {"updated_at": "2026-03-01T00:00:00Z", "states": [{"url": "https://attach-order-noop.example/p1", "active": True}]},
+    )
+    _write(
+        domain,
+        "manual",
+        "recipes.json",
+        [
+            {"recipe_id": "a", "url_pattern": "*", "steps": [], "capture_points": []},
+            {"recipe_id": "b", "url_pattern": "*", "steps": [], "capture_points": []},
+        ],
+    )
+
+    status, body = _request_multipart(
+        api_env,
+        "/api/recipes/upload",
+        {"domain_id": domain, "attach_to_url": "true", "url": "https://attach-order-noop.example/p1", "overwrite": "true"},
+        "a.json",
+        b'{"recipe_id":"a"}',
+    )
+    assert status == HTTPStatus.OK
+    assert body["status"] == "ok"
+
+    seed_after = _request("GET", api_env, f"/api/seed-urls?domain={domain}")[1]
+    assert seed_after["updated_at"] == "2026-03-01T00:00:00Z"
+    assert seed_after["urls"][0]["recipe_ids"] == ["a", "b"]
 
 
 def test_recipe_upload_json_and_delete_clears_seed_url_associations(api_env):
@@ -401,6 +486,23 @@ def test_recipe_upload_json_and_delete_clears_seed_url_associations(api_env):
     assert seed_body["urls"][0]["recipe_ids"] == []
 
 
+def test_recipe_upload_attach_failure_does_not_persist_recipe(api_env):
+    domain = "atomic-upload.example"
+    status, body = _request_multipart(
+        api_env,
+        "/api/recipes/upload",
+        {"domain_id": domain, "attach_to_url": "true", "url": "https://atomic-upload.example/missing"},
+        "missing.json",
+        b'{"recipe_id":"should-not-save","url_pattern":"/missing"}',
+    )
+    assert status == HTTPStatus.BAD_REQUEST
+    assert body["status"] == "failed"
+
+    list_status, list_body = _request("GET", api_env, f"/api/recipes?domain={domain}")
+    assert list_status == HTTPStatus.OK
+    assert list_body["recipes"] == []
+
+
 def test_recipe_upload_accepts_minimal_payload_via_compat_normalization(api_env):
     domain = "example.com"
     status, body = _request_multipart(
@@ -416,6 +518,50 @@ def test_recipe_upload_accepts_minimal_payload_via_compat_normalization(api_env)
     assert body["recipe"]["url_pattern"] == "*"
     assert body["recipe"]["steps"] == []
     assert body["recipe"]["capture_points"] == []
+
+
+def test_recipe_upload_attach_preserves_seed_row_order(api_env):
+    domain = "order.example"
+    _write(
+        domain,
+        "manual",
+        "seed_urls.json",
+        {
+            "domain": domain,
+            "updated_at": "2026-03-01T00:00:00Z",
+            "urls": [
+                {"url": "https://order.example/second", "description": None, "recipe_ids": []},
+                {"url": "https://order.example/first", "description": None, "recipe_ids": []},
+            ],
+        },
+    )
+    _write(
+        domain,
+        "manual",
+        "seed_url_states.json",
+        {
+            "updated_at": "2026-03-01T00:00:00Z",
+            "states": [
+                {"url": "https://order.example/second", "active": True},
+                {"url": "https://order.example/first", "active": True},
+            ],
+        },
+    )
+
+    status, body = _request_multipart(
+        api_env,
+        "/api/recipes/upload",
+        {"domain_id": domain, "attach_to_url": "true", "url": "https://order.example/second"},
+        "order.json",
+        b'{"recipe_id":"order-r1"}',
+    )
+    assert status == HTTPStatus.OK
+    assert body["status"] == "ok"
+
+    seed_status, seed_body = _request("GET", api_env, f"/api/seed-urls?domain={domain}")
+    assert seed_status == HTTPStatus.OK
+    assert [row["url"] for row in seed_body["urls"]] == ["https://order.example/second", "https://order.example/first"]
+    assert seed_body["urls"][0]["recipe_ids"] == ["order-r1"]
 
 
 def test_recipe_upload_multipart_handles_quoted_boundary_and_empty_field(api_env):
