@@ -1242,6 +1242,76 @@ def test_payload_preview_and_replay_failure_are_visible(api_env):
     assert "failed_before_llm" in body
 
 
+def test_payload_preview_is_pending_without_fake_path_during_preparation(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {
+                "run_id": target_run_id,
+                "created_at": "2026-03-12T00:00:00Z",
+                "jobs": [
+                    {
+                        "job_id": "check-languages-1",
+                        "status": "running",
+                        "type": "check_languages",
+                        "stage": "running_target_capture",
+                        "workflow_state": "preparing_payload",
+                        "en_run_id": "run-en",
+                        "target_language": "fr",
+                    }
+                ],
+            },
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert "check_languages_llm_input.json" in body
+    assert "status: <strong>pending</strong>" in body
+    assert "Will be created after target capture and payload preparation complete." in body
+    assert f"{domain}/{target_run_id}/check_languages_llm_input.json" not in body
+    assert "<summary>Preview</summary>" not in body
+
+
+def test_payload_preview_shows_real_artifact_path_when_input_exists(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "fr", "review_context_count": 0, "review_contexts": []})
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {
+        "source_hashes": {},
+        "llm_input_artifact": f"gs://test-bucket/{domain}/{target_run_id}/check_languages_llm_input.json",
+    })
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert "status: <strong>valid</strong>" in body
+    assert f"gs://test-bucket/{domain}/{target_run_id}/check_languages_llm_input.json" in body
+
+
+def test_payload_preview_avoids_fake_path_when_manifest_uri_missing(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "fr", "review_context_count": 0, "review_contexts": []})
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {"source_hashes": {}})
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert "status: <strong>valid</strong>" in body
+    assert f"{domain}/{target_run_id}/check_languages_llm_input.json" not in body
+    assert f"gs://test-bucket/{domain}/{target_run_id}/check_languages_llm_input.json" in body
+
+
 def test_run_llm_uses_prepared_payload_as_actual_input(monkeypatch):
     domain = "https://bongacams.com/"
     target_run_id = "run-en-check-fr"

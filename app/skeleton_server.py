@@ -1921,7 +1921,7 @@ def _prepare_check_languages_async(job_id: str, domain: str, en_run_id: str, tar
 
         llm_input_payload = build_prepared_llm_payload(domain, en_run_id, target_run_id)
         source_hashes = _check_languages_source_hashes(domain, en_run_id, target_run_id)
-        write_json_artifact(domain, target_run_id, "check_languages_llm_input.json", llm_input_payload)
+        llm_input_artifact_uri = write_json_artifact(domain, target_run_id, "check_languages_llm_input.json", llm_input_payload)
         write_json_artifact(domain, target_run_id, "check_languages_prepared_payload.json", {
             "en_run_id": en_run_id,
             "target_run_id": target_run_id,
@@ -1930,7 +1930,7 @@ def _prepare_check_languages_async(job_id: str, domain: str, en_run_id: str, tar
             "prepared_at": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
             "payload_files": payload_status.get("files", []),
             "source_hashes": source_hashes,
-            "llm_input_artifact": f"{domain}/{target_run_id}/check_languages_llm_input.json",
+            "llm_input_artifact": llm_input_artifact_uri,
             "llm_input_count": int(llm_input_payload.get("review_context_count", 0)),
         })
         _jobs[job_id]["status"] = "done"
@@ -3868,13 +3868,30 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 page_state = "ready_to_start"
 
             prepared_manifest = _read_json_safe(target_run_domain, target_run_id, "check_languages_prepared_payload.json", None)
-            llm_input_payload = _read_json_safe(target_run_domain, target_run_id, "check_languages_llm_input.json", None)
+            llm_input_exists = _artifact_exists(target_run_domain, target_run_id, "check_languages_llm_input.json")
+            llm_input_payload = _read_json_safe(target_run_domain, target_run_id, "check_languages_llm_input.json", None) if llm_input_exists else None
             source_hashes = prepared_manifest.get("source_hashes") if isinstance(prepared_manifest, dict) and isinstance(prepared_manifest.get("source_hashes"), dict) else {}
             stale = bool(source_hashes and source_hashes != _check_languages_source_hashes(target_run_domain, selected_en_run_id, target_run_id))
-            llm_input_status = "missing"
+            llm_input_status = "pending" if page_state in {"preparing_payload", "running_target_capture", "preparing_target_run"} and not llm_input_exists else "missing"
+            llm_status_note = "Will be created after target capture and payload preparation complete." if llm_input_status == "pending" else ""
             llm_preview = "—"
+            llm_input_path = None
             if isinstance(llm_input_payload, dict):
                 llm_input_status = "stale" if stale else "valid"
+                manifest_artifact_uri = (
+                    prepared_manifest.get("llm_input_artifact")
+                    if isinstance(prepared_manifest, dict) and str(prepared_manifest.get("llm_input_artifact", "")).strip()
+                    else None
+                )
+                if manifest_artifact_uri:
+                    llm_input_path = str(manifest_artifact_uri)
+                else:
+                    try:
+                        from pipeline.storage import BUCKET_NAME, artifact_path
+
+                        llm_input_path = f"gs://{BUCKET_NAME}/{artifact_path(target_run_domain, target_run_id, 'check_languages_llm_input.json')}"
+                    except Exception:
+                        llm_input_path = None
                 preview_payload = {
                     "target_language": llm_input_payload.get("target_language"),
                     "review_context_count": llm_input_payload.get("review_context_count"),
@@ -3883,11 +3900,15 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                     "sample_review_context": (llm_input_payload.get("review_contexts") or [None])[0],
                 }
                 llm_preview = json.dumps(preview_payload, ensure_ascii=False, indent=2)
+            llm_path_block = f"path: <code>{_h(llm_input_path)}</code>" if llm_input_path else ""
+            llm_note_block = f"<br/><em>{_h(llm_status_note)}</em>" if llm_status_note else ""
+            llm_preview_block = f"<details><summary>Preview</summary><pre>{_h(llm_preview)}</pre></details>" if isinstance(llm_input_payload, dict) else ""
             payload_preview_block = (
                 "<ul>"
                 f"<li><strong>check_languages_llm_input.json</strong> — status: <strong>{_h(llm_input_status)}</strong><br/>"
-                f"path: <code>{_h(f'{target_run_domain}/{target_run_id}/check_languages_llm_input.json')}</code>"
-                f"<details><summary>Preview</summary><pre>{_h(llm_preview)}</pre></details></li>"
+                f"{llm_path_block}"
+                f"{llm_note_block}"
+                f"{llm_preview_block}</li>"
                 "</ul>"
             )
             failure_payload = _read_json_safe(target_run_domain, target_run_id, "check_languages_replay_failure.json", None)
