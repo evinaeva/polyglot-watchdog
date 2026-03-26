@@ -2231,3 +2231,35 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c501367e10832ca85636a1e70a338b)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #165 — 2026-03-26T10:11:05Z
+
+- Title: Clarify operator workflow wording to 'multi-surface / multi-step' across docs
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/165
+- Author: evinaeva
+- Base branch: main
+- Head branch: xkrfec-codex/update-canonical-documentation-for-alignment
+- Merge commit: 6753dc33730aa70c764cf0b010eaef934d122860
+- Changed files:
+  - README.md
+  - docs/ABOUT_PAGE_COPY.md
+  - docs/PRODUCT_TRUTHSET.md
+- Description:
+  ### Motivation
+  
+  - Clarify the operator workflow language to emphasize a multi-surface / multi-step model (multi-page / multi-tab) rather than only calling it "intentionally multi-page", and to align messaging across README and docs.
+  - Make the About page's scope wording more precise by explicitly deferring crawler improvements beyond the accepted manual seed URL workflow.
+  
+  ### Description
+  
+  - Update `README.md` to replace "intentionally multi-page by design" with "multi-surface / multi-step (multi-page / multi-tab) by design" and synchronize the canonical messaging string.
+  - Update `docs/ABOUT_PAGE_COPY.md` to use the new "multi-surface / multi-step (multi-page / multi-tab) by design" phrasing and to change the deferred item from "manual seed URL workflow" to "crawler improvements beyond the accepted manual seed URL workflow".
+  - Update `docs/PRODUCT_TRUTHSET.md` to use the new "multi-surface / multi-step (multi-page / multi-tab) by design" phrasing for the canonical v1.0 operator workflow.
+  
+  ### Testing
+  
+  - Documentation-only change; no automated tests were modified or required to validate this update.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c5040893cc832cb14435c63ebbe5e0)
+- Notes: Auto-generated from merged PR metadata.
