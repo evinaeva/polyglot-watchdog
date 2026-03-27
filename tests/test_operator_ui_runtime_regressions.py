@@ -471,6 +471,239 @@ def test_workflow_runtime_sorting_uses_raw_utc_timestamp_not_display_value():
     assert out["second"] == "older"
 
 
+def test_workflow_existing_runs_default_selection_prefers_newest_and_handles_empty_states():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function makeElement(id='') {
+          const listeners = {};
+          const el = {
+            id,
+            value: '',
+            href: '',
+            innerHTML: '',
+            textContent: '',
+            className: '',
+            dataset: {},
+            disabled: false,
+            children: [],
+            options: [],
+            classList: { add(){}, remove(){}, toggle(){} },
+            setAttribute(){},
+            appendChild(child){ this.children.push(child); this.options.push(child); return child; },
+            addEventListener(type, cb){ listeners[type] = cb; },
+            querySelector(){ return makeElement('qs'); },
+          };
+          if (id === 'wfExistingRuns') {
+            Object.defineProperty(el, 'innerHTML', {
+              set(value) {
+                this._innerHTML = value;
+                this.children = [];
+                this.options = [];
+                this.value = '';
+                if (String(value).includes('No runs found')) {
+                  this.options.push({ value: '' });
+                }
+              },
+              get() { return this._innerHTML || ''; },
+            });
+          }
+          return el;
+        }
+
+        const ids = ['wfDomain','wfRefreshUrls','wfSavedUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
+        const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
+        els.wfDomain.value = 'example.com';
+
+        const runsPayloads = [
+          { runs: [
+            { run_id: 'run-older', created_at: '2026-03-10T10:00:00Z' },
+            { run_id: 'run-newest', created_at: '2026-03-12T10:00:00Z' },
+            { run_id: 'run-middle', created_at: '2026-03-11T10:00:00Z' },
+          ] },
+          { runs: [{ run_id: 'run-only', created_at: '2026-03-20T10:00:00Z' }] },
+          { runs: [] },
+          { runs: [
+            { run_id: 'run-a', created_at: '2026-03-01T10:00:00Z' },
+            { run_id: 'run-z-newest', created_at: '2026-03-30T10:00:00Z' },
+            { run_id: 'run-m', created_at: '2026-03-15T10:00:00Z' },
+          ] },
+        ];
+        let runsCallIndex = 0;
+
+        const sandbox = {
+          console,
+          URLSearchParams,
+          window: { location: { search: '' }, history: { replaceState(){} } },
+          document: {
+            getElementById: (id) => els[id],
+            createElement: (tag) => makeElement(tag),
+          },
+          fetch: async (url) => {
+            if (url.startsWith('/api/capture/runs?')) {
+              const payload = runsPayloads[Math.min(runsCallIndex, runsPayloads.length - 1)];
+              runsCallIndex += 1;
+              return { ok: true, json: async () => payload };
+            }
+            if (url === '/api/domains') return { ok: true, json: async () => ({ items: ['example.com'] }) };
+            if (url.startsWith('/api/seed-urls?')) return { ok: true, json: async () => ({ urls: [] }) };
+            if (url.startsWith('/api/workflow/status?')) return { ok: true, json: async () => ({ capture: { status: 'not_started' }, run: {} }) };
+            if (url.startsWith('/api/capture/contexts?')) return { ok: true, json: async () => ({ contexts: [] }) };
+            return { ok: true, json: async () => ({}) };
+          },
+          setInterval: () => 1,
+          clearInterval: () => {},
+          safeReadPayload: async (response) => response.json(),
+        };
+
+        vm.createContext(sandbox);
+        const workflowSource = fs
+          .readFileSync('web/static/workflow.js', 'utf8')
+          .replace("initWorkflow().catch((err) => setStatus(err.message, 'error'));", '');
+        vm.runInContext(workflowSource, sandbox);
+
+        (async () => {
+          await sandbox.loadExistingRuns();
+          const multiDefault = els.wfExistingRuns.value;
+          const multiOptions = els.wfExistingRuns.options.map((opt) => opt.value);
+          els.wfExistingRuns.value = 'run-middle';
+          els.wfExistingRuns.disabled = false;
+
+          await sandbox.loadExistingRuns();
+          const singleDefault = els.wfExistingRuns.value;
+          const singleDisabled = els.wfUseExistingRun.disabled;
+
+          await sandbox.loadExistingRuns();
+          const emptyDefault = els.wfExistingRuns.value;
+          const emptyDisabled = els.wfUseExistingRun.disabled;
+          const emptyStatus = els.wfRunsStatus.textContent;
+
+          await sandbox.loadExistingRuns();
+          const unsortedDefault = els.wfExistingRuns.value;
+          const unsortedOptions = els.wfExistingRuns.options.map((opt) => opt.value);
+
+          console.log(JSON.stringify({
+            multiDefault,
+            multiOptions,
+            singleDefault,
+            singleDisabled,
+            emptyDefault,
+            emptyDisabled,
+            emptyStatus,
+            unsortedDefault,
+            unsortedOptions,
+          }));
+        })().catch((err) => { console.error(err); process.exit(1); });
+        """
+    )
+    out = _run_node_json(script)
+    assert out["multiDefault"] == "run-newest"
+    assert out["multiOptions"] == ["run-newest", "run-middle", "run-older"]
+    assert out["singleDefault"] == "run-only"
+    assert out["singleDisabled"] is False
+    assert out["emptyDefault"] == ""
+    assert out["emptyDisabled"] is True
+    assert out["emptyStatus"] == "No existing runs found for this domain yet."
+    assert out["unsortedDefault"] == "run-z-newest"
+    assert out["unsortedOptions"] == ["run-z-newest", "run-m", "run-a"]
+
+
+def test_workflow_existing_runs_preserves_active_selected_run_on_reload():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function makeElement(id='') {
+          const listeners = {};
+          const el = {
+            id,
+            value: '',
+            href: '',
+            innerHTML: '',
+            textContent: '',
+            className: '',
+            dataset: {},
+            disabled: false,
+            children: [],
+            options: [],
+            classList: { add(){}, remove(){}, toggle(){} },
+            setAttribute(){},
+            appendChild(child){ this.children.push(child); this.options.push(child); return child; },
+            addEventListener(type, cb){ listeners[type] = cb; },
+            dispatch(type){ if (listeners[type]) return listeners[type]({ target: this }); },
+            click(){ if (listeners.click) return listeners.click({ target: this }); },
+            querySelector(){ return makeElement('qs'); },
+          };
+          if (id === 'wfExistingRuns') {
+            Object.defineProperty(el, 'innerHTML', {
+              set(value) {
+                this._innerHTML = value;
+                this.children = [];
+                this.options = [];
+                this.value = '';
+                if (String(value).includes('No runs found')) this.options.push({ value: '' });
+              },
+              get() { return this._innerHTML || ''; },
+            });
+          }
+          return el;
+        }
+
+        const ids = ['wfDomain','wfRefreshUrls','wfSavedUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
+        const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
+
+        const runPayload = {
+          runs: [
+            { run_id: 'run-older', created_at: '2026-03-10T10:00:00Z' },
+            { run_id: 'run-newest', created_at: '2026-03-12T10:00:00Z' },
+            { run_id: 'run-middle', created_at: '2026-03-11T10:00:00Z' },
+          ],
+        };
+
+        const sandbox = {
+          console,
+          URLSearchParams,
+          window: { location: { search: '?domain=example.com&run_id=run-middle' }, history: { replaceState(){} } },
+          document: {
+            getElementById: (id) => els[id],
+            createElement: (tag) => makeElement(tag),
+          },
+          fetch: async (url) => {
+            if (url === '/api/domains') return { ok: true, json: async () => ({ items: ['example.com'] }) };
+            if (url.startsWith('/api/seed-urls?')) return { ok: true, json: async () => ({ urls: [] }) };
+            if (url.startsWith('/api/capture/runs?')) return { ok: true, json: async () => runPayload };
+            if (url.startsWith('/api/workflow/status?')) return { ok: true, json: async () => ({ capture: { status: 'ready' }, run: { run_id: 'run-middle' } }) };
+            if (url.startsWith('/api/capture/contexts?')) return { ok: true, json: async () => ({ contexts: [] }) };
+            return { ok: true, json: async () => ({}) };
+          },
+          setInterval: () => 1,
+          clearInterval: () => {},
+          safeReadPayload: async (response) => response.json(),
+        };
+
+        vm.createContext(sandbox);
+        const workflowSource = fs
+          .readFileSync('web/static/workflow.js', 'utf8')
+          .replace("initWorkflow().catch((err) => setStatus(err.message, 'error'));", '');
+        vm.runInContext(workflowSource, sandbox);
+
+        (async () => {
+          await sandbox.initWorkflow();
+          els.wfExistingRuns.value = 'run-middle';
+          await els.wfUseExistingRun.click();
+          await sandbox.loadExistingRuns();
+          const afterReload = els.wfExistingRuns.value;
+          console.log(JSON.stringify({ afterReload }));
+        })().catch((err) => { console.error(err); process.exit(1); });
+        """
+    )
+    out = _run_node_json(script)
+    assert out["afterReload"] == "run-middle"
+
+
 def test_upsert_job_status_keeps_utc_storage_timestamps(monkeypatch):
     repo_root = Path(__file__).resolve().parents[1]
     if str(repo_root) not in sys.path:

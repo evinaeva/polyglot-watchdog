@@ -272,8 +272,11 @@ function renderExistingRuns() {
     return;
   }
 
-  if (selected && availableRuns.some((run) => String(run.run_id || '') === selected)) {
+  const hasSelected = selected && availableRuns.some((run) => String(run.run_id || '') === selected);
+  if (hasSelected) {
     wfExistingRuns.value = selected;
+  } else if (wfExistingRuns.options.length > 0) {
+    wfExistingRuns.value = String(wfExistingRuns.options[0].value || '');
   }
 
   wfUseExistingRun.disabled = !wfExistingRuns.value;
