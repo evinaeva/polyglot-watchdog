@@ -2833,3 +2833,35 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c6645b1ce0832cbdf1c47afbeff24a)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #183 — 2026-03-27T12:18:53Z
+
+- Title: Resolve manifest domain from GCS artifacts and handle special GitHub Pages test domains in check-languages UI
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/183
+- Author: evinaeva
+- Base branch: main
+- Head branch: ih9szs-codex/conduct-code-audit-for-repository-bug
+- Merge commit: 3d5b66d5039084eddc2589b6ae1aa8731a25359c
+- Changed files:
+  - app/skeleton_server.py
+- Description:
+  ### Motivation
+  
+  - Ensure the check-languages UI can recognize special GitHub Pages test domains and correctly resolve a target run's domain when the prepared manifest points to a GCS artifact stored under a different domain.
+  
+  ### Description
+  
+  - Add `_is_special_check_languages_test_domain` to canonicalize and detect the dedicated GitHub Pages testsites and project-specific pages used by the check-languages flow. 
+  - Replace ad-hoc per-host subdomain construction with `_build_language_subdomain_domain` and use it in `_build_check_languages_target_url` for the Bongacams-related domains. 
+  - Update `_check_languages_run_domains` to include the canonical and legacy testsites and to scan `list_domains()` for other normalized special test domains. 
+  - Add `_parse_gs_uri_safe` to robustly parse `gs://` artifact URIs and extract `bucket`, `domain`, `run_id`, and `filename` safely. 
+  - In `_serve_check_languages_page` read the prepared manifest and, when appropriate, infer the manifest's `domain` from the `llm_input_artifact` GCS URI if the manifest omitted the domain; if a different domain is discovered, reload the corrected manifest and adjust page state accordingly. 
+  - Surface `manifest_domain`, `resolved_target_run_domain`, and `llm_input_artifact` values in gate diagnostics for debugging. 
+  
+  ### Testing
+  
+  - Ran the repository test suite with `pytest`; test run completed successfully.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c66687bfe8832c9574fcdf1fdf2971)
+- Notes: Auto-generated from merged PR metadata.
