@@ -2939,3 +2939,33 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c67b855c14832cbdcc8e85adb51fa1)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #186 — 2026-03-27T13:16:07Z
+
+- Title: Expose actual LLM input reader lookup path in check-languages diagnostics
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/186
+- Author: evinaeva
+- Base branch: main
+- Head branch: na7cfv-codex/add-exact-reader-lookup-path-diagnostics
+- Merge commit: 0a906c3c481c36ff09d8ca8dfd73e446070c6346
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  - The existing LLM gate diagnostics show `llm_input_artifact` from prepared manifest metadata but not the exact reader lookup path used by the UI, which makes GCS "missing" issues hard to debug. 
+  
+  ### Description
+  - Added reader-side lookup diagnostics in `_serve_check_languages_page`: `llm_lookup_bucket`, `llm_lookup_domain`, `llm_lookup_run_id`, `llm_lookup_filename` (fixed to `check_languages_llm_input.json`) and `llm_lookup_path` assembled as `gs://{BUCKET}/{artifact_path(domain, run_id, filename)}`. 
+  - Populated those fields from the exact domain/run/filename values used immediately before both the primary read (`_check_languages_llm_input_artifact_status(target_run_domain, target_run_id)`) and the fallback read (`_check_languages_llm_input_artifact_status(target_run_domain_for_page, target_run_id)`). 
+  - Appended the new fields to the existing “LLM gate diagnostics” block (preserving all previous diagnostics). 
+  - Updated the focused test `test_recompute_gate_action_renders_gate_breakdown` in `tests/test_check_languages_page.py` to assert the new lookup fields and the fully assembled `gs://.../check_languages_llm_input.json` path are rendered.
+  
+  ### Testing
+  - Added assertions to `tests/test_check_languages_page.py` that expect `lookup_bucket`, `lookup_domain`, `lookup_run_id`, `lookup_filename`, and `actual_llm_input_lookup_path` to appear in the diagnostics HTML. 
+  - Attempted to run the focused test locally (`pytest -q tests/test_check_languages_page.py -k recompute_gate_action_renders_gate_breakdown`), but test collection failed due to test environment import issues: first run failed with `ModuleNotFoundError: No module named 'app'`, and with `PYTHONPATH=.` the collection hit `ModuleNotFoundError: No module named 'jsonschema'`; these are environmental dependency/import problems rather than changes introduced by this patch. 
+  - The change is minimal and localized; the updated test should pass in the project CI/environment where dependencies and PYTHONPATH are correctly configured.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c681afb18c832c8b2e8b89c3c064c5)
+- Notes: Auto-generated from merged PR metadata.
