@@ -1407,6 +1407,124 @@ def test_prepared_payload_artifacts_override_stale_preparing_state_and_enable_ll
     assert 'id="checkLanguagesRunLlmButton" name="action" value="run_llm_review" type="submit" disabled="disabled"' not in body
 
 
+
+def test_prepared_payload_uses_llm_input_read_when_artifact_listing_fails(api_env, monkeypatch):
+    from app.skeleton_server import _stable_json_hash
+
+    monkeypatch.setattr("app.skeleton_server._artifact_exists", lambda *args, **kwargs: False)
+
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    empty_hash = _stable_json_hash([])
+    expected_hashes = {
+        "en_eligible_dataset_sha256": empty_hash,
+        "target_eligible_dataset_sha256": empty_hash,
+        "en_collected_items_sha256": empty_hash,
+        "target_collected_items_sha256": empty_hash,
+        "en_page_screenshots_sha256": empty_hash,
+        "target_page_screenshots_sha256": empty_hash,
+    }
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "fr", "review_context_count": 2, "review_contexts": [{"id": "ctx-1"}]})
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {
+        "source_hashes": expected_hashes,
+        "llm_input_artifact": f"gs://test-bucket/{domain}/{target_run_id}/check_languages_llm_input.json",
+        "llm_input_count": 2,
+    })
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {
+                "run_id": target_run_id,
+                "created_at": "2026-03-12T00:00:00Z",
+                "jobs": [
+                    {
+                        "job_id": "check-languages-1",
+                        "status": "running",
+                        "type": "check_languages",
+                        "stage": "assembling_payload",
+                        "workflow_state": "preparing_payload",
+                        "en_run_id": "run-en",
+                        "target_language": "fr",
+                    }
+                ],
+            },
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert 'Current state: <strong id="checkLanguagesState">prepared_for_llm</strong>' in body
+    assert "status: <strong>valid</strong>" in body
+    assert "Will be created after target capture and payload preparation complete." not in body
+    assert 'id="checkLanguagesRunLlmButton" name="action" value="run_llm_review" type="submit" disabled="disabled"' not in body
+
+
+def test_llm_input_fallback_read_enables_llm_when_primary_read_returns_none(api_env, monkeypatch):
+    from app.skeleton_server import _stable_json_hash
+    from app import skeleton_server as ss
+
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    empty_hash = _stable_json_hash([])
+    expected_hashes = {
+        "en_eligible_dataset_sha256": empty_hash,
+        "target_eligible_dataset_sha256": empty_hash,
+        "en_collected_items_sha256": empty_hash,
+        "target_collected_items_sha256": empty_hash,
+        "en_page_screenshots_sha256": empty_hash,
+        "target_page_screenshots_sha256": empty_hash,
+    }
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "fr", "review_context_count": 2, "review_contexts": [{"id": "ctx-1"}]})
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {
+        "source_hashes": expected_hashes,
+        "llm_input_artifact": f"gs://test-bucket/{domain}/{target_run_id}/check_languages_llm_input.json",
+        "llm_input_count": 2,
+    })
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {
+                "run_id": target_run_id,
+                "created_at": "2026-03-12T00:00:00Z",
+                "jobs": [
+                    {
+                        "job_id": "check-languages-1",
+                        "status": "running",
+                        "type": "check_languages",
+                        "stage": "assembling_payload",
+                        "workflow_state": "preparing_payload",
+                        "en_run_id": "run-en",
+                        "target_language": "fr",
+                    }
+                ],
+            },
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+
+    original_read_json_safe = ss._read_json_safe
+    llm_input_reads = {"count": 0}
+
+    def _fake_read_json_safe(read_domain, read_run_id, filename, fallback):
+        if read_domain == domain and read_run_id == target_run_id and filename == "check_languages_llm_input.json":
+            llm_input_reads["count"] += 1
+            if llm_input_reads["count"] == 1:
+                return None
+            return {"target_language": "fr", "review_context_count": 2, "review_contexts": [{"id": "ctx-fallback"}]}
+        return original_read_json_safe(read_domain, read_run_id, filename, fallback)
+
+    monkeypatch.setattr("app.skeleton_server._read_json_safe", _fake_read_json_safe)
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert llm_input_reads["count"] >= 2
+    assert 'id="checkLanguagesRunLlmButton" name="action" value="run_llm_review" type="submit" disabled="disabled"' not in body
+
 def test_payload_artifacts_do_not_override_active_capture_state(api_env):
     from app.skeleton_server import _stable_json_hash
 
