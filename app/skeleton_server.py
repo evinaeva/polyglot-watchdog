@@ -1101,6 +1101,19 @@ def _load_runs(domain: str) -> dict:
     return payload
 
 
+def _sort_runs_newest_first(runs: list[dict]) -> list[dict]:
+    def sort_key(run: dict) -> tuple[float, str]:
+        created_ts = _parse_utc_timestamp(str((run or {}).get("created_at", "")))
+        run_id = str((run or {}).get("run_id", ""))
+        return (created_ts if created_ts is not None else float("-inf"), run_id)
+
+    return sorted(
+        (row for row in runs if isinstance(row, dict)),
+        key=sort_key,
+        reverse=True,
+    )
+
+
 def _save_runs(domain: str, payload: dict) -> None:
     from pipeline.storage import write_json_artifact
 
@@ -1129,8 +1142,7 @@ def _upsert_run_metadata(domain: str, run_id: str, metadata: dict) -> None:
         runs.append(run)
     for key, value in normalized.items():
         run[key] = value
-    runs.sort(key=lambda r: r.get("run_id", ""), reverse=True)
-    _save_runs(domain, {"runs": runs})
+    _save_runs(domain, {"runs": _sort_runs_newest_first(runs)})
 
 
 def _upsert_job_status(domain: str, run_id: str, job_record: dict) -> None:
@@ -1155,8 +1167,7 @@ def _upsert_job_status(domain: str, run_id: str, job_record: dict) -> None:
     jobs.append(normalized_job)
     jobs.sort(key=lambda r: r.get("job_id", ""))
     run["jobs"] = jobs
-    runs.sort(key=lambda r: r.get("run_id", ""), reverse=True)
-    _save_runs(domain, {"runs": runs})
+    _save_runs(domain, {"runs": _sort_runs_newest_first(runs)})
 
 
 def _is_stale_running_job(job: dict) -> bool:
@@ -2466,7 +2477,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 runs_payload = _load_runs(validate_domain(_normalize_testsite_domain_key(domain)))
                 runs = runs_payload.get("runs", []) if isinstance(runs_payload, dict) else []
                 normalized_runs = []
-                for run in runs:
+                for run in _sort_runs_newest_first(runs):
                     if not isinstance(run, dict):
                         continue
                     normalized_run = dict(run)

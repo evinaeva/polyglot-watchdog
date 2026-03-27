@@ -154,6 +154,39 @@ def test_stage_c_issues_filter_and_csv_export_consistency(api_env):
     assert rows[0]["id"] == "1"
 
 
+def test_capture_runs_api_sorts_by_created_at_descending(api_env):
+    domain = "example.com"
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {"run_id": "run-old", "created_at": "2026-03-01T00:00:00Z", "jobs": []},
+            {"run_id": "run-newest", "created_at": "2026-03-20T00:00:00Z", "jobs": []},
+            {"run_id": "run-middle", "created_at": "2026-03-10T00:00:00Z", "jobs": []},
+        ]
+    })
+
+    status, payload = _request("GET", api_env, f"/api/capture/runs?domain={domain}")
+    assert status == HTTPStatus.OK
+    assert [row["run_id"] for row in payload["runs"]] == ["run-newest", "run-middle", "run-old"]
+
+
+def test_capture_runs_api_places_invalid_or_missing_created_at_after_valid_timestamps(api_env):
+    domain = "example.com"
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {"run_id": "run-valid-old", "created_at": "2026-03-02T00:00:00Z", "jobs": []},
+            {"run_id": "run-z-invalid", "created_at": "not-a-timestamp", "jobs": []},
+            {"run_id": "run-a-missing", "jobs": []},
+            {"run_id": "run-valid-new", "created_at": "2026-03-20T00:00:00Z", "jobs": []},
+        ]
+    })
+
+    status, payload = _request("GET", api_env, f"/api/capture/runs?domain={domain}")
+    assert status == HTTPStatus.OK
+    ordered = [row["run_id"] for row in payload["runs"]]
+    assert ordered[:2] == ["run-valid-new", "run-valid-old"]
+    assert ordered[2:] == ["run-z-invalid", "run-a-missing"]
+
+
 def test_stage_c_issue_detail_partial_evidence_is_usable(api_env):
     domain = "example.com"
     run_id = "run-c3"
