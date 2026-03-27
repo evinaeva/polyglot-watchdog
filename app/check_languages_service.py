@@ -487,10 +487,7 @@ def _is_missing_artifact_error(exc: Exception) -> bool:
     if isinstance(exc, FileNotFoundError):
         return True
     class_name = exc.__class__.__name__.strip().lower()
-    if class_name == "notfound":
-        return True
-    text = str(exc).strip().lower()
-    return "not found" in text or "404" in text
+    return class_name in {"notfound", "filenotfounderror"}
 
 
 def _check_languages_llm_input_artifact_status(domain: str, run_id: str) -> dict:
@@ -502,6 +499,21 @@ def _check_languages_llm_input_artifact_status(domain: str, run_id: str) -> dict
     except Exception as exc:
         status = "missing" if _is_missing_artifact_error(exc) else "read_error"
         print(f"[storage] read {status} domain={domain} run_id={run_id} file=check_languages_llm_input.json: {exc}", file=sys.stderr)
+        return {"status": status, "exists": status != "missing", "payload": None, "error": str(exc)}
+    if not isinstance(payload, dict):
+        return {"status": "invalid_payload", "exists": True, "payload": None, "error": "expected object"}
+    return {"status": "valid", "exists": True, "payload": payload, "error": ""}
+
+
+def _check_languages_llm_review_stats_artifact_status(domain: str, run_id: str) -> dict:
+    try:
+        payload = storage.read_json_artifact(domain, run_id, "llm_review_stats.json")
+    except json.JSONDecodeError as exc:
+        print(f"[storage] read malformed_json domain={domain} run_id={run_id} file=llm_review_stats.json: {exc}", file=sys.stderr)
+        return {"status": "malformed_json", "exists": True, "payload": None, "error": str(exc)}
+    except Exception as exc:
+        status = "missing" if _is_missing_artifact_error(exc) else "read_error"
+        print(f"[storage] read {status} domain={domain} run_id={run_id} file=llm_review_stats.json: {exc}", file=sys.stderr)
         return {"status": status, "exists": status != "missing", "payload": None, "error": str(exc)}
     if not isinstance(payload, dict):
         return {"status": "invalid_payload", "exists": True, "payload": None, "error": "expected object"}
