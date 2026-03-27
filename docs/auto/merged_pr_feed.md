@@ -2969,3 +2969,32 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c681afb18c832c8b2e8b89c3c064c5)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #188 — 2026-03-27T13:34:56Z
+
+- Title: Fix gs:// artifact URI parsing for embedded https domains
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/188
+- Author: evinaeva
+- Base branch: main
+- Head branch: l6xyu4-codex/fix-gs-artifact-uri-parsing-bug
+- Merge commit: 1a44e861be8574bafca9a64eb807d7f182b114c6
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  - A parser was collapsing empty path segments when splitting `gs://` artifact object paths, which corrupted domains that embed `https://...` and caused prepared runs to appear missing/stale in the check-languages UI.
+  
+  ### Description
+  - Replaced the previous split-and-filter approach with a right-split (`rsplit('/', 2)`) in `_parse_gs_uri_safe` so the final two segments are treated as `run_id` and `filename` and the leading `domain` is preserved exactly (including `https://` and internal slashes).
+  - Kept the change minimal and localized to `app/skeleton_server.py` and preserved existing behavior for simple domain keys.
+  - Added focused regression tests in `tests/test_check_languages_page.py` to verify parser correctness and that the check-languages flow no longer infers malformed `https:/...` domains and that gating (artifact read, hashes, and `llm_enabled`) becomes true when artifacts match.
+  
+  ### Testing
+  - Added three targeted tests: `test_parse_gs_uri_safe_preserves_embedded_https_domain`, `test_check_languages_page_does_not_infer_malformed_domain_from_gs_uri`, and `test_check_languages_page_enables_llm_with_https_domain_artifact_uri` in `tests/test_check_languages_page.py`.
+  - Ran the focused tests with `PYTHONPATH=. pytest -q tests/test_check_languages_page.py -k "parse_gs_uri_safe_preserves_embedded_https_domain or does_not_infer_malformed_domain_from_gs_uri or enables_llm_with_https_domain_artifact_uri"` and observed `3 passed, 96 deselected`.
+  - No unrelated code was modified and diagnostics/UI blocks were left intact.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c686125cd4832c96222064247c3c0b)
+- Notes: Auto-generated from merged PR metadata.
