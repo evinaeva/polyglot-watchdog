@@ -1356,6 +1356,204 @@ def test_payload_preview_shows_real_artifact_path_when_input_exists(api_env):
     assert f"gs://test-bucket/{domain}/{target_run_id}/check_languages_llm_input.json" in body
 
 
+def test_payload_preview_reports_llm_input_valid_status(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "fr", "review_context_count": 1, "review_contexts": [{"id": "ctx-1"}]})
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert "status: <strong>valid</strong>" in body
+
+
+def test_payload_preview_reports_llm_input_read_error_status(api_env, monkeypatch):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "fr", "review_context_count": 1, "review_contexts": [{"id": "ctx-1"}]})
+
+    original_read = storage.read_json_artifact
+
+    def _flaky_read(domain_arg: str, run_id_arg: str, filename: str):
+        if filename == "check_languages_llm_input.json":
+            raise RuntimeError("boom")
+        return original_read(domain_arg, run_id_arg, filename)
+
+    monkeypatch.setattr("app.skeleton_server.storage.read_json_artifact", _flaky_read)
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert "status: <strong>read_error</strong>" in body
+    assert "Will be created after target capture and payload preparation complete." not in body
+
+
+def test_llm_input_diagnostics_do_not_downgrade_read_error_when_listing_is_unreliable(api_env, monkeypatch):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "fr", "review_context_count": 1, "review_contexts": [{"id": "ctx-1"}]})
+
+    monkeypatch.setattr("app.skeleton_server._artifact_exists", lambda *args, **kwargs: False)
+    original_read = storage.read_json_artifact
+
+    def _broken_read(domain_arg: str, run_id_arg: str, filename: str):
+        if filename == "check_languages_llm_input.json":
+            raise RuntimeError("transient storage outage")
+        return original_read(domain_arg, run_id_arg, filename)
+
+    monkeypatch.setattr("app.skeleton_server.storage.read_json_artifact", _broken_read)
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert "status: <strong>read_error</strong>" in body
+    assert "<strong>check_languages_llm_input.json</strong> — status: <strong>missing</strong>" not in body
+
+
+def test_fallback_success_recomputes_page_state_and_llm_input_status(api_env, monkeypatch):
+    from app.skeleton_server import _stable_json_hash
+
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    empty_hash = _stable_json_hash([])
+    expected_hashes = {
+        "en_eligible_dataset_sha256": empty_hash,
+        "target_eligible_dataset_sha256": empty_hash,
+        "en_collected_items_sha256": empty_hash,
+        "target_collected_items_sha256": empty_hash,
+        "en_page_screenshots_sha256": empty_hash,
+        "target_page_screenshots_sha256": empty_hash,
+    }
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "fr", "review_context_count": 2, "review_contexts": [{"id": "ctx-1"}]})
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {"source_hashes": expected_hashes})
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {
+                "run_id": target_run_id,
+                "created_at": "2026-03-12T00:00:00Z",
+                "jobs": [{"job_id": "check-languages-1", "status": "running", "type": "check_languages", "stage": "assembling_payload", "workflow_state": "preparing_payload", "en_run_id": "run-en", "target_language": "fr"}],
+            },
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+
+    monkeypatch.setattr(
+        "app.skeleton_server._check_languages_llm_input_artifact_status",
+        lambda *args, **kwargs: {"status": "read_error", "exists": False, "payload": None, "error": "synthetic"},
+    )
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert 'Current state: <strong id="checkLanguagesState">prepared_for_llm</strong>' in body
+    assert "status: <strong>valid</strong>" in body
+    assert "Will be created after target capture and payload preparation complete." not in body
+
+
+def test_fallback_diagnostics_preserve_read_error_instead_of_missing(api_env, monkeypatch):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+
+    responses = iter(
+        [
+            {"status": "missing", "exists": False, "payload": None, "error": "first path miss"},
+            {"status": "read_error", "exists": True, "payload": None, "error": "transient read error"},
+        ]
+    )
+    monkeypatch.setattr("app.skeleton_server._check_languages_llm_input_artifact_status", lambda *args, **kwargs: next(responses))
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert "status: <strong>read_error</strong>" in body
+    assert "<strong>check_languages_llm_input.json</strong> — status: <strong>missing</strong>" not in body
+
+
+def test_recompute_gate_action_renders_gate_breakdown(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "fr", "review_context_count": 1, "review_contexts": [{"id": "ctx-1"}]})
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {
+                "run_id": target_run_id,
+                "created_at": "2026-03-12T00:00:00Z",
+                "jobs": [{"job_id": "check-languages-1", "status": "succeeded", "type": "check_languages", "stage": "prepared_for_llm", "workflow_state": "prepared_for_llm", "en_run_id": "run-en", "target_language": "fr"}],
+            },
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+    form = _query({"selected_domain": domain, "en_run_id": "run-en", "target_language": "fr", "target_run_id": target_run_id, "action": "recompute_gate"})
+    status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
+    assert status_post == HTTPStatus.FOUND
+    assert "show_gate_diagnostics=True" in location
+    assert f"target_run_id={target_run_id}" in location
+    status_get, body, _ = _request("GET", api_env, location)
+    assert status_get == HTTPStatus.OK
+    assert "domain present:" in body
+    assert "selected_en_run_id present:" in body
+    assert "final llm_enabled:" in body
+    assert "check_languages_llm_input.json read status:" in body
+
+
+def test_recompute_form_preserves_target_run_context_inputs(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}&generated_target_url=https%3A%2F%2Ffr.bongacams.com%2F")
+    assert status == HTTPStatus.OK
+    assert f'<input type="hidden" name="target_run_id" value="{target_run_id}" />' in body
+    assert '<input type="hidden" name="generated_target_url" value="https://fr.bongacams.com/" />' in body
+
+
+def test_recomputed_gate_final_enabled_matches_conditions(api_env):
+    from app.skeleton_server import _stable_json_hash
+
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    empty_hash = _stable_json_hash([])
+    expected_hashes = {
+        "en_eligible_dataset_sha256": empty_hash,
+        "target_eligible_dataset_sha256": empty_hash,
+        "en_collected_items_sha256": empty_hash,
+        "target_collected_items_sha256": empty_hash,
+        "en_page_screenshots_sha256": empty_hash,
+        "target_page_screenshots_sha256": empty_hash,
+    }
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "fr", "review_context_count": 2, "review_contexts": [{"id": "ctx-1"}]})
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {"source_hashes": expected_hashes})
+
+    status, body, _ = _request(
+        "GET",
+        api_env,
+        f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}&show_gate_diagnostics=1",
+    )
+    assert status == HTTPStatus.OK
+    assert "hashes_ok_for_page: <strong>true</strong>" in body
+    assert "llm_input_exists_for_page: <strong>true</strong>" in body
+    assert "final llm_enabled: <strong>true</strong>" in body
+    assert 'id="checkLanguagesRunLlmButton" name="action" value="run_llm_review" type="submit"' in body
+    assert 'id="checkLanguagesRunLlmButton" name="action" value="run_llm_review" type="submit" disabled="disabled"' not in body
+
+
 def test_prepared_payload_artifacts_override_stale_preparing_state_and_enable_llm(api_env):
     from app.skeleton_server import _stable_json_hash
 
