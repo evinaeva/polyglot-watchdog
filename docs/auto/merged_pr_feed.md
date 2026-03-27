@@ -2998,3 +2998,45 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c686125cd4832c96222064247c3c0b)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #189 — 2026-03-27T13:52:00Z
+
+- Title: Add ButtonFx interactive button styles and behavior and enable across templates
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/189
+- Author: evinaeva
+- Base branch: main
+- Head branch: 1u7224-codex/apply-new-button-styles-and-behavior
+- Merge commit: 2eab395a81bc19436d7b2bd73947fc3df360b69e
+- Changed files:
+  - web/static/button-fx.css
+  - web/static/button-fx.js
+  - web/templates/about.html
+  - web/templates/check-languages.html
+  - web/templates/contexts.html
+  - web/templates/crawler.html
+  - web/templates/index.html
+  - web/templates/issues/detail.html
+  - web/templates/login.html
+  - web/templates/pulling.html
+  - web/templates/pulls.html
+  - web/templates/runs.html
+  - web/templates/testbench.html
+  - web/templates/urls.html
+  - web/templates/workflow.html
+- Description:
+  ### Motivation
+  - Improve button appearance and interactions site-wide by adding a reusable UI effect library with ripple, loading, success and error states.
+  - Provide an opt-in mechanism for buttons that need enhanced visuals without breaking complex button internals.
+  
+  ### Description
+  - Add `web/static/button-fx.css` containing CSS variables, gradients, shadows, focus ring, spinner, ripple animation and reduced-motion support.
+  - Add `web/static/button-fx.js` which auto-binds button-like elements, wraps safe DOM content into state panes (`default`, `loading`, `success`, `error`), creates ripples on pointer down, exposes the `window.ButtonFx` API (`bindAll`, `setState`, `clearState`, `runFlow`) and avoids DOM rewrites for complex buttons by marking them `visual-only`.
+  - Inject the new stylesheet and script into multiple templates (including `about`, `index`, `check-languages`, `contexts`, `crawler`, `issues/detail`, `login`, `pulling`, `pulls`, `runs`, `testbench`, `urls`, and `workflow`) and opt a specific link in `urls.html` with `data-button-fx="on"`.
+  
+  ### Testing
+  - Ran the project's automated test suite and linters; all tests completed successfully with no regressions.
+  - Verified that pages load and that the `ButtonFx` script registers on page load via the bundled runtime in a local development environment.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c687c80164832c8215ee24e3306ae4)
+- Notes: Auto-generated from merged PR metadata.
