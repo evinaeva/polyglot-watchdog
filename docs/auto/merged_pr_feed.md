@@ -2897,3 +2897,45 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c675b990c0832ca24e749f3f3d252a)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #185 — 2026-03-27T13:08:14Z
+
+- Title: Sort capture runs by created_at descending and preserve selection in workflow UI
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/185
+- Author: evinaeva
+- Base branch: main
+- Head branch: p24csr-codex/update-workflow-page-default-run-selection
+- Merge commit: 31d5f85561445b0bc9223801cafd150074cfcad7
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_operator_ui_runtime_regressions.py
+  - tests/test_stage_c_operator_workflow.py
+  - web/static/workflow.js
+- Description:
+  ### Motivation
+  - Ensure capture runs are presented in newest-first order based on the raw UTC `created_at` timestamp instead of lexicographic `run_id` ordering and make the UI pick sensible defaults and preserve user selection across reloads.
+  
+  ### Description
+  - Add helper `
+  _sort_runs_newest_first(runs)
+  ` to parse UTC timestamps, treat invalid/missing timestamps as oldest, and sort runs newest-first, and use it when saving and returning runs from the API.
+  - Update the `/api/capture/runs` response path to iterate the runs via `
+  _sort_runs_newest_first
+  ` so the API returns runs in the intended order.
+  - Change server-side upsert logic in `
+  _upsert_run_metadata
+  ` and `
+  _upsert_job_status
+  ` to persist runs using `
+  _sort_runs_newest_first
+  ` instead of sorting by `run_id`.
+  - Update `web/static/workflow.js` rendering to default to the newest run option when no explicit selection exists and to preserve the active selected run on reload, plus minor UI state handling for empty states.
+  
+  ### Testing
+  - Added and ran `pytest tests/test_stage_c_operator_workflow.py::test_capture_runs_api_sorts_by_created_at_descending` which verifies API returns runs in newest-first order and it passed.
+  - Added and ran `pytest tests/test_stage_c_operator_workflow.py::test_capture_runs_api_places_invalid_or_missing_created_at_after_valid_timestamps` which verifies invalid/missing `created_at` are ordered after valid timestamps and it passed.
+  - Added and ran JS-driven tests `tests/test_operator_ui_runtime_regressions.py::test_workflow_existing_runs_default_selection_prefers_newest_and_handles_empty_states` and `tests/test_operator_ui_runtime_regressions.py::test_workflow_existing_runs_preserves_active_selected_run_on_reload` (executed via the existing Node VM harness) and both passed.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c67b855c14832cbdcc8e85adb51fa1)
+- Notes: Auto-generated from merged PR metadata.
