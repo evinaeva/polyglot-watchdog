@@ -333,18 +333,6 @@ def _run_display_label(run: dict) -> str:
     return display or str(run.get("run_id", "")).strip()
 
 
-def _latest_successful_en_standard_run_id(domain: str, en_candidates: list[dict]) -> str:
-    for run in sorted(en_candidates, key=lambda row: (row.get("created_at", ""), row.get("run_id", "")), reverse=True):
-        run_id = str(run.get("run_id", "")).strip()
-        if not run_id:
-            continue
-        run_domain = str(run.get("domain", "")).strip() or domain
-        readiness = _phase6_artifact_readiness(run_domain, run_id)
-        if readiness.get("ready") or _run_has_en_standard_success_marker(run):
-            return run_id
-    return ""
-
-
 def _replay_scope_from_reference_run(domain: str, en_run_id: str, target_language: str, target_url: str) -> list[dict]:
     from pipeline.run_phase1 import build_exact_context_job
 
