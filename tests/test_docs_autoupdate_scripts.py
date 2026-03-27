@@ -111,6 +111,8 @@ def test_docs_ai_noop_and_state_advancement_and_blank_model_fallback(monkeypatch
         "  - docs/a.md\n"
         "- Description:\n"
         "  Motivation\n"
+        "  Testing\n"
+        "  - pytest\n"
         "  - item 1\n"
         "  - item 2\n"
         "  Use PR body directly.\n"
@@ -158,12 +160,38 @@ def test_docs_ai_noop_and_state_advancement_and_blank_model_fallback(monkeypatch
 
     assert rc == 0
     assert captured["model"] == mod.DEFAULT_MODEL
-    assert '"description": "Motivation\\n- item 1\\n- item 2\\nUse PR body directly."' in captured["prompt"]
+    assert '"description": "Motivation"' in captured["prompt"]
+    assert '"merge_commit":' not in captured["prompt"]
+    assert '"merged_at":' not in captured["prompt"]
+    assert '"description": "Motivation\\nTesting' not in captured["prompt"]
+    assert '"entry": "## PR #1 — 2026-01-01T00:00:00Z\\n- Merge commit: sha1\\n- Changed files:\\n  - docs/a.md\\n- Description:\\n  Motivation\\n  Testing' not in captured["prompt"]
     out = out_env.read_text(encoding="utf-8")
     assert "docs_changed=false" in out
     assert "state_changed=true" in out
     state = json.loads(out_state.read_text(encoding="utf-8"))
     assert state["last_processed_merge_commit"] == "sha1"
+
+
+def test_docs_ai_strip_testing_section_helpers():
+    mod = load_docs_ai_module()
+
+    description = "Motivation\nTesting\n- pytest -q\nResults\nDone"
+    assert mod.strip_testing_section(description) == "Motivation\nResults\nDone"
+
+    testing_headers = ["Testing", "testing", "Testing:", "## Testing", "### Testing"]
+    for testing_header in testing_headers:
+        entry = (
+            "## PR #1 — 2026-01-01T00:00:00Z\n"
+            "- Description:\n"
+            "  Motivation\n"
+            f"  {testing_header}\n"
+            "  - pytest -q\n"
+            "- Notes: Auto-generated from merged PR metadata.\n"
+        )
+        sanitized = mod.sanitize_entry_text(entry)
+        assert "Testing" not in sanitized
+        assert "testing" not in sanitized
+        assert "- Notes: Auto-generated from merged PR metadata." in sanitized
 
 
 def test_docs_ai_parse_feed_extracts_description_and_empty_body():
