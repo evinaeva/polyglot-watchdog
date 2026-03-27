@@ -3040,3 +3040,34 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c687c80164832c8215ee24e3306ae4)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #190 — 2026-03-27T14:21:13Z
+
+- Title: Extract check_languages logic into service and presenter modules
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/190
+- Author: evinaeva
+- Base branch: main
+- Head branch: fxi7b2-codex/refactor-app/skeleton_server.py-for-separation-of-concerns
+- Merge commit: d9524708504fa7e87486f4e73d83d8107ac59e02
+- Changed files:
+  - app/check_languages_presenter.py
+  - app/check_languages_service.py
+  - app/skeleton_server.py
+- Description:
+  ### Motivation
+  - The check_languages functionality and related helpers were cluttering `skeleton_server.py`, making the server file large and harder to maintain.
+  - The change consolidates domain/URL normalization, run discovery, replay job generation, artifact checks and LLM telemetry presentation into dedicated modules for separation of concerns.
+  
+  ### Description
+  - Added `app/check_languages_service.py` which contains the bulk of the check-languages logic and helper utilities (domain normalization, run loading, target URL generation, replay scope creation, artifact readiness/status checks, diagnostics and persistence, and related constants).
+  - Added `app/check_languages_presenter.py` which encapsulates presentation helpers for LLM telemetry display and HTML escaping (`_llm_review_display` and `_h`).
+  - Updated `app/skeleton_server.py` to import the new service/presenter functions and constants and delegate existing check-languages operations to the service API, removing duplicated implementations from the server file.
+  - Kept existing behavior and APIs by adapting server-side wrapper functions to call the service helpers (e.g. `_load_check_language_runs`, `_generate_target_run_id`, `_find_in_progress_check_languages_job`, `_latest_check_languages_job`, `_check_languages_run_domains`, and helpers that produce diagnostics and artifact status).
+  
+  ### Testing
+  - No automated tests were run locally as part of this change; the PR only reorganizes and extracts existing code into new modules and updates imports and call sites.
+  - Existing CI/unit test suite should be executed to validate there are no import regressions and that behavior remains unchanged.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c68cdbe80c832cb04822ba7538b06c)
+- Notes: Auto-generated from merged PR metadata.
