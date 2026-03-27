@@ -2930,6 +2930,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         llm_review_stats_lookup_path = ""
         llm_review_stats_lookup_domain = ""
         llm_review_stats_lookup_run_id = ""
+        llm_review_stats_exists_for_page = False
+        telemetry_payload_valid_for_page = False
         telemetry_state_used_by_ui = "not_attempted"
         llm_review_state_reason = "llm_review_not_evaluated"
         llm_input_primary_lookup_path = ""
@@ -3053,7 +3055,9 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             llm_review_stats_payload = llm_stats_read.get("payload") if llm_review_stats_status == "valid" else None
             llm_review_stats_error = str(llm_stats_read.get("error", ""))
             llm_review_stats_lookup_path = str(llm_stats_read.get("lookup_path", ""))
-            llm_stats_exists = llm_review_stats_status != "missing"
+            llm_review_stats_exists_for_page = llm_review_stats_status in {"valid", "malformed_json", "invalid_payload"}
+            telemetry_payload_valid_for_page = llm_review_stats_status == "valid"
+            llm_stats_exists = llm_review_stats_exists_for_page
             telemetry_state_used_by_ui = llm_review_stats_status
             workflow_state = str((latest_job or {}).get("workflow_state", "")).strip().lower()
             latest_status = str((latest_job or {}).get("status", "")).strip().lower()
@@ -3375,9 +3379,9 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 f"<li>latest_job_workflow_state: <strong>{_h(latest_job_workflow_state)}</strong></li>"
                 f"<li>llm_running: <strong>{_h(str(llm_running).lower())}</strong></li>"
                 f"<li>llm_review_state_reason: <strong>{_h(llm_review_state_reason)}</strong></li>"
-                f"<li>telemetry_exists_for_page: <strong>{_h(str(llm_review_stats_status != 'missing').lower())}</strong></li>"
-                f"<li>telemetry_payload_valid: <strong>{_h(str(llm_review_stats_status == 'valid').lower())}</strong></li>"
-                f"<li>llm_review_stats_exists_for_page: <strong>{_h(str(llm_review_stats_status != 'missing').lower())}</strong></li>"
+                f"<li>telemetry_exists_for_page: <strong>{_h(str(llm_review_stats_exists_for_page).lower())}</strong></li>"
+                f"<li>telemetry_payload_valid: <strong>{_h(str(telemetry_payload_valid_for_page).lower())}</strong></li>"
+                f"<li>llm_review_stats_exists_for_page: <strong>{_h(str(llm_review_stats_exists_for_page).lower())}</strong></li>"
                 f"<li>llm_wire_format_exists_for_page: <strong>false</strong></li>"
                 f"<li>llm_input_exists_for_page: <strong>{_h(str(llm_input_exists_for_page).lower())}</strong></li>"
                 f"<li>final_ui_label_for_llm_review: <strong>{_h(llm_display['state'])}</strong></li>"

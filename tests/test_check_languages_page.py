@@ -1277,6 +1277,30 @@ def test_llm_review_diagnostics_show_valid_telemetry_status(api_env):
     assert "llm_review_state_reason: <strong>telemetry_valid</strong>" in body
 
 
+def test_llm_review_read_error_is_not_reported_as_malformed_telemetry(api_env, monkeypatch):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_check_languages_completed_run(domain, "run-en", "fr", target_run_id)
+
+    from pipeline import storage as _storage
+
+    real_read = _storage.read_json_artifact
+
+    def _fake_read_json_artifact(read_domain, read_run_id, filename):
+        if read_domain == domain and read_run_id == target_run_id and filename == "llm_review_stats.json":
+            raise RuntimeError("permission denied")
+        return real_read(read_domain, read_run_id, filename)
+
+    monkeypatch.setattr("pipeline.storage.read_json_artifact", _fake_read_json_artifact)
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert "LLM telemetry malformed" not in body
+    assert "Telemetry file exists but is malformed; showing unavailable placeholders." not in body
+    assert "read_status: <strong>read_error</strong>" in body
+    assert "telemetry_exists_for_page: <strong>false</strong>" in body
+
+
 def test_llm_review_diagnostics_show_primary_vs_fallback_llm_input_lookup_usage(api_env, monkeypatch):
     domain = SUPPORTED_MAIN_DOMAIN
     target_run_id = "run-en-check-fr"
