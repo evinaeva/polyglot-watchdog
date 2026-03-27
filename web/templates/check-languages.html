@@ -22,6 +22,8 @@
       <h2>Selection</h2>
       <form id="checkLanguagesForm" method="post" action="/check-languages">
         <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+        <input type="hidden" name="target_run_id" value="{{target_run_id}}" />
+        <input type="hidden" name="generated_target_url" value="{{generated_target_url}}" />
         <div class="controls">
           <div>
             <label for="checkLanguagesDomain">Domain</label>
@@ -45,8 +47,14 @@
         <p>
           <button id="checkLanguagesPrepareButton" name="action" value="prepare_payload" type="submit"{{prepare_disabled}}>Prepare language check payload</button>
           <button id="checkLanguagesRunLlmButton" name="action" value="run_llm_review" type="submit"{{run_llm_disabled}}>Run LLM review</button>
+          <button id="checkLanguagesRecomputeGateButton" name="action" value="recompute_gate" type="submit">Recompute LLM gate diagnostics</button>
         </p>
       </form>
+    </section>
+
+    <section>
+      <h2>LLM gate diagnostics</h2>
+      {{gate_diagnostics}}
     </section>
 
     <section>

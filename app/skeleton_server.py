@@ -760,6 +760,37 @@ def _check_languages_payload_status(domain: str, run_id: str) -> dict:
     return {"ready": all_present, "files": rows}
 
 
+def _is_missing_artifact_error(exc: Exception) -> bool:
+    if isinstance(exc, FileNotFoundError):
+        return True
+    class_name = exc.__class__.__name__.strip().lower()
+    if class_name == "notfound":
+        return True
+    text = str(exc).strip().lower()
+    return "not found" in text or "404" in text
+
+
+def _check_languages_llm_input_artifact_status(domain: str, run_id: str) -> dict:
+    try:
+        payload = storage.read_json_artifact(domain, run_id, "check_languages_llm_input.json")
+    except json.JSONDecodeError as exc:
+        print(
+            f"[storage] read malformed_json domain={domain} run_id={run_id} file=check_languages_llm_input.json: {exc}",
+            file=sys.stderr,
+        )
+        return {"status": "malformed_json", "exists": True, "payload": None, "error": str(exc)}
+    except Exception as exc:
+        status = "missing" if _is_missing_artifact_error(exc) else "read_error"
+        print(
+            f"[storage] read {status} domain={domain} run_id={run_id} file=check_languages_llm_input.json: {exc}",
+            file=sys.stderr,
+        )
+        return {"status": status, "exists": status != "missing", "payload": None, "error": str(exc)}
+    if not isinstance(payload, dict):
+        return {"status": "invalid_payload", "exists": True, "payload": None, "error": "expected object"}
+    return {"status": "valid", "exists": True, "payload": payload, "error": ""}
+
+
 def _build_exception_diagnostics(exc: Exception, *, stage: str, substage: str, replay_context: dict | None = None) -> dict:
     root = exc
     if isinstance(exc, SystemExit) and exc.__cause__ is not None:
@@ -3568,6 +3599,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             "target_language": _normalize_target_language(str(payload.get("target_language", ""))),
             "target_run_id": str(payload.get("target_run_id", "")).strip(),
             "generated_target_url": str(payload.get("generated_target_url", "")).strip(),
+            "show_gate_diagnostics": _as_bool(payload.get("show_gate_diagnostics", "")),
         }
         if message:
             query["message"] = message
@@ -3583,6 +3615,16 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         domain = _resolve_check_languages_domain(payload)
         en_run_id = str(payload.get("en_run_id", "")).strip()
         target_language = _normalize_target_language(str(payload.get("target_language", "")))
+        if action == "recompute_gate":
+            redirect_payload = dict(payload)
+            redirect_payload["selected_domain"] = domain
+            redirect_payload["show_gate_diagnostics"] = "1"
+            self._redirect_check_languages(
+                redirect_payload,
+                message="LLM gate diagnostics recomputed from current artifacts.",
+                level="ok",
+            )
+            return
 
         if not domain:
             self._redirect_check_languages(payload, message="Domain is required.", level="error")
@@ -3700,6 +3742,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         generated_target_url = str(query.get("generated_target_url", [""])[0]).strip()
         message = str(query.get("message", [""])[0]).strip()
         level = str(query.get("level", [""])[0]).strip().lower()
+        show_gate_diagnostics = _as_bool(str(query.get("show_gate_diagnostics", [""])[0]).strip())
         csrf_token = self._ensure_csrf_cookie()
 
         errors: list[str] = []
@@ -3715,10 +3758,42 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         llm_input_exists_for_page = False
         hashes_ok_for_page = False
         llm_running = False
+        llm_input_artifact_status_for_page = "missing"
+        llm_input_payload = None
+        llm_input_status = "missing"
+        llm_status_note = ""
+        payload_prepared_evidence = False
         llm_review_block = "<p>LLM telemetry is not available for this selection yet.</p>"
         payload_preview_block = "<p>Payload not prepared yet.</p>"
+        gate_diagnostics_block = "<p>Use “Recompute LLM gate diagnostics” to refresh gate details from storage.</p>"
         page_state = "input_incomplete"
         en_readiness = {"required": [], "missing": [], "read_error": "", "ready": False}
+        stale = False
+        llm_input_path = None
+        llm_preview = "—"
+        failure_payload = None
+
+        def _derive_llm_input_status(current_page_state: str) -> tuple[str, str, bool, str]:
+            payload_ready = isinstance(prepared_manifest_for_page, dict) and isinstance(llm_input_payload, dict) and hashes_ok_for_page
+            next_page_state = current_page_state
+            if payload_ready and next_page_state in {"queued", "preparing_payload"}:
+                next_page_state = "prepared_for_llm"
+            if llm_input_artifact_status_for_page == "missing":
+                next_status = "pending" if next_page_state in {"preparing_payload", "running_target_capture", "preparing_target_run"} else "missing"
+            elif llm_input_artifact_status_for_page == "valid":
+                next_status = "stale" if stale else "valid"
+            else:
+                next_status = llm_input_artifact_status_for_page
+            note = ""
+            if next_status == "pending":
+                note = "Will be created after target capture and payload preparation complete."
+            elif next_status == "read_error":
+                note = "Artifact exists but could not be read from storage."
+            elif next_status == "malformed_json":
+                note = "Artifact exists but contains malformed JSON."
+            elif next_status == "invalid_payload":
+                note = "Artifact JSON parsed, but payload is not an object."
+            return next_status, note, payload_ready, next_page_state
 
         if not domain:
             errors.append("Domain is required.")
@@ -3848,27 +3923,17 @@ class SkeletonHandler(BaseHTTPRequestHandler):
 
             prepared_manifest = _read_json_safe(target_run_domain, target_run_id, "check_languages_prepared_payload.json", None)
             prepared_manifest_for_page = prepared_manifest
-            llm_input_payload = _read_json_safe(
-                target_run_domain,
-                target_run_id,
-                "check_languages_llm_input.json",
-                None,
-            )
-            llm_input_exists = isinstance(llm_input_payload, dict)
+            llm_input_diagnostics = _check_languages_llm_input_artifact_status(target_run_domain, target_run_id)
+            llm_input_artifact_status_for_page = str(llm_input_diagnostics.get("status", "missing"))
+            llm_input_payload = llm_input_diagnostics.get("payload") if llm_input_artifact_status_for_page == "valid" else None
+            llm_input_exists = llm_input_artifact_status_for_page == "valid"
             llm_input_exists_for_page = llm_input_exists
             source_hashes = prepared_manifest.get("source_hashes") if isinstance(prepared_manifest, dict) and isinstance(prepared_manifest.get("source_hashes"), dict) else {}
             has_hashes = bool(source_hashes)
             stale = bool(source_hashes and source_hashes != _check_languages_source_hashes(target_run_domain, selected_en_run_id, target_run_id))
             hashes_ok_for_page = has_hashes and not stale
-            payload_prepared_evidence = isinstance(prepared_manifest, dict) and isinstance(llm_input_payload, dict) and hashes_ok_for_page
-            if payload_prepared_evidence and page_state in {"queued", "preparing_payload"}:
-                page_state = "prepared_for_llm"
-            llm_input_status = "pending" if page_state in {"preparing_payload", "running_target_capture", "preparing_target_run"} and not llm_input_exists else "missing"
-            llm_status_note = "Will be created after target capture and payload preparation complete." if llm_input_status == "pending" else ""
-            llm_preview = "—"
-            llm_input_path = None
+            llm_input_status, llm_status_note, payload_prepared_evidence, page_state = _derive_llm_input_status(page_state)
             if isinstance(llm_input_payload, dict):
-                llm_input_status = "stale" if stale else "valid"
                 manifest_artifact_uri = (
                     prepared_manifest.get("llm_input_artifact")
                     if isinstance(prepared_manifest, dict) and str(prepared_manifest.get("llm_input_artifact", "")).strip()
@@ -3891,23 +3956,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                     "sample_review_context": (llm_input_payload.get("review_contexts") or [None])[0],
                 }
                 llm_preview = json.dumps(preview_payload, ensure_ascii=False, indent=2)
-            llm_path_block = f"path: <code>{_h(llm_input_path)}</code>" if llm_input_path else ""
-            llm_note_block = f"<br/><em>{_h(llm_status_note)}</em>" if llm_status_note else ""
-            llm_preview_block = f"<details><summary>Preview</summary><pre>{_h(llm_preview)}</pre></details>" if isinstance(llm_input_payload, dict) else ""
-            payload_preview_block = (
-                "<ul>"
-                f"<li><strong>check_languages_llm_input.json</strong> — status: <strong>{_h(llm_input_status)}</strong><br/>"
-                f"{llm_path_block}"
-                f"{llm_note_block}"
-                f"{llm_preview_block}</li>"
-                "</ul>"
-            )
             failure_payload = _read_json_safe(target_run_domain, target_run_id, "check_languages_replay_failure.json", None)
-            if isinstance(failure_payload, dict):
-                payload_preview_block += (
-                    "<p class=\"error\">Preparation failure:</p>"
-                    f"<pre>{_h(json.dumps(failure_payload, ensure_ascii=False, indent=2))}</pre>"
-                )
         elif selected_en_run_id and target_language:
             page_state = "ready_to_start"
 
@@ -3992,19 +4041,46 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         if target_run_id and not isinstance(prepared_manifest_for_page, dict):
             prepared_manifest_for_page = _read_json_safe(target_run_domain_for_page, target_run_id, "check_languages_prepared_payload.json", None)
         if target_run_id and not llm_input_exists_for_page:
-            _fb_llm_payload = _read_json_safe(
-                target_run_domain_for_page,
-                target_run_id,
-                "check_languages_llm_input.json",
-                None,
-            )
+            _fb_llm_diag = _check_languages_llm_input_artifact_status(target_run_domain_for_page, target_run_id)
+            llm_input_artifact_status_for_page = str(_fb_llm_diag.get("status", llm_input_artifact_status_for_page))
+            _fb_llm_payload = _fb_llm_diag.get("payload") if llm_input_artifact_status_for_page == "valid" else None
             if isinstance(_fb_llm_payload, dict):
                 llm_input_exists_for_page = True
+                llm_input_artifact_status_for_page = "valid"
                 if not isinstance(llm_input_payload, dict):
                     llm_input_payload = _fb_llm_payload
+                if not llm_input_path:
+                    llm_input_path = f"gs://{storage.BUCKET_NAME}/{storage.artifact_path(target_run_domain_for_page, target_run_id, 'check_languages_llm_input.json')}"
+                preview_payload = {
+                    "target_language": llm_input_payload.get("target_language"),
+                    "review_context_count": llm_input_payload.get("review_context_count"),
+                    "blocked_pages_count": len(llm_input_payload.get("blocked_pages", [])) if isinstance(llm_input_payload.get("blocked_pages"), list) else 0,
+                    "source_hashes": llm_input_payload.get("source_hashes", {}),
+                    "sample_review_context": (llm_input_payload.get("review_contexts") or [None])[0],
+                }
+                llm_preview = json.dumps(preview_payload, ensure_ascii=False, indent=2)
         if target_run_id and isinstance(prepared_manifest_for_page, dict) and not hashes_ok_for_page:
             expected = prepared_manifest_for_page.get("source_hashes") if isinstance(prepared_manifest_for_page.get("source_hashes"), dict) else {}
             hashes_ok_for_page = bool(expected) and expected == _check_languages_source_hashes(target_run_domain_for_page, selected_en_run_id, target_run_id)
+            stale = bool(expected) and not hashes_ok_for_page
+        if target_run_id:
+            llm_input_status, llm_status_note, payload_prepared_evidence, page_state = _derive_llm_input_status(page_state)
+            llm_path_block = f"path: <code>{_h(llm_input_path)}</code>" if llm_input_path else ""
+            llm_note_block = f"<br/><em>{_h(llm_status_note)}</em>" if llm_status_note else ""
+            llm_preview_block = f"<details><summary>Preview</summary><pre>{_h(llm_preview)}</pre></details>" if isinstance(llm_input_payload, dict) else ""
+            payload_preview_block = (
+                "<ul>"
+                f"<li><strong>check_languages_llm_input.json</strong> — status: <strong>{_h(llm_input_status)}</strong><br/>"
+                f"{llm_path_block}"
+                f"{llm_note_block}"
+                f"{llm_preview_block}</li>"
+                "</ul>"
+            )
+            if isinstance(failure_payload, dict):
+                payload_preview_block += (
+                    "<p class=\"error\">Preparation failure:</p>"
+                    f"<pre>{_h(json.dumps(failure_payload, ensure_ascii=False, indent=2))}</pre>"
+                )
         llm_enabled = bool(
             domain
             and selected_en_run_id
@@ -4015,6 +4091,21 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             and hashes_ok_for_page
             and not llm_running
         )
+        if show_gate_diagnostics:
+            gate_diagnostics_block = (
+                "<ul>"
+                f"<li>domain present: <strong>{_h(str(bool(domain)).lower())}</strong></li>"
+                f"<li>selected_en_run_id present: <strong>{_h(str(bool(selected_en_run_id)).lower())}</strong></li>"
+                f"<li>target_language present: <strong>{_h(str(bool(target_language)).lower())}</strong></li>"
+                f"<li>target_run_id present: <strong>{_h(str(bool(target_run_id)).lower())}</strong></li>"
+                f"<li>errors empty: <strong>{_h(str(not errors).lower())}</strong></li>"
+                f"<li>llm_input_exists_for_page: <strong>{_h(str(llm_input_exists_for_page).lower())}</strong></li>"
+                f"<li>hashes_ok_for_page: <strong>{_h(str(hashes_ok_for_page).lower())}</strong></li>"
+                f"<li>llm_running: <strong>{_h(str(llm_running).lower())}</strong></li>"
+                f"<li>check_languages_llm_input.json read status: <strong>{_h(llm_input_artifact_status_for_page)}</strong></li>"
+                f"<li>final llm_enabled: <strong>{_h(str(llm_enabled).lower())}</strong></li>"
+                "</ul>"
+            )
         llm_disabled_attr = "" if llm_enabled else ' disabled="disabled"'
 
         self._serve_template(
@@ -4049,6 +4140,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 "{{prepare_disabled}}": prepare_disabled_attr,
                 "{{run_llm_disabled}}": llm_disabled_attr,
                 "{{payload_preview}}": payload_preview_block,
+                "{{gate_diagnostics}}": gate_diagnostics_block,
             },
             extra_set_cookies=[self._build_cookie_header(CSRF_COOKIE, csrf_token, max_age=SESSION_MAX_AGE_SECONDS, http_only=False)],
         )
