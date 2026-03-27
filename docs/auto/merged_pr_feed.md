@@ -2797,3 +2797,39 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c658517794832c8725e6f30104ee15)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #182 — 2026-03-27T11:13:28Z
+
+- Title: Extract whitelist and issues helper clusters into separate modules
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/182
+- Author: evinaeva
+- Base branch: main
+- Head branch: 22fn8t-codex/refactor-skeleton_server.py-with-conservative-extraction
+- Merge commit: 3f00f4e39dd1f61ee489d956fa5b911d53646d75
+- Changed files:
+  - app/issues_utils.py
+  - app/skeleton_server.py
+  - app/whitelist_utils.py
+- Description:
+  ### Motivation
+  - Reduce `app/skeleton_server.py` size by conservatively extracting two tightly-scoped helper clusters while preserving existing behavior and public symbols.
+  - Make whitelist and issues/report logic easier to maintain by placing them in dedicated modules without changing route handlers, JSON contracts, status codes, or storage semantics. 
+  - Aim to extract ~200–350 lines of code in a safe, reversible way while keeping all call sites and symbol availability from `app.skeleton_server` unchanged.
+  
+  ### Description
+  - Added `app/whitelist_utils.py` and moved the element-type whitelist helpers there: `
+  `_normalize_whitelist_entry`, `_load_domain_element_type_whitelist`, `_save_domain_element_type_whitelist`, `_add_domain_element_type_whitelist`, `_remove_domain_element_type_whitelist`, `_row_matches_whitelist`.
+  - Added `app/issues_utils.py` and moved the issues/report helpers there: `
+  `_estimate_severity`, `_issues_to_csv`, `_filter_issues`, `_summarize_issues_payload`, `_format_summary_pairs`.
+  - Updated `app/skeleton_server.py` to import the extracted symbols so they remain accessible from `app.skeleton_server` and all existing call sites were left intact. 
+  - No route handlers, orchestration logic, diagnostics writers, or any forbidden symbols were changed; this was a pure extraction/rehoming of helper functions (approximately 230–260 lines relocated).
+  
+  ### Testing
+  - Verified importability via `python -c "import app.skeleton_server"` which succeeded after the change. 
+  - Compiled changed modules with `python -m py_compile app/skeleton_server.py app/whitelist_utils.py app/issues_utils.py` with no syntax errors. 
+  - Ran focused pytest subset for the affected areas: `tests/test_issues_explorer_api.py` and whitelist-related tests in `tests/test_stage_a_read_routes_api.py`, and observed identical results pre- and post-change: `11 passed, 15 deselected`.
+  - Confirmed symbol compatibility using `hasattr(app.skeleton_server, ...)` for all moved helpers and found all were present (no missing symbols).
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c6645b1ce0832cbdf1c47afbeff24a)
+- Notes: Auto-generated from merged PR metadata.
