@@ -2923,17 +2923,29 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         llm_lookup_run_id = ""
         llm_lookup_filename = "check_languages_llm_input.json"
         llm_lookup_path = ""
+        llm_input_primary_lookup_path = ""
+        llm_input_fallback_lookup_path = ""
+        llm_input_lookup_used = "not_attempted"
+        llm_input_diagnostics = {"status": "not_attempted", "payload": None, "error": ""}
         primary_llm_input_read_status = "not_attempted"
         fallback_llm_input_read_status = "not_attempted"
+        llm_review_stats_filename = "llm_review_stats.json"
+        llm_review_stats_lookup_domain = ""
+        llm_review_stats_lookup_run_id = ""
+        llm_review_stats_payload = None
         llm_review_stats_status = "not_attempted"
         llm_review_stats_error = ""
         llm_review_stats_lookup_path = ""
+        llm_review_stats_exists_for_page = False
+        telemetry_payload_valid_for_page = False
+        telemetry_state_used_by_ui = "not_attempted"
         telemetry_ui_input_state = "not_attempted"
         ui_received_exists_flag = False
         ui_received_valid_payload = False
         ui_treats_telemetry_as_missing = True
         llm_preview = "—"
         llm_display = {"state": "Telemetry not evaluated yet."}
+        llm_review_diagnostics_block = "<p>LLM review diagnostics will appear after a target run is selected.</p>"
         failure_payload = None
 
         def _status_priority(status: str) -> int:
@@ -2974,6 +2986,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
 
         def _is_missing_read_error(exc: Exception) -> bool:
             if isinstance(exc, FileNotFoundError):
+                return True
+            if isinstance(exc, KeyError):
                 return True
             class_name = exc.__class__.__name__.strip().lower()
             if class_name == "notfound":
@@ -3068,6 +3082,10 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             telemetry_payload_valid_for_page = llm_review_stats_status == "valid"
             llm_stats_exists = llm_review_stats_exists_for_page
             telemetry_state_used_by_ui = llm_review_stats_status
+            telemetry_ui_input_state = llm_review_stats_status
+            ui_received_exists_flag = llm_review_stats_exists_for_page
+            ui_received_valid_payload = telemetry_payload_valid_for_page
+            ui_treats_telemetry_as_missing = not telemetry_payload_valid_for_page
             workflow_state = str((latest_job or {}).get("workflow_state", "")).strip().lower()
             latest_status = str((latest_job or {}).get("status", "")).strip().lower()
             stage = str((latest_job or {}).get("stage", "")).strip().lower()
@@ -3089,7 +3107,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                     "running_llm_review_failed": "failed_during_llm",
                 }
                 workflow_state = stage_state_map.get(str((latest_job or {}).get("stage", "")).strip().lower(), "")
-            llm_display = _llm_review_display(latest_job, llm_stats_payload, llm_stats_exists, workflow_state or page_state)
+            llm_display = _llm_review_display(latest_job, llm_review_stats_payload, llm_stats_exists, workflow_state or page_state)
             warning_html = f'<p class="warning">{_h(llm_display["warning"])}</p>' if llm_display["warning"] else ""
             llm_review_block = (
                 f"<p>{_h(llm_display['process_summary'])}</p>"
@@ -3406,6 +3424,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 f"<li>llm_wire_format_exists_for_page: <strong>false</strong></li>"
                 f"<li>llm_input_exists_for_page: <strong>{_h(str(llm_input_exists_for_page).lower())}</strong></li>"
                 f"<li>final_ui_label_for_llm_review: <strong>{_h(llm_display['state'])}</strong></li>"
+                f"<li>final_ui_label_is_llm_telemetry_missing: <strong>{_h(str(llm_display['state'] == 'LLM telemetry missing').lower())}</strong></li>"
+                f"<li>llm_telemetry_missing_condition_used_by_ui: <strong>{_h('llm_display.state == \"LLM telemetry missing\"')}</strong></li>"
                 "</ul>"
                 "<p><strong>Artifact lookup: llm_review_stats.json</strong></p>"
                 "<ul>"

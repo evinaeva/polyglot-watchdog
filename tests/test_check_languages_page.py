@@ -1260,6 +1260,8 @@ def test_llm_review_diagnostics_show_missing_telemetry_lookup_and_reason(api_env
     assert f"actual_lookup_path: <strong>gs://test-bucket/{domain}/{target_run_id}/llm_review_stats.json</strong>" in body
     assert "read_status: <strong>missing</strong>" in body
     assert "llm_review_state_reason: <strong>telemetry_missing_after_completion</strong>" in body
+    assert "final_ui_label_is_llm_telemetry_missing: <strong>true</strong>" in body
+    assert "llm_telemetry_missing_condition_used_by_ui: <strong>llm_display.state == &quot;LLM telemetry missing&quot;</strong>" in body
     assert "final_ui_label_for_llm_review: <strong>" in body
 
 
@@ -1275,6 +1277,7 @@ def test_llm_review_diagnostics_show_valid_telemetry_status(api_env):
     assert "read_status: <strong>valid</strong>" in body
     assert "telemetry_payload_valid: <strong>true</strong>" in body
     assert "llm_review_state_reason: <strong>telemetry_valid</strong>" in body
+    assert "final_ui_label_is_llm_telemetry_missing: <strong>false</strong>" in body
 
 
 def test_llm_review_read_error_is_not_reported_as_malformed_telemetry(api_env, monkeypatch):
