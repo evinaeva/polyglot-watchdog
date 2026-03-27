@@ -27,7 +27,7 @@ What is already real in the repository:
 - canonical artifact storage paths and JSON artifact writers/readers;
 - deterministic pipeline/storage conventions for run-level artifacts;
 - implemented phase runners for key contract-aligned flows, including Phase 1, Phase 3, Phase 4, and Phase 6;
-- a `/urls` operator surface for managing seed URLs with persisted domain selection and last-used first-run domain memory;
+- a `/urls` operator surface for managing seed URLs and interaction recipes (upload, attach, delete), with persisted domain selection and last-used first-run domain memory;
 - a `/check-languages` operator surface for running phase-six language checks with a two-step orchestration (payload preparation and LLM review), target-language selection, GitHub Pages project site support, and job orchestration;
 - operator-facing issue exploration backed by persisted issue artifacts;
 - operator workflow pages are now visibly linked via global navigation;
