@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Polyglot Watchdog - Seed URLs</title>
   <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="/static/button-fx.css" />
   <link rel="stylesheet" href="/static/theme-graph.css" />
 </head>
 <body>
@@ -30,7 +31,7 @@
       <button id="replaceButton">Replace list</button>
       <button id="addButton">Add to list</button>
       <button id="clearButton">Clear list</button>
-      <a id="continueFirstRun" class="ui-action-button" href="#">Continue to First Run</a>
+      <a id="continueFirstRun" class="ui-action-button" href="#" data-button-fx="on">Continue to First Run</a>
     </div>
 
     <h2>Domain URL config</h2>
@@ -60,6 +61,7 @@
       <div id="allRecipesList"></div>
     </div>
   </aside>
+  <script src="/static/button-fx.js"></script>
   <script src="/static/i18n.js"></script>
   <script src="/static/urls.js"></script>
   <script src="/static/nav-active.js"></script>

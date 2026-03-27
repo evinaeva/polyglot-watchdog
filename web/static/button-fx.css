@@ -1,0 +1,237 @@
+:root {
+  --fx-btn-grad-1: #6d28d9;
+  --fx-btn-grad-2: #2563eb;
+  --fx-btn-grad-3: #06b6d4;
+  --fx-btn-grad-1-active: #4c1d95;
+  --fx-btn-grad-2-active: #1d4ed8;
+  --fx-btn-grad-3-active: #0891b2;
+  --fx-btn-success-1: #059669;
+  --fx-btn-success-2: #10b981;
+  --fx-btn-success-3: #34d399;
+  --fx-btn-error-1: #b91c1c;
+  --fx-btn-error-2: #dc2626;
+  --fx-btn-error-3: #ef4444;
+  --fx-btn-border: rgba(255, 255, 255, 0.2);
+  --fx-btn-ring: rgba(255, 255, 255, 0.26);
+  --fx-btn-shadow-rest:
+    0 8px 20px rgba(37, 99, 235, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+  --fx-btn-shadow-hover:
+    0 12px 24px rgba(37, 99, 235, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24);
+  --fx-btn-shadow-active:
+    inset 0 3px 10px rgba(0, 0, 0, 0.24),
+    0 4px 10px rgba(37, 99, 235, 0.16);
+  --fx-btn-shadow-loading:
+    0 8px 20px rgba(37, 99, 235, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.16);
+  --fx-btn-shadow-success:
+    0 10px 22px rgba(16, 185, 129, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.16);
+  --fx-btn-shadow-error:
+    0 10px 22px rgba(239, 68, 68, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.16);
+  --fx-btn-ease: cubic-bezier(.2, .8, .2, 1);
+}
+
+.fx-btn[data-button-fx] {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  color: #ffffff;
+  border-color: var(--fx-btn-border);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02)),
+    linear-gradient(135deg, var(--fx-btn-grad-1) 0%, var(--fx-btn-grad-2) 55%, var(--fx-btn-grad-3) 100%);
+  box-shadow: var(--fx-btn-shadow-rest);
+  transition:
+    transform 120ms var(--fx-btn-ease),
+    box-shadow 220ms var(--fx-btn-ease),
+    background 220ms var(--fx-btn-ease),
+    border-color 220ms var(--fx-btn-ease),
+    filter 220ms var(--fx-btn-ease),
+    opacity 220ms var(--fx-btn-ease);
+}
+
+.fx-btn[data-button-fx]:hover:not([disabled]):not([data-state='loading']) {
+  transform: translateY(-1px);
+  box-shadow: var(--fx-btn-shadow-hover);
+  filter: saturate(1.06) brightness(1.03);
+}
+
+.fx-btn[data-button-fx]:active:not([disabled]):not([data-state='loading']) {
+  transform: translateY(1px) scale(0.99);
+  box-shadow: var(--fx-btn-shadow-active);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02)),
+    linear-gradient(135deg, var(--fx-btn-grad-1-active) 0%, var(--fx-btn-grad-2-active) 55%, var(--fx-btn-grad-3-active) 100%);
+}
+
+.fx-btn[data-button-fx]:focus-visible {
+  outline: none;
+}
+
+.fx-btn[data-button-fx]:focus-visible .fx-btn__ring {
+  box-shadow: 0 0 0 4px var(--fx-btn-ring);
+}
+
+.fx-btn[data-button-fx][disabled],
+.fx-btn[data-button-fx][aria-disabled='true'] {
+  opacity: 0.45;
+  transform: none !important;
+  filter: grayscale(0.08);
+}
+
+.fx-btn[data-button-fx][data-state='loading'] {
+  cursor: wait;
+  filter: saturate(0.95) brightness(0.98);
+  box-shadow: var(--fx-btn-shadow-loading);
+}
+
+.fx-btn[data-button-fx][data-state='success'] {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02)),
+    linear-gradient(135deg, var(--fx-btn-success-1) 0%, var(--fx-btn-success-2) 55%, var(--fx-btn-success-3) 100%);
+  box-shadow: var(--fx-btn-shadow-success);
+}
+
+.fx-btn[data-button-fx][data-state='error'] {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.02)),
+    linear-gradient(135deg, var(--fx-btn-error-1) 0%, var(--fx-btn-error-2) 55%, var(--fx-btn-error-3) 100%);
+  box-shadow: var(--fx-btn-shadow-error);
+}
+
+.fx-btn[data-button-fx] .fx-btn__glow,
+.fx-btn[data-button-fx] .fx-btn__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.fx-btn[data-button-fx] .fx-btn__glow {
+  z-index: 0;
+  background: radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.18), transparent 62%);
+  opacity: 0.55;
+}
+
+.fx-btn[data-button-fx] .fx-btn__ring {
+  z-index: 5;
+}
+
+.fx-btn[data-button-fx] .fx-btn__content {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+.fx-btn[data-button-fx] .fx-btn__state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: translateY(2px) scale(0.98);
+  transition: opacity 180ms var(--fx-btn-ease), transform 180ms var(--fx-btn-ease);
+  pointer-events: none;
+}
+
+.fx-btn[data-button-fx] .fx-btn__state--default {
+  position: relative;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.fx-btn[data-button-fx][data-state='loading'] .fx-btn__state,
+.fx-btn[data-button-fx][data-state='success'] .fx-btn__state,
+.fx-btn[data-button-fx][data-state='error'] .fx-btn__state {
+  opacity: 0;
+  transform: translateY(2px) scale(0.98);
+}
+
+.fx-btn[data-button-fx][data-state='loading'] .fx-btn__state--loading,
+.fx-btn[data-button-fx][data-state='success'] .fx-btn__state--success,
+.fx-btn[data-button-fx][data-state='error'] .fx-btn__state--error {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.fx-btn[data-button-fx] .fx-btn__icon,
+.fx-btn[data-button-fx] .fx-btn__spinner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fx-btn[data-button-fx] .fx-btn__icon {
+  width: 1.1em;
+  height: 1.1em;
+  flex: 0 0 1.1em;
+}
+
+.fx-btn[data-button-fx] .fx-btn__icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.fx-btn[data-button-fx] .fx-btn__spinner {
+  width: 1.1em;
+  height: 1.1em;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: rgba(255, 255, 255, 0.95);
+  animation: fx-btn-spin 0.7s linear infinite;
+}
+
+.fx-btn[data-button-fx] .fx-btn__ripple {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: 999px;
+  transform: translate(-50%, -50%) scale(0);
+  pointer-events: none;
+  z-index: 1;
+  background: rgba(255, 255, 255, 0.34);
+  animation: fx-btn-ripple 560ms ease-out forwards;
+}
+
+@keyframes fx-btn-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fx-btn-ripple {
+  0% {
+    opacity: 0.55;
+    transform: translate(-50%, -50%) scale(0);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(8);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-btn[data-button-fx] {
+    transition: none;
+  }
+
+  .fx-btn[data-button-fx] .fx-btn__state,
+  .fx-btn[data-button-fx] .fx-btn__ripple,
+  .fx-btn[data-button-fx] .fx-btn__spinner {
+    animation: none;
+    transition: none;
+  }
+}
