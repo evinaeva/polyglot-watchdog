@@ -792,12 +792,12 @@ def _parse_gs_uri_safe(uri: str) -> tuple[str, str, str, str] | None:
         return None
     bucket, path = parsed
     normalized_path = str(path or "").strip("/")
-    parts = [part for part in normalized_path.split("/") if part]
-    if len(parts) < 3:
+    if not normalized_path:
         return None
-    filename = parts[-1]
-    run_id = parts[-2]
-    domain = "/".join(parts[:-2]).strip()
+    try:
+        domain, run_id, filename = normalized_path.rsplit("/", 2)
+    except ValueError:
+        return None
     if not bucket or not domain or not run_id or not filename:
         return None
     return bucket, domain, run_id, filename

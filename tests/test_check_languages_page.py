@@ -1629,6 +1629,71 @@ def test_recomputed_gate_final_enabled_matches_conditions(api_env):
     assert 'id="checkLanguagesRunLlmButton" name="action" value="run_llm_review" type="submit" disabled="disabled"' not in body
 
 
+def test_parse_gs_uri_safe_preserves_embedded_https_domain():
+    from app.skeleton_server import _parse_gs_uri_safe
+
+    domain = "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html"
+    run_id = "e761d6f0-db52-44d1-8d8f-4da8489d55aa-check-de"
+    filename = "check_languages_llm_input.json"
+    uri = f"gs://test-bucket/{domain}/{run_id}/{filename}"
+
+    assert _parse_gs_uri_safe(uri) == ("test-bucket", domain, run_id, filename)
+
+
+def test_check_languages_page_does_not_infer_malformed_domain_from_gs_uri(api_env):
+    domain = SUPPORTED_TEST_DOMAIN
+    target_run_id = "e761d6f0-db52-44d1-8d8f-4da8489d55aa-check-de"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "de")
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "de", "review_context_count": 1, "review_contexts": [{"id": "ctx-1"}]})
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {
+        "source_hashes": {},
+        "llm_input_artifact": f"gs://test-bucket/{domain}/{target_run_id}/check_languages_llm_input.json",
+    })
+
+    status, body, _ = _request(
+        "GET",
+        api_env,
+        f"/check-languages?domain={domain}&en_run_id=run-en&target_language=de&target_run_id={target_run_id}&show_gate_diagnostics=1",
+    )
+    assert status == HTTPStatus.OK
+    assert f"manifest_domain: <strong>{domain}</strong>" in body
+    assert f"resolved_target_run_domain: <strong>{domain}</strong>" in body
+    assert "https:/evinaeva.github.io/" not in body
+
+
+def test_check_languages_page_enables_llm_with_https_domain_artifact_uri(api_env):
+    from app.skeleton_server import _check_languages_source_hashes
+
+    domain = SUPPORTED_TEST_DOMAIN
+    target_run_id = "e761d6f0-db52-44d1-8d8f-4da8489d55aa-check-de"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "de")
+    expected_hashes = _check_languages_source_hashes(domain, "run-en", target_run_id)
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "de", "review_context_count": 2, "review_contexts": [{"id": "ctx-1"}]})
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {
+        "source_hashes": expected_hashes,
+        "llm_input_artifact": f"gs://test-bucket/{domain}/{target_run_id}/check_languages_llm_input.json",
+    })
+
+    status, body, _ = _request(
+        "GET",
+        api_env,
+        f"/check-languages?domain={domain}&en_run_id=run-en&target_language=de&target_run_id={target_run_id}&show_gate_diagnostics=1",
+    )
+    assert status == HTTPStatus.OK
+    assert "check_languages_llm_input.json read status: <strong>valid</strong>" in body
+    assert "llm_input_exists_for_page: <strong>true</strong>" in body
+    assert "hashes_ok_for_page: <strong>true</strong>" in body
+    assert "final llm_enabled: <strong>true</strong>" in body
+    assert (
+        f"actual_llm_input_lookup_path: <strong>gs://test-bucket/{domain}/{target_run_id}/check_languages_llm_input.json</strong>"
+        in body
+    )
+
+
 def test_prepared_payload_artifacts_override_stale_preparing_state_and_enable_llm(api_env):
     from app.skeleton_server import _stable_json_hash
 
