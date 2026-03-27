@@ -98,6 +98,7 @@ from app.check_languages_service import (
     _check_languages_payload_status,
     _check_languages_source_hashes,
     _check_languages_llm_input_artifact_status,
+    _check_languages_llm_review_stats_artifact_status,
     _check_languages_run_domains as _service_check_languages_run_domains,
     _default_english_reference_run_id,
     _find_in_progress_check_languages_job as _service_find_in_progress_check_languages_job,
@@ -2922,24 +2923,32 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         llm_lookup_run_id = ""
         llm_lookup_filename = "check_languages_llm_input.json"
         llm_lookup_path = ""
-        llm_input_diagnostics: dict | None = None
-        llm_review_diagnostics_block = "<p>LLM review diagnostics are unavailable for this selection.</p>"
-        llm_review_stats_filename = "llm_review_stats.json"
+        primary_llm_input_read_status = "not_attempted"
+        fallback_llm_input_read_status = "not_attempted"
         llm_review_stats_status = "not_attempted"
         llm_review_stats_error = ""
         llm_review_stats_lookup_path = ""
-        llm_review_stats_lookup_domain = ""
-        llm_review_stats_lookup_run_id = ""
-        llm_review_stats_exists_for_page = False
-        telemetry_payload_valid_for_page = False
-        telemetry_state_used_by_ui = "not_attempted"
-        llm_review_state_reason = "llm_review_not_evaluated"
-        llm_input_primary_lookup_path = ""
-        llm_input_fallback_lookup_path = ""
-        llm_input_lookup_used = "not_attempted"
+        telemetry_ui_input_state = "not_attempted"
+        ui_received_exists_flag = False
+        ui_received_valid_payload = False
+        ui_treats_telemetry_as_missing = True
         llm_preview = "—"
         llm_display = {"state": "Telemetry not evaluated yet."}
         failure_payload = None
+
+        def _status_priority(status: str) -> int:
+            priorities = {
+                "valid": 5,
+                "read_error": 4,
+                "malformed_json": 3,
+                "invalid_payload": 2,
+                "missing": 1,
+                "not_attempted": 0,
+            }
+            return priorities.get(str(status or "").strip().lower(), -1)
+
+        def _more_informative_status(primary: str, fallback: str) -> str:
+            return primary if _status_priority(primary) >= _status_priority(fallback) else fallback
 
         def _derive_llm_input_status(current_page_state: str) -> tuple[str, str, bool, str]:
             payload_ready = isinstance(prepared_manifest_for_page, dict) and isinstance(llm_input_payload, dict) and hashes_ok_for_page
@@ -3155,6 +3164,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             llm_input_primary_lookup_path = llm_lookup_path
             llm_input_diagnostics = _check_languages_llm_input_artifact_status(target_run_domain, target_run_id)
             llm_input_artifact_status_for_page = str(llm_input_diagnostics.get("status", "missing"))
+            primary_llm_input_read_status = llm_input_artifact_status_for_page
             llm_input_payload = llm_input_diagnostics.get("payload") if llm_input_artifact_status_for_page == "valid" else None
             llm_input_exists = llm_input_artifact_status_for_page == "valid"
             llm_input_exists_for_page = llm_input_exists
@@ -3276,7 +3286,9 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             llm_lookup_path = _build_gs_lookup_path(llm_lookup_domain, llm_lookup_run_id, llm_lookup_filename)
             llm_input_fallback_lookup_path = llm_lookup_path
             _fb_llm_diag = _check_languages_llm_input_artifact_status(target_run_domain_for_page, target_run_id)
-            llm_input_artifact_status_for_page = str(_fb_llm_diag.get("status", llm_input_artifact_status_for_page))
+            fallback_llm_input_read_status = str(_fb_llm_diag.get("status", llm_input_artifact_status_for_page))
+            # Preserve the most informative artifact-read status across primary/fallback attempts.
+            llm_input_artifact_status_for_page = _more_informative_status(primary_llm_input_read_status, fallback_llm_input_read_status)
             _fb_llm_payload = _fb_llm_diag.get("payload") if llm_input_artifact_status_for_page == "valid" else None
             llm_input_diagnostics = _fb_llm_diag
             if isinstance(_fb_llm_payload, dict):
@@ -3348,7 +3360,16 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 f"<li>lookup_domain: <strong>{_h(llm_lookup_domain or '—')}</strong></li>"
                 f"<li>lookup_run_id: <strong>{_h(llm_lookup_run_id or '—')}</strong></li>"
                 f"<li>lookup_filename: <strong>{_h(llm_lookup_filename or '—')}</strong></li>"
-                f"<li>actual_llm_input_lookup_path: <strong>{_h(llm_lookup_path or '—')}</strong></li>"
+                f"<li>last_attempted_lookup_path: <strong>{_h(llm_lookup_path or '—')}</strong></li>"
+                f"<li>primary_read_status: <strong>{_h(primary_llm_input_read_status)}</strong></li>"
+                f"<li>fallback_read_status: <strong>{_h(fallback_llm_input_read_status)}</strong></li>"
+                f"<li>llm_review_stats.json read status: <strong>{_h(llm_review_stats_status)}</strong></li>"
+                f"<li>llm_review_stats_lookup_path: <strong>{_h(llm_review_stats_lookup_path or '—')}</strong></li>"
+                f"<li>llm_review_stats_error: <strong>{_h(llm_review_stats_error or '—')}</strong></li>"
+                f"<li>ui_received_exists_flag: <strong>{_h(str(ui_received_exists_flag).lower())}</strong></li>"
+                f"<li>ui_received_valid_payload: <strong>{_h(str(ui_received_valid_payload).lower())}</strong></li>"
+                f"<li>ui_treats_telemetry_as_missing: <strong>{_h(str(ui_treats_telemetry_as_missing).lower())}</strong></li>"
+                f"<li>telemetry_ui_input_state: <strong>{_h(telemetry_ui_input_state)}</strong></li>"
                 f"<li>final llm_enabled: <strong>{_h(str(llm_enabled).lower())}</strong></li>"
                 "</ul>"
             )

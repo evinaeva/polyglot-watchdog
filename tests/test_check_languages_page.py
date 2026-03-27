@@ -1626,6 +1626,218 @@ def test_fallback_diagnostics_preserve_read_error_instead_of_missing(api_env, mo
     assert "<strong>check_languages_llm_input.json</strong> — status: <strong>missing</strong>" not in body
 
 
+def test_fallback_does_not_downgrade_primary_read_error_to_missing(api_env, monkeypatch):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+
+    responses = iter(
+        [
+            {"status": "read_error", "exists": True, "payload": None, "error": "primary read failed"},
+            {"status": "missing", "exists": False, "payload": None, "error": "fallback missing"},
+        ]
+    )
+    monkeypatch.setattr("app.skeleton_server._check_languages_llm_input_artifact_status", lambda *args, **kwargs: next(responses))
+
+    status, body, _ = _request(
+        "GET",
+        api_env,
+        f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}&show_gate_diagnostics=1",
+    )
+    assert status == HTTPStatus.OK
+    assert "status: <strong>read_error</strong>" in body
+    assert "check_languages_llm_input.json read status: <strong>read_error</strong>" in body
+
+
+def test_payload_preview_reports_llm_input_malformed_json_status(api_env, monkeypatch):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+
+    original_read = storage.read_json_artifact
+
+    def _malformed_read(domain_arg: str, run_id_arg: str, filename: str):
+        if filename == "check_languages_llm_input.json":
+            raise json.JSONDecodeError("Expecting value", "{", 1)
+        return original_read(domain_arg, run_id_arg, filename)
+
+    monkeypatch.setattr("app.skeleton_server.storage.read_json_artifact", _malformed_read)
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert "status: <strong>malformed_json</strong>" in body
+
+
+def test_payload_preview_reports_llm_input_invalid_payload_status(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "check_languages_llm_input.json", ["not-an-object"])
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert "status: <strong>invalid_payload</strong>" in body
+
+
+def test_gate_diagnostics_exposes_llm_review_stats_non_valid_status(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "fr", "review_context_count": 1, "review_contexts": [{"id": "ctx-1"}]})
+
+    status, body, _ = _request(
+        "GET",
+        api_env,
+        f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}&show_gate_diagnostics=1",
+    )
+    assert status == HTTPStatus.OK
+    assert "llm_review_stats.json read status: <strong>read_error</strong>" in body
+    assert "ui_received_exists_flag: <strong>false</strong>" in body
+    assert "ui_received_valid_payload: <strong>false</strong>" in body
+    assert "ui_treats_telemetry_as_missing: <strong>true</strong>" in body
+    assert "telemetry_ui_input_state: <strong>missing_for_ui</strong>" in body
+
+
+def test_fallback_does_not_downgrade_primary_malformed_json_to_missing(api_env, monkeypatch):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+
+    responses = iter(
+        [
+            {"status": "malformed_json", "exists": True, "payload": None, "error": "primary malformed"},
+            {"status": "missing", "exists": False, "payload": None, "error": "fallback missing"},
+        ]
+    )
+    monkeypatch.setattr("app.skeleton_server._check_languages_llm_input_artifact_status", lambda *args, **kwargs: next(responses))
+
+    status, body, _ = _request(
+        "GET",
+        api_env,
+        f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}&show_gate_diagnostics=1",
+    )
+    assert status == HTTPStatus.OK
+    assert "status: <strong>malformed_json</strong>" in body
+    assert "primary_read_status: <strong>malformed_json</strong>" in body
+    assert "fallback_read_status: <strong>missing</strong>" in body
+
+
+def test_fallback_does_not_downgrade_primary_invalid_payload_to_missing(api_env, monkeypatch):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+
+    responses = iter(
+        [
+            {"status": "invalid_payload", "exists": True, "payload": None, "error": "primary invalid"},
+            {"status": "missing", "exists": False, "payload": None, "error": "fallback missing"},
+        ]
+    )
+    monkeypatch.setattr("app.skeleton_server._check_languages_llm_input_artifact_status", lambda *args, **kwargs: next(responses))
+
+    status, body, _ = _request(
+        "GET",
+        api_env,
+        f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}&show_gate_diagnostics=1",
+    )
+    assert status == HTTPStatus.OK
+    assert "status: <strong>invalid_payload</strong>" in body
+    assert "primary_read_status: <strong>invalid_payload</strong>" in body
+    assert "fallback_read_status: <strong>missing</strong>" in body
+
+
+def test_llm_review_stats_not_found_exception_classifies_as_missing(api_env, monkeypatch):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "fr", "review_context_count": 1, "review_contexts": [{"id": "ctx-1"}]})
+
+    class NotFound(Exception):
+        pass
+
+    original_read = storage.read_json_artifact
+
+    def _patched_read(domain_arg: str, run_id_arg: str, filename: str):
+        if filename == "llm_review_stats.json":
+            raise NotFound("artifact missing")
+        return original_read(domain_arg, run_id_arg, filename)
+
+    monkeypatch.setattr("app.skeleton_server.storage.read_json_artifact", _patched_read)
+
+    status, body, _ = _request(
+        "GET",
+        api_env,
+        f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}&show_gate_diagnostics=1",
+    )
+    assert status == HTTPStatus.OK
+    assert "llm_review_stats.json read status: <strong>missing</strong>" in body
+
+
+@pytest.mark.parametrize(
+    ("diag_status", "diag_error"),
+    [
+        ("malformed_json", "bad json"),
+        ("invalid_payload", "expected object"),
+        ("read_error", "storage unavailable"),
+    ],
+)
+def test_llm_review_stats_diagnostics_show_raw_status_and_ui_interpretation(api_env, monkeypatch, diag_status, diag_error):
+    import app.skeleton_server as skeleton_server
+
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "fr", "review_context_count": 1, "review_contexts": [{"id": "ctx-1"}]})
+
+    monkeypatch.setattr(
+        "app.skeleton_server._check_languages_llm_review_stats_artifact_status",
+        lambda *args, **kwargs: {"status": diag_status, "exists": diag_status != "missing", "payload": None, "error": diag_error},
+    )
+    original_exists = skeleton_server._artifact_exists
+    monkeypatch.setattr("app.skeleton_server._artifact_exists", lambda d, r, f: False if f == "llm_review_stats.json" else original_exists(d, r, f))
+
+    status, body, _ = _request(
+        "GET",
+        api_env,
+        f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}&show_gate_diagnostics=1",
+    )
+    assert status == HTTPStatus.OK
+    assert f"llm_review_stats.json read status: <strong>{diag_status}</strong>" in body
+    assert "ui_received_exists_flag: <strong>false</strong>" in body
+    assert "ui_treats_telemetry_as_missing: <strong>true</strong>" in body
+    assert "telemetry_ui_input_state: <strong>missing_for_ui</strong>" in body
+
+
+def test_gate_diagnostics_telemetry_not_attempted_without_target_run(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+
+    status, body, _ = _request(
+        "GET",
+        api_env,
+        f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&show_gate_diagnostics=1",
+    )
+    assert status == HTTPStatus.OK
+    assert "llm_review_stats.json read status: <strong>not_attempted</strong>" in body
+    assert "telemetry_ui_input_state: <strong>not_attempted</strong>" in body
+
+
 def test_recompute_gate_action_renders_gate_breakdown(api_env):
     domain = SUPPORTED_MAIN_DOMAIN
     target_run_id = "run-en-check-fr"
@@ -1658,7 +1870,8 @@ def test_recompute_gate_action_renders_gate_breakdown(api_env):
     assert f"lookup_domain: <strong>{domain}</strong>" in body
     assert f"lookup_run_id: <strong>{target_run_id}</strong>" in body
     assert "lookup_filename: <strong>check_languages_llm_input.json</strong>" in body
-    assert f"actual_llm_input_lookup_path: <strong>gs://test-bucket/{domain}/{target_run_id}/check_languages_llm_input.json</strong>" in body
+    assert f"last_attempted_lookup_path: <strong>gs://test-bucket/{domain}/{target_run_id}/check_languages_llm_input.json</strong>" in body
+    assert "llm_review_stats.json read status:" in body
 
 
 def test_recompute_form_preserves_target_run_context_inputs(api_env):
