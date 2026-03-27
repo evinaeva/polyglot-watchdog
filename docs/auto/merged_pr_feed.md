@@ -2632,3 +2632,35 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c58aa4eeb0832c9976c36672d75336)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #177 — 2026-03-27T08:18:03Z
+
+- Title: Read LLM input payload instead of relying on artifact listing and add fallback tests
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/177
+- Author: evinaeva
+- Base branch: main
+- Head branch: 8jx5l1-codex/fix-check_languages-page-status-update-bug
+- Merge commit: 6f7425e9b5aca635703bdaef3c14b586c382250a
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  - Make detection of the LLM input payload robust when artifact listing fails so the UI can enable LLM actions if the payload file is actually readable.
+  - Ensure page rendering uses the actual payload content as a fallback instead of only relying on artifact metadata.
+  - Add tests to cover the case where artifact listing is unavailable and where the primary read initially returns `None` but a subsequent read succeeds.
+  
+  ### Description
+  - Replace uses of `_artifact_exists(...)` for `check_languages_llm_input.json` with `_read_json_safe(...)` and treat existence as `isinstance(..., dict)`.
+  - When page rendering still shows no artifact, attempt a fallback `_read_json_safe(...)` for the page domain/run and populate `llm_input_exists_for_page` and `llm_input_payload` from the result if present.
+  - Preserve prior behavior for computing `page_state`, `llm_input_status`, `llm_input_path`, and `payload_prepared_evidence` but base those on the actual payload read rather than artifact listing.
+  - Add tests `test_prepared_payload_uses_llm_input_read_when_artifact_listing_fails` and `test_llm_input_fallback_read_enables_llm_when_primary_read_returns_none` to validate the new read-first behavior.
+  
+  ### Testing
+  - Ran `pytest tests/test_check_languages_page.py::test_prepared_payload_uses_llm_input_read_when_artifact_listing_fails` and it passed.
+  - Ran `pytest tests/test_check_languages_page.py::test_llm_input_fallback_read_enables_llm_when_primary_read_returns_none` and it passed.
+  - Ran `pytest tests/test_check_languages_page.py` to exercise surrounding scenarios and the file's tests passed.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c6399fc73c832ca0d6f0cd588ebb1a)
+- Notes: Auto-generated from merged PR metadata.
