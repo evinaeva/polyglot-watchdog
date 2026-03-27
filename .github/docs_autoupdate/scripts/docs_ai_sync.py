@@ -95,6 +95,43 @@ def parse_feed(feed_text: str) -> list[dict[str, Any]]:
             }
         )
     return entries
+
+
+def strip_testing_section(text: str) -> str:
+    lines = text.splitlines()
+    result: list[str] = []
+    skip = False
+    for line in lines:
+        if not skip and re.match(r"^\s{0,3}#{1,6}\s*testing\s*$", line, flags=re.IGNORECASE):
+            skip = True
+            continue
+        if not skip and re.match(r"^\s*testing\s*$", line, flags=re.IGNORECASE):
+            skip = True
+            continue
+        if skip and re.match(r"^\s{0,3}#{1,6}\s+\S", line):
+            skip = False
+        elif skip and re.match(r"^\s*[A-Za-z][A-Za-z0-9 /_-]*\s*$", line):
+            skip = False
+        if not skip:
+            result.append(line)
+    return "\n".join(result).rstrip("\n")
+
+
+def sanitize_entry_text(entry_text: str) -> str:
+    lines = entry_text.splitlines()
+    result: list[str] = []
+    skip = False
+    for line in lines:
+        if line.startswith("## PR #"):
+            skip = False
+        if not skip and re.match(r"^\s*(?:#{1,6}\s*)?testing\s*:?\s*$", line, flags=re.IGNORECASE):
+            skip = True
+            continue
+        if skip and line.startswith("- ") and not line.startswith("  - "):
+            skip = False
+        if not skip:
+            result.append(line)
+    return "\n".join(result).rstrip("\n")
 def is_allowed(path: str) -> bool:
     if path.startswith(MACHINE_MANAGED_PREFIXES):
         return False
@@ -314,11 +351,9 @@ def main() -> int:
         "feed_delta": [
             {
                 "pr_number": e["pr_number"],
-                "merged_at": e["merged_at"],
-                "merge_commit": e["merge_commit"],
                 "changed_files": e["changed_files"],
-                "description": e.get("description", ""),
-                "entry": e["raw"],
+                "description": strip_testing_section(e.get("description", "")),
+                "entry": sanitize_entry_text(e["raw"]),
             }
             for e in new_entries
         ],
