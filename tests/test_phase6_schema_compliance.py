@@ -50,7 +50,7 @@ class Phase6SchemaComplianceTests(unittest.TestCase):
         self.assertEqual(issues[0]["category"], "MISSING_TRANSLATION")
         self.assertEqual(issues[0]["evidence"]["review_class"], "OTHER")
         self.assertIn("signals", issues[0]["evidence"])
-        assert write_mock.call_count == 2
+        assert write_mock.call_count == 3  # issues.json + coverage_gaps.json + llm_review_stats.json
         manifest_mock.assert_called_once()
 
     def test_phase6_does_not_persist_when_schema_invalid(self):
