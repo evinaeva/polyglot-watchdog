@@ -3071,3 +3071,29 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c68cdbe80c832cb04822ba7538b06c)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #191 — 2026-03-27T14:29:37Z
+
+- Title: Remove legacy EN-reference readiness helper and clean up imports
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/191
+- Author: evinaeva
+- Base branch: main
+- Head branch: zn28ty-codex/audit-refactor-of-check_languages-service
+- Merge commit: af2d1d60a757b3dd64d4499a0285e18e317bd2d4
+- Changed files:
+  - app/check_languages_service.py
+  - app/skeleton_server.py
+- Description:
+  ### Motivation
+  - Remove an obsolete helper that determined the latest successful English standard run and align the server imports with the reduced service API surface. 
+  
+  ### Description
+  - Delete the `_latest_successful_en_standard_run_id` function from `app/check_languages_service.py`. 
+  - Prune unused and removed symbols from the `app/skeleton_server.py` import list so it no longer imports functions and constants that were removed or are no longer exposed by the check languages service. 
+  
+  ### Testing
+  - Ran the project test suite with `pytest -q` and executed module-level checks for the modified modules; the test run completed successfully.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c6927d045c832c91c75461a83dbb7a)
+- Notes: Auto-generated from merged PR metadata.
