@@ -2767,3 +2767,33 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c6511bf44c832c8b19d2acbdfe644a)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #181 — 2026-03-27T10:41:22Z
+
+- Title: Add LLM input artifact diagnostics and gate diagnostics UI for check-languages
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/181
+- Author: evinaeva
+- Base branch: main
+- Head branch: de190l-codex/fix-check-languages-ui-and-add-recompute-action
+- Merge commit: b5368c22e7bc13ea56ac4b56867eafbdb765c817
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+  - web/templates/check-languages.html
+- Description:
+  ### Motivation
+  - Provide robust detection and reporting of the `check_languages_llm_input.json` artifact state to avoid unreliable listings or transient storage errors causing misleading UI state.
+  - Allow operators to recompute and view simple “gate” diagnostics derived from current artifacts and inputs to understand why the LLM review button is enabled or disabled.
+  
+  ### Description
+  - Add `_is_missing_artifact_error` and `_check_languages_llm_input_artifact_status` helpers to classify artifact reads into `missing`, `read_error`, `malformed_json`, `invalid_payload`, and `valid` statuses and return diagnostics with `exists`, `payload`, and `error` fields.
+  - Introduce `_derive_llm_input_status` logic in the `check-languages` page handler to centralize status derivation and to update page state, preview, path display, and status notes consistently.
+  - Add a `recompute_gate` form action and preserve `target_run_id`/`generated_target_url` inputs so the page can re-run gate diagnostics without losing context, and expose a new UI section `LLM gate diagnostics` in `web/templates/check-languages.html` with a `Recompute LLM gate diagnostics` button.
+  - Update server-side rendering to use the artifact diagnostics when preparing the `payload_preview` and `gate_diagnostics` blocks and to avoid downgrading transient `read_error` conditions to `missing` when fallback paths are unreliable.
+  
+  ### Testing
+  - Ran `pytest tests/test_check_languages_page.py` which includes the newly added tests covering valid, read-error, listing fallback, fallback recompute behavior, and form-preservation scenarios; those tests passed.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c658517794832c8725e6f30104ee15)
+- Notes: Auto-generated from merged PR metadata.
