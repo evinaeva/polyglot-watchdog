@@ -39,6 +39,22 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from app.recipes import delete_recipe, list_recipes, upsert_recipe, load_recipes_for_planner
+from app.artifact_helpers import (
+    _artifact_exists,
+    _artifact_exists_strict,
+    _capture_artifacts_ready,
+    _not_ready_payload,
+    _page_screenshot_view_url,
+    _parse_gs_uri,
+    _parse_http_uri,
+    _read_json_artifact_from_gs_uri,
+    _read_json_required,
+    _read_json_safe,
+    _read_list_artifact_optional_strict,
+    _read_list_artifact_required,
+    _require_artifact_exists,
+    _structured_not_ready,
+)
 from app.seed_urls import (
     normalize_seed_url,
     parse_seed_urls,
@@ -47,6 +63,20 @@ from app.seed_urls import (
     validate_domain,
     write_seed_rows,
     write_seed_urls,
+)
+from app.server_utils import (
+    _as_bool,
+    _as_float,
+    _as_int,
+    _coalesce,
+    _first_present,
+    _issue_sort_key,
+    _missing_required_query_params,
+    _parse_utc_timestamp,
+    _require_query_params,
+    _stable_json_hash,
+    _utc_now_rfc3339,
+    _validate_run_id,
 )
 from app.testbench import get_modules, run_module_test
 from pipeline import storage
@@ -92,70 +122,6 @@ _jobs: dict[str, dict] = {}
 _template_cache: dict[Path, tuple[int, str]] = {}
 _TALLINN_TZ = ZoneInfo("Europe/Tallinn")
 
-
-def _read_json_safe(domain: str, run_id: str, filename: str, default):
-    from pipeline.storage import read_json_artifact
-
-    try:
-        return read_json_artifact(domain, run_id, filename)
-    except Exception as exc:
-        print(f"[storage] read fallback domain={domain} run_id={run_id} file={filename}: {exc}", file=sys.stderr)
-        return default
-
-
-def _read_json_required(domain: str, run_id: str, filename: str):
-    from pipeline.storage import read_json_artifact
-
-    try:
-        return read_json_artifact(domain, run_id, filename)
-    except Exception as exc:
-        raise ValueError(f"{filename} artifact_read_failed") from exc
-
-
-def _read_list_artifact_required(domain: str, run_id: str, filename: str):
-    payload = _read_json_required(domain, run_id, filename)
-    if not isinstance(payload, list):
-        raise ValueError(f"{filename} artifact_invalid")
-    return payload
-
-
-def _read_list_artifact_optional_strict(domain: str, run_id: str, filename: str):
-    exists = _artifact_exists_strict(domain, run_id, filename)
-    if not exists:
-        return None
-    payload = _read_json_required(domain, run_id, filename)
-    if not isinstance(payload, list):
-        raise ValueError(f"{filename} artifact_invalid")
-    return payload
-
-
-def _require_query_params(query: dict[str, list[str]], *params: str) -> tuple[dict[str, str], list[str]]:
-    values = {name: str(query.get(name, [""])[0]).strip() for name in params}
-    missing = [name for name, value in values.items() if not value]
-    return values, missing
-
-
-def _missing_required_query_params(*missing: str) -> dict:
-    return {"error": "missing_required_query_params", "missing": list(missing)}
-
-
-
-
-
-
-def _validate_run_id(run_id: str) -> str:
-    normalized = str(run_id or "").strip()
-    if not normalized:
-        raise ValueError("run_id required")
-    if "/" in normalized or "\\" in normalized or ".." in normalized:
-        raise ValueError("run_id contains invalid path-like segments")
-    if any(ord(char) < 32 or ord(char) == 127 for char in normalized):
-        raise ValueError("run_id contains control characters")
-    return normalized
-
-
-def _not_ready_payload(artifact_base: str) -> dict:
-    return {"error": f"{artifact_base} artifact missing", "status": "not_ready"}
 
 def _normalize_optional_string(value):
     text = str(value).strip() if value is not None else ""
@@ -249,10 +215,6 @@ def _compat_recipe_for_storage(raw_recipe: dict) -> dict:
     return compat
 
 
-def _utc_now_rfc3339() -> str:
-    return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
 def _write_seed_rows_preserve_order(domain: str, rows: list[dict]) -> dict:
     updated_at = _utc_now_rfc3339()
     contract_payload = {
@@ -279,90 +241,6 @@ def _write_seed_rows_preserve_order(domain: str, rows: list[dict]) -> dict:
         },
     )
     return {"domain": domain, "updated_at": updated_at, "urls": rows}
-
-
-def _issue_sort_key(issue: dict) -> tuple[int, int, str]:
-    raw = str(issue.get("id", "")).strip()
-    if raw.isdigit():
-        return (0, int(raw), raw)
-    return (1, 0, raw)
-
-
-
-
-def _artifact_exists(domain: str, run_id: str, filename: str) -> bool:
-    from pipeline.storage import artifact_path, list_run_artifacts
-
-    try:
-        return artifact_path(domain, run_id, filename) in list_run_artifacts(domain, run_id)
-    except Exception:
-        return False
-
-
-
-
-def _artifact_exists_strict(domain: str, run_id: str, filename: str) -> bool:
-    from pipeline.storage import artifact_path, list_run_artifacts
-
-    try:
-        return artifact_path(domain, run_id, filename) in list_run_artifacts(domain, run_id)
-    except Exception as exc:
-        raise ValueError(f"{filename} artifact_read_failed") from exc
-
-
-def _require_artifact_exists(domain: str, run_id: str, filename: str) -> None:
-    if not _artifact_exists_strict(domain, run_id, filename):
-        raise FileNotFoundError(f"{filename} artifact missing")
-
-
-def _capture_artifacts_ready(domain: str, run_id: str) -> bool:
-    return _artifact_exists(domain, run_id, "page_screenshots.json") and _artifact_exists(domain, run_id, "collected_items.json")
-
-
-def _parse_gs_uri(uri: str) -> tuple[str, str] | None:
-    text = str(uri or "").strip()
-    match = re.match(r"^gs://([^/]+)/(.+)$", text)
-    if not match:
-        return None
-    return match.group(1), match.group(2)
-
-
-def _parse_http_uri(uri: str) -> str | None:
-    text = str(uri or "").strip()
-    if re.match(r"^https?://", text, flags=re.IGNORECASE):
-        return text
-    return None
-
-
-def _read_json_artifact_from_gs_uri(uri: str):
-    from pipeline.storage import read_json_artifact
-
-    parsed_uri = _parse_gs_uri(uri)
-    if not parsed_uri:
-        raise ValueError("llm_input_artifact is not a valid gs:// URI")
-    _, path = parsed_uri
-    parts = path.rsplit("/", 2)
-    if len(parts) != 3:
-        raise ValueError("llm_input_artifact has invalid artifact path")
-    domain, run_id, filename = parts
-    return read_json_artifact(domain, run_id, filename)
-
-
-def _page_screenshot_view_url(domain: str, run_id: str, page_id: str) -> str:
-    query = urlencode({"domain": domain, "run_id": run_id, "page_id": page_id})
-    return f"/api/page-screenshot?{query}"
-
-
-def _structured_not_ready(action: str, error: str, *, previous_state: str = "not_ready", next_expected_state: str = "ready") -> dict:
-    return {
-        "status": "not_ready",
-        "action": action,
-        "error": error,
-        "previous_state": previous_state,
-        "resulting_state": "not_ready",
-        "next_expected_state": next_expected_state,
-        "remediation": ["complete prerequisite workflow step", "refresh workflow status", "resolve capture runner prerequisites"],
-    }
 
 
 def _is_english_language(value: str) -> bool:
@@ -834,54 +712,6 @@ def _h(value: object) -> str:
     return html.escape(str(value or ""), quote=True)
 
 
-def _as_int(value: object, default: int = 0) -> int:
-    try:
-        if value is None or value == "":
-            return default
-        return int(float(str(value).strip()))
-    except (TypeError, ValueError):
-        return default
-
-
-def _as_float(value: object) -> float | None:
-    try:
-        if value is None or value == "":
-            return None
-        return float(str(value).strip())
-    except (TypeError, ValueError):
-        return None
-
-
-def _as_bool(value: object) -> bool | None:
-    if isinstance(value, bool):
-        return value
-    normalized = str(value or "").strip().lower()
-    if normalized in {"true", "1", "yes", "y"}:
-        return True
-    if normalized in {"false", "0", "no", "n"}:
-        return False
-    return None
-
-
-def _first_present(payload: dict, *keys: str):
-    for key in keys:
-        if key in payload and payload.get(key) is not None:
-            return payload.get(key)
-    return None
-
-
-def _coalesce(*values: object):
-    for value in values:
-        if value is not None and str(value) != "":
-            return value
-    return None
-
-
-def _stable_json_hash(payload: object) -> str:
-    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-
 def _check_languages_source_hashes(domain: str, en_run_id: str, target_run_id: str) -> dict[str, str]:
     return {
         "en_eligible_dataset_sha256": _stable_json_hash(_read_json_safe(domain, en_run_id, "eligible_dataset.json", [])),
@@ -1276,16 +1106,6 @@ def _upsert_job_status(domain: str, run_id: str, job_record: dict) -> None:
     run["jobs"] = jobs
     runs.sort(key=lambda r: r.get("run_id", ""), reverse=True)
     _save_runs(domain, {"runs": runs})
-
-
-def _parse_utc_timestamp(value: str) -> float | None:
-    text = str(value or "").strip()
-    if not text:
-        return None
-    try:
-        return time.mktime(time.strptime(text, "%Y-%m-%dT%H:%M:%SZ"))
-    except ValueError:
-        return None
 
 
 def _is_stale_running_job(job: dict) -> bool:
