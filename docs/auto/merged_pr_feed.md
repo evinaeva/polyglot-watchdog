@@ -3163,3 +3163,35 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c696ee20ec832cba8ee3dc734c47b3)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #194 — 2026-03-27T15:19:20Z
+
+- Title: Add LLM review diagnostics visibility to check-languages page
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/194
+- Author: evinaeva
+- Base branch: main
+- Head branch: s2kkni-codex/add-llm-review-diagnostics-block
+- Merge commit: 02b93bb8cffb7c281193d909ca99e913656f49da
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  - Provide deterministic, operator-friendly diagnostics to explain why the “LLM Review” UI shows messages like “LLM telemetry missing” by exposing precise reader-side lookup inputs and decision booleans. 
+  - Keep changes minimal and local to the check-languages LLM review/telemetry rendering path for safe debugging visibility without altering existing behavior or artifact formats.
+  
+  ### Description
+  - Added guarded initialization of all LLM-review diagnostic locals (filenames, lookup domain/run_id, primary/fallback lookup paths, payload/status placeholders) in `app/skeleton_server.py` so diagnostics always render and avoid undefined-variable crashes. 
+  - Introduced an explicit compact `LLM review diagnostics` details block near the existing LLM Review section that reports `telemetry_state_used_by_ui`, `latest_job_status/stage/workflow_state`, `llm_running`, `llm_review_state_reason`, booleans used by the UI, and per-artifact reader-side lookup details including assembled `gs://` paths, read_status, and short_error_summary for both `llm_review_stats.json` and `check_languages_llm_input.json`. 
+  - Wired telemetry read results into UI-facing diagnostic fields (`telemetry_ui_input_state`, `ui_received_exists_flag`, `ui_received_valid_payload`, `ui_treats_telemetry_as_missing`, `final_ui_label_is_llm_telemetry_missing`, and the condition string used by the UI) so the page shows exactly why a label was chosen. 
+  - Improved missing-artifact classification used for these diagnostics by treating `KeyError` as a missing read to avoid reporting missing telemetry as a generic read error. 
+  - Updated tests in `tests/test_check_languages_page.py` to assert the new diagnostics fields and the primary-vs-fallback lookup usage for LLM input.
+  
+  ### Testing
+  - Ran focused tests for the added diagnostics with: `PYTHONPATH=. pytest -q tests/test_check_languages_page.py -k "llm_review_diagnostics_show_missing_telemetry_lookup_and_reason or llm_review_diagnostics_show_valid_telemetry_status or llm_review_diagnostics_show_primary_vs_fallback_llm_input_lookup_usage"`, and all three targeted tests passed (3 passed). 
+  - Ran the same focused selection with the `llm_review_diagnostics` filter and received the same successful result (3 passed). 
+  - Changes are localized and the added assertions in `tests/test_check_languages_page.py` now validate the new diagnostic output; no other test suites were modified or run in this pass.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c69c4c9df0832cb8cfd67770eba840)
+- Notes: Auto-generated from merged PR metadata.
