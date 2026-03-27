@@ -1577,6 +1577,11 @@ def test_recompute_gate_action_renders_gate_breakdown(api_env):
     assert "selected_en_run_id present:" in body
     assert "final llm_enabled:" in body
     assert "check_languages_llm_input.json read status:" in body
+    assert "lookup_bucket:" in body
+    assert f"lookup_domain: <strong>{domain}</strong>" in body
+    assert f"lookup_run_id: <strong>{target_run_id}</strong>" in body
+    assert "lookup_filename: <strong>check_languages_llm_input.json</strong>" in body
+    assert f"actual_llm_input_lookup_path: <strong>gs://test-bucket/{domain}/{target_run_id}/check_languages_llm_input.json</strong>" in body
 
 
 def test_recompute_form_preserves_target_run_context_inputs(api_env):

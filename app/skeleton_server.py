@@ -3599,6 +3599,11 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         en_readiness = {"required": [], "missing": [], "read_error": "", "ready": False}
         stale = False
         llm_input_path = None
+        llm_lookup_bucket = str(getattr(storage, "BUCKET_NAME", "") or "")
+        llm_lookup_domain = ""
+        llm_lookup_run_id = ""
+        llm_lookup_filename = "check_languages_llm_input.json"
+        llm_lookup_path = ""
         llm_preview = "—"
         failure_payload = None
 
@@ -3770,6 +3775,12 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                             prepared_manifest = corrected_manifest
                             manifest_llm_input_artifact_for_page = str(prepared_manifest.get("llm_input_artifact", "")).strip()
             prepared_manifest_for_page = prepared_manifest
+            llm_lookup_domain = target_run_domain
+            llm_lookup_run_id = target_run_id
+            try:
+                llm_lookup_path = f"gs://{llm_lookup_bucket}/{storage.artifact_path(llm_lookup_domain, llm_lookup_run_id, llm_lookup_filename)}"
+            except Exception:
+                llm_lookup_path = ""
             llm_input_diagnostics = _check_languages_llm_input_artifact_status(target_run_domain, target_run_id)
             llm_input_artifact_status_for_page = str(llm_input_diagnostics.get("status", "missing"))
             llm_input_payload = llm_input_diagnostics.get("payload") if llm_input_artifact_status_for_page == "valid" else None
@@ -3888,6 +3899,12 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         if target_run_id and not isinstance(prepared_manifest_for_page, dict):
             prepared_manifest_for_page = _read_json_safe(target_run_domain_for_page, target_run_id, "check_languages_prepared_payload.json", None)
         if target_run_id and not llm_input_exists_for_page:
+            llm_lookup_domain = target_run_domain_for_page
+            llm_lookup_run_id = target_run_id
+            try:
+                llm_lookup_path = f"gs://{llm_lookup_bucket}/{storage.artifact_path(llm_lookup_domain, llm_lookup_run_id, llm_lookup_filename)}"
+            except Exception:
+                llm_lookup_path = ""
             _fb_llm_diag = _check_languages_llm_input_artifact_status(target_run_domain_for_page, target_run_id)
             llm_input_artifact_status_for_page = str(_fb_llm_diag.get("status", llm_input_artifact_status_for_page))
             _fb_llm_payload = _fb_llm_diag.get("payload") if llm_input_artifact_status_for_page == "valid" else None
@@ -3953,6 +3970,11 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 f"<li>manifest_domain: <strong>{_h(manifest_domain_for_page or '—')}</strong></li>"
                 f"<li>resolved_target_run_domain: <strong>{_h(target_run_domain_for_page or '—')}</strong></li>"
                 f"<li>llm_input_artifact: <strong>{_h(manifest_llm_input_artifact_for_page or '—')}</strong></li>"
+                f"<li>lookup_bucket: <strong>{_h(llm_lookup_bucket or '—')}</strong></li>"
+                f"<li>lookup_domain: <strong>{_h(llm_lookup_domain or '—')}</strong></li>"
+                f"<li>lookup_run_id: <strong>{_h(llm_lookup_run_id or '—')}</strong></li>"
+                f"<li>lookup_filename: <strong>{_h(llm_lookup_filename or '—')}</strong></li>"
+                f"<li>actual_llm_input_lookup_path: <strong>{_h(llm_lookup_path or '—')}</strong></li>"
                 f"<li>final llm_enabled: <strong>{_h(str(llm_enabled).lower())}</strong></li>"
                 "</ul>"
             )
