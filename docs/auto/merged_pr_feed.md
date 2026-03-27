@@ -3129,3 +3129,37 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c69460d968832c9044b1138ec5699c)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #193 — 2026-03-27T15:03:24Z
+
+- Title: Preserve informative artifact-read status, add llm_review_stats diagnostics, and improve gate telemetry display
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/193
+- Author: evinaeva
+- Base branch: main
+- Head branch: iafnel-codex/conduct-static-audit-of-diagnostics-patch
+- Merge commit: 2fe25645aa82e85e5211118e699ecc53a124461e
+- Changed files:
+  - app/check_languages_service.py
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  - Make artifact-read diagnostics more informative by preserving higher-severity primary read statuses when a fallback check is attempted.
+  - Surface telemetry about `llm_review_stats.json` and how the UI interprets telemetry so gate diagnostics are clearer.
+  - Simplify missing-artifact classification to rely on exception class names for more robust detection of not-found errors.
+  
+  ### Description
+  - Added `_check_languages_llm_review_stats_artifact_status` to read and classify `llm_review_stats.json` with the same error/status semantics as other artifact readers.
+  - Introduced `primary_llm_input_read_status`, `fallback_llm_input_read_status`, `llm_review_stats_status`, telemetry flags, and lookup-path fields in the page handler to capture read attempts and UI interpretation.
+  - Added helper functions `_status_priority` and `_more_informative_status` and updated fallback logic to preserve the more informative status between primary and fallback reads instead of overwriting with a lower-priority status.
+  - Updated gate diagnostics output labels (e.g. `actual_llm_input_lookup_path` -> `last_attempted_lookup_path`) and included the new status and telemetry fields in the diagnostics display. 
+  - Tightened `_is_missing_artifact_error` to consider exception class names (`notfound`, `filenotfounderror`) to determine missing-artifact errors.
+  - Updated and added tests in `tests/test_check_languages_page.py` to cover fallback status preservation, malformed/invalid payload handling, `llm_review_stats.json` diagnostics, and telemetry UI state behavior.
+  
+  ### Testing
+  - Executed the updated unit tests in `tests/test_check_languages_page.py` which include new cases for primary/fallback status preservation, malformed JSON, invalid payload, and `llm_review_stats.json` handling, and they passed. 
+  - Ran the full test suite with `pytest` to verify integrations and regressions and the suite completed successfully.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c696ee20ec832cba8ee3dc734c47b3)
+- Notes: Auto-generated from merged PR metadata.
