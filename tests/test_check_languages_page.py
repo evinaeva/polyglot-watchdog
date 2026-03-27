@@ -1247,6 +1247,83 @@ def test_get_check_languages_warns_when_llm_telemetry_missing_after_completion(a
     assert "State: <strong>LLM stage not started</strong>" in body or "State: <strong>LLM telemetry missing</strong>" in body
 
 
+def test_llm_review_diagnostics_show_missing_telemetry_lookup_and_reason(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_check_languages_completed_run(domain, "run-en", "fr", target_run_id)
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert "LLM review diagnostics" in body
+    assert "artifact_label: <strong>llm_review_stats</strong>" in body
+    assert f"lookup_filename: <strong>llm_review_stats.json</strong>" in body
+    assert f"actual_lookup_path: <strong>gs://test-bucket/{domain}/{target_run_id}/llm_review_stats.json</strong>" in body
+    assert "read_status: <strong>missing</strong>" in body
+    assert "llm_review_state_reason: <strong>telemetry_missing_after_completion</strong>" in body
+    assert "final_ui_label_for_llm_review: <strong>" in body
+
+
+def test_llm_review_diagnostics_show_valid_telemetry_status(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_check_languages_completed_run(domain, "run-en", "fr", target_run_id)
+    _write(domain, target_run_id, "llm_review_stats.json", _llm_review_stats_completed_payload())
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert "artifact_label: <strong>llm_review_stats</strong>" in body
+    assert "read_status: <strong>valid</strong>" in body
+    assert "telemetry_payload_valid: <strong>true</strong>" in body
+    assert "llm_review_state_reason: <strong>telemetry_valid</strong>" in body
+
+
+def test_llm_review_read_error_is_not_reported_as_malformed_telemetry(api_env, monkeypatch):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_check_languages_completed_run(domain, "run-en", "fr", target_run_id)
+
+    from pipeline import storage as _storage
+
+    real_read = _storage.read_json_artifact
+
+    def _fake_read_json_artifact(read_domain, read_run_id, filename):
+        if read_domain == domain and read_run_id == target_run_id and filename == "llm_review_stats.json":
+            raise RuntimeError("permission denied")
+        return real_read(read_domain, read_run_id, filename)
+
+    monkeypatch.setattr("pipeline.storage.read_json_artifact", _fake_read_json_artifact)
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert "LLM telemetry malformed" not in body
+    assert "Telemetry file exists but is malformed; showing unavailable placeholders." not in body
+    assert "read_status: <strong>read_error</strong>" in body
+    assert "telemetry_exists_for_page: <strong>false</strong>" in body
+
+
+def test_llm_review_diagnostics_show_primary_vs_fallback_llm_input_lookup_usage(api_env, monkeypatch):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_check_languages_completed_run(domain, "run-en", "fr", target_run_id)
+
+    calls = {"count": 0}
+
+    def _fake_llm_input_status(_domain, _run_id):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return {"status": "missing", "exists": False, "payload": None, "error": "not found"}
+        return {"status": "valid", "exists": True, "payload": {"target_language": "fr", "review_contexts": [{"id": "ctx-1"}]}, "error": ""}
+
+    monkeypatch.setattr("app.skeleton_server._check_languages_llm_input_artifact_status", _fake_llm_input_status)
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert "artifact_label: <strong>check_languages_llm_input</strong>" in body
+    assert "lookup_path_used_by_ui: <strong>fallback</strong>" in body
+    assert "primary_lookup_path: <strong>gs://test-bucket/" in body
+    assert "fallback_lookup_path: <strong>gs://test-bucket/" in body
+
+
 def test_get_check_languages_malformed_llm_telemetry_warning_is_rendered_safely(api_env):
     domain = SUPPORTED_MAIN_DOMAIN
     target_run_id = "run-en-check-fr"

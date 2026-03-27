@@ -2922,7 +2922,23 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         llm_lookup_run_id = ""
         llm_lookup_filename = "check_languages_llm_input.json"
         llm_lookup_path = ""
+        llm_input_diagnostics: dict | None = None
+        llm_review_diagnostics_block = "<p>LLM review diagnostics are unavailable for this selection.</p>"
+        llm_review_stats_filename = "llm_review_stats.json"
+        llm_review_stats_status = "not_attempted"
+        llm_review_stats_error = ""
+        llm_review_stats_lookup_path = ""
+        llm_review_stats_lookup_domain = ""
+        llm_review_stats_lookup_run_id = ""
+        llm_review_stats_exists_for_page = False
+        telemetry_payload_valid_for_page = False
+        telemetry_state_used_by_ui = "not_attempted"
+        llm_review_state_reason = "llm_review_not_evaluated"
+        llm_input_primary_lookup_path = ""
+        llm_input_fallback_lookup_path = ""
+        llm_input_lookup_used = "not_attempted"
         llm_preview = "—"
+        llm_display = {"state": "Telemetry not evaluated yet."}
         failure_payload = None
 
         def _derive_llm_input_status(current_page_state: str) -> tuple[str, str, bool, str]:
@@ -2946,6 +2962,37 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             elif next_status == "invalid_payload":
                 note = "Artifact JSON parsed, but payload is not an object."
             return next_status, note, payload_ready, next_page_state
+
+        def _is_missing_read_error(exc: Exception) -> bool:
+            if isinstance(exc, FileNotFoundError):
+                return True
+            class_name = exc.__class__.__name__.strip().lower()
+            if class_name == "notfound":
+                return True
+            text = str(exc).strip().lower()
+            return "not found" in text or "404" in text
+
+        def _build_gs_lookup_path(lookup_domain: str, lookup_run_id: str, filename: str) -> str:
+            if not (llm_lookup_bucket and lookup_domain and lookup_run_id and filename):
+                return ""
+            try:
+                return f"gs://{llm_lookup_bucket}/{storage.artifact_path(lookup_domain, lookup_run_id, filename)}"
+            except Exception:
+                return ""
+
+        def _read_llm_review_artifact(lookup_domain: str, lookup_run_id: str, filename: str) -> dict:
+            path = _build_gs_lookup_path(lookup_domain, lookup_run_id, filename)
+            if not (lookup_domain and lookup_run_id and filename):
+                return {"status": "not_attempted", "payload": None, "error": "", "lookup_path": path}
+            try:
+                payload = storage.read_json_artifact(lookup_domain, lookup_run_id, filename)
+            except json.JSONDecodeError as exc:
+                return {"status": "malformed_json", "payload": None, "error": str(exc), "lookup_path": path}
+            except Exception as exc:
+                return {"status": "missing" if _is_missing_read_error(exc) else "read_error", "payload": None, "error": str(exc), "lookup_path": path}
+            if not isinstance(payload, dict):
+                return {"status": "invalid_payload", "payload": None, "error": "expected object", "lookup_path": path}
+            return {"status": "valid", "payload": payload, "error": "", "lookup_path": path}
 
         if not domain:
             errors.append("Domain is required.")
@@ -3001,8 +3048,17 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             target_run_domain = str((run_map.get(target_run_id) or {}).get("domain", "")).strip() or str((latest_job or {}).get("domain", "")).strip() or domain
             target_run_domain_for_page = target_run_domain
             issues_exists = _artifact_exists(target_run_domain, target_run_id, "issues.json")
-            llm_stats_exists = _artifact_exists(target_run_domain, target_run_id, "llm_review_stats.json")
-            llm_stats_payload = _read_json_safe(target_run_domain, target_run_id, "llm_review_stats.json", None) if llm_stats_exists else None
+            llm_review_stats_lookup_domain = target_run_domain
+            llm_review_stats_lookup_run_id = target_run_id
+            llm_stats_read = _read_llm_review_artifact(llm_review_stats_lookup_domain, llm_review_stats_lookup_run_id, llm_review_stats_filename)
+            llm_review_stats_status = str(llm_stats_read.get("status", "not_attempted"))
+            llm_review_stats_payload = llm_stats_read.get("payload") if llm_review_stats_status == "valid" else None
+            llm_review_stats_error = str(llm_stats_read.get("error", ""))
+            llm_review_stats_lookup_path = str(llm_stats_read.get("lookup_path", ""))
+            llm_review_stats_exists_for_page = llm_review_stats_status in {"valid", "malformed_json", "invalid_payload"}
+            telemetry_payload_valid_for_page = llm_review_stats_status == "valid"
+            llm_stats_exists = llm_review_stats_exists_for_page
+            telemetry_state_used_by_ui = llm_review_stats_status
             workflow_state = str((latest_job or {}).get("workflow_state", "")).strip().lower()
             latest_status = str((latest_job or {}).get("status", "")).strip().lower()
             stage = str((latest_job or {}).get("stage", "")).strip().lower()
@@ -3095,10 +3151,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             prepared_manifest_for_page = prepared_manifest
             llm_lookup_domain = target_run_domain
             llm_lookup_run_id = target_run_id
-            try:
-                llm_lookup_path = f"gs://{llm_lookup_bucket}/{storage.artifact_path(llm_lookup_domain, llm_lookup_run_id, llm_lookup_filename)}"
-            except Exception:
-                llm_lookup_path = ""
+            llm_lookup_path = _build_gs_lookup_path(llm_lookup_domain, llm_lookup_run_id, llm_lookup_filename)
+            llm_input_primary_lookup_path = llm_lookup_path
             llm_input_diagnostics = _check_languages_llm_input_artifact_status(target_run_domain, target_run_id)
             llm_input_artifact_status_for_page = str(llm_input_diagnostics.get("status", "missing"))
             llm_input_payload = llm_input_diagnostics.get("payload") if llm_input_artifact_status_for_page == "valid" else None
@@ -3219,16 +3273,16 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         if target_run_id and not llm_input_exists_for_page:
             llm_lookup_domain = target_run_domain_for_page
             llm_lookup_run_id = target_run_id
-            try:
-                llm_lookup_path = f"gs://{llm_lookup_bucket}/{storage.artifact_path(llm_lookup_domain, llm_lookup_run_id, llm_lookup_filename)}"
-            except Exception:
-                llm_lookup_path = ""
+            llm_lookup_path = _build_gs_lookup_path(llm_lookup_domain, llm_lookup_run_id, llm_lookup_filename)
+            llm_input_fallback_lookup_path = llm_lookup_path
             _fb_llm_diag = _check_languages_llm_input_artifact_status(target_run_domain_for_page, target_run_id)
             llm_input_artifact_status_for_page = str(_fb_llm_diag.get("status", llm_input_artifact_status_for_page))
             _fb_llm_payload = _fb_llm_diag.get("payload") if llm_input_artifact_status_for_page == "valid" else None
+            llm_input_diagnostics = _fb_llm_diag
             if isinstance(_fb_llm_payload, dict):
                 llm_input_exists_for_page = True
                 llm_input_artifact_status_for_page = "valid"
+                llm_input_lookup_used = "fallback"
                 if not isinstance(llm_input_payload, dict):
                     llm_input_payload = _fb_llm_payload
                 if not llm_input_path:
@@ -3241,6 +3295,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                     "sample_review_context": (llm_input_payload.get("review_contexts") or [None])[0],
                 }
                 llm_preview = json.dumps(preview_payload, ensure_ascii=False, indent=2)
+        if llm_input_lookup_used == "not_attempted" and target_run_id:
+            llm_input_lookup_used = "primary" if llm_input_primary_lookup_path else "not_attempted"
         if target_run_id and isinstance(prepared_manifest_for_page, dict) and not hashes_ok_for_page:
             expected = prepared_manifest_for_page.get("source_hashes") if isinstance(prepared_manifest_for_page.get("source_hashes"), dict) else {}
             hashes_ok_for_page = bool(expected) and expected == _check_languages_source_hashes(target_run_domain_for_page, selected_en_run_id, target_run_id)
@@ -3296,6 +3352,70 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 f"<li>final llm_enabled: <strong>{_h(str(llm_enabled).lower())}</strong></li>"
                 "</ul>"
             )
+        if target_run_id:
+            if llm_running:
+                llm_review_state_reason = "job_running_llm_review"
+            elif llm_review_stats_status == "valid":
+                llm_review_state_reason = "telemetry_valid"
+            elif llm_review_stats_status in {"malformed_json", "invalid_payload", "read_error"}:
+                llm_review_state_reason = f"telemetry_{llm_review_stats_status}"
+            elif str((latest_job or {}).get("status", "")).strip().lower() in {"succeeded", "failed", "error"}:
+                llm_review_state_reason = "telemetry_missing_after_completion"
+            elif page_state in {"preparing_payload", "prepared_for_llm"}:
+                llm_review_state_reason = "llm_stage_not_started"
+            elif str((latest_job or {}).get("status", "")).strip().lower() in {"running", "queued"}:
+                llm_review_state_reason = "llm_review_not_reached"
+            else:
+                llm_review_state_reason = "telemetry_unavailable"
+            latest_job_workflow_state = str((latest_job or {}).get("workflow_state", "")).strip().lower() or "—"
+            llm_input_error = str((llm_input_diagnostics or {}).get("error", "") or "—")
+            llm_review_diagnostics_block = (
+                "<details>"
+                "<summary>LLM review diagnostics</summary>"
+                "<ul>"
+                f"<li>telemetry_state_used_by_ui: <strong>{_h(telemetry_state_used_by_ui)}</strong></li>"
+                f"<li>latest_job_status: <strong>{_h(str((latest_job or {}).get('status', '')).strip().lower() or '—')}</strong></li>"
+                f"<li>latest_job_stage: <strong>{_h(str((latest_job or {}).get('stage', '')).strip().lower() or '—')}</strong></li>"
+                f"<li>latest_job_workflow_state: <strong>{_h(latest_job_workflow_state)}</strong></li>"
+                f"<li>llm_running: <strong>{_h(str(llm_running).lower())}</strong></li>"
+                f"<li>llm_review_state_reason: <strong>{_h(llm_review_state_reason)}</strong></li>"
+                f"<li>telemetry_exists_for_page: <strong>{_h(str(llm_review_stats_exists_for_page).lower())}</strong></li>"
+                f"<li>telemetry_payload_valid: <strong>{_h(str(telemetry_payload_valid_for_page).lower())}</strong></li>"
+                f"<li>llm_review_stats_exists_for_page: <strong>{_h(str(llm_review_stats_exists_for_page).lower())}</strong></li>"
+                f"<li>llm_wire_format_exists_for_page: <strong>false</strong></li>"
+                f"<li>llm_input_exists_for_page: <strong>{_h(str(llm_input_exists_for_page).lower())}</strong></li>"
+                f"<li>final_ui_label_for_llm_review: <strong>{_h(llm_display['state'])}</strong></li>"
+                "</ul>"
+                "<p><strong>Artifact lookup: llm_review_stats.json</strong></p>"
+                "<ul>"
+                "<li>artifact_label: <strong>llm_review_stats</strong></li>"
+                f"<li>lookup_domain: <strong>{_h(llm_review_stats_lookup_domain or '—')}</strong></li>"
+                f"<li>lookup_run_id: <strong>{_h(llm_review_stats_lookup_run_id or '—')}</strong></li>"
+                f"<li>lookup_filename: <strong>{_h(llm_review_stats_filename)}</strong></li>"
+                f"<li>lookup_bucket: <strong>{_h(llm_lookup_bucket or '—')}</strong></li>"
+                f"<li>actual_lookup_path: <strong>{_h(llm_review_stats_lookup_path or '—')}</strong></li>"
+                f"<li>read_status: <strong>{_h(llm_review_stats_status)}</strong></li>"
+                f"<li>short_error_summary: <strong>{_h(llm_review_stats_error or '—')}</strong></li>"
+                f"<li>primary_lookup_path: <strong>{_h(llm_review_stats_lookup_path or '—')}</strong></li>"
+                "<li>fallback_lookup_path: <strong>—</strong></li>"
+                "<li>lookup_path_used_by_ui: <strong>primary</strong></li>"
+                "</ul>"
+                "<p><strong>Artifact lookup: check_languages_llm_input.json</strong></p>"
+                "<ul>"
+                "<li>artifact_label: <strong>check_languages_llm_input</strong></li>"
+                f"<li>lookup_domain: <strong>{_h(llm_lookup_domain or '—')}</strong></li>"
+                f"<li>lookup_run_id: <strong>{_h(llm_lookup_run_id or '—')}</strong></li>"
+                f"<li>lookup_filename: <strong>{_h(llm_lookup_filename)}</strong></li>"
+                f"<li>lookup_bucket: <strong>{_h(llm_lookup_bucket or '—')}</strong></li>"
+                f"<li>actual_lookup_path: <strong>{_h((llm_input_fallback_lookup_path or llm_input_primary_lookup_path) or '—')}</strong></li>"
+                f"<li>read_status: <strong>{_h(llm_input_artifact_status_for_page or 'not_attempted')}</strong></li>"
+                f"<li>short_error_summary: <strong>{_h(llm_input_error)}</strong></li>"
+                f"<li>primary_lookup_path: <strong>{_h(llm_input_primary_lookup_path or '—')}</strong></li>"
+                f"<li>fallback_lookup_path: <strong>{_h(llm_input_fallback_lookup_path or '—')}</strong></li>"
+                f"<li>lookup_path_used_by_ui: <strong>{_h(llm_input_lookup_used)}</strong></li>"
+                "</ul>"
+                "</details>"
+            )
         llm_disabled_attr = "" if llm_enabled else ' disabled="disabled"'
 
         self._serve_template(
@@ -3325,6 +3445,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 "{{issues_summary}}": issue_summary_block,
                 "{{latest_job}}": latest_job_block,
                 "{{llm_review}}": llm_review_block,
+                "{{llm_review_diagnostics}}": llm_review_diagnostics_block,
                 "{{issues_link}}": _h(issues_link),
                 "{{issues_api_link}}": _h(issues_api_link),
                 "{{prepare_disabled}}": prepare_disabled_attr,
