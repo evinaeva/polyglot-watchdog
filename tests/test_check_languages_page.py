@@ -702,6 +702,76 @@ def test_legacy_domains_remain_exact_match_for_run_discovery(api_env):
 
 
 @pytest.mark.parametrize(
+    ("selected_domain", "expected_run_domains"),
+    [
+        ("https://bongacams.com/", ["https://bongacams.com/"]),
+        ("https://bongamodels.com/", ["https://bongamodels.com/"]),
+        ("https://bongacash.com/", ["https://bongacash.com/"]),
+        (
+            "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html",
+            sorted(
+                [
+                    "https://evinaeva.github.io/",
+                    "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html",
+                    "https://evinaeva.github.io/polyglot-watchdog-testsite/en/test.html",
+                ]
+            ),
+        ),
+    ],
+)
+def test_check_languages_run_domains_are_domain_strict_for_normal_domains_and_custom_for_special(monkeypatch, selected_domain, expected_run_domains):
+    from app.skeleton_server import _check_languages_run_domains
+
+    monkeypatch.setattr(
+        "app.skeleton_server._list_domains",
+        lambda: [
+            "https://bongacams.com/",
+            "https://bongamodels.com/",
+            "https://bongacash.com/",
+            "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html",
+            "https://evinaeva.github.io/polyglot-watchdog-testsite/en/test.html",
+        ],
+    )
+
+    assert _check_languages_run_domains(selected_domain) == expected_run_domains
+
+
+@pytest.mark.parametrize(
+    ("selected_domain", "target_language", "expected_target_url"),
+    [
+        ("https://bongacams.com/", "fr", "https://fr.bongacams.com/"),
+        ("https://bongamodels.com/", "fr", "https://fr.bongamodels.com/"),
+        ("https://bongacash.com/", "fr", "https://fr.bongacash.com/"),
+        (
+            "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html",
+            "fr",
+            "https://evinaeva.github.io/polyglot-watchdog-testsite/fr/index.html",
+        ),
+    ],
+)
+def test_check_languages_target_domain_generation_for_all_supported_domains(selected_domain, target_language, expected_target_url):
+    from app.skeleton_server import _build_check_languages_target_url
+
+    assert _build_check_languages_target_url(selected_domain, target_language) == expected_target_url
+
+
+def test_normal_domains_do_not_aggregate_runs_across_domain_keys():
+    from app.skeleton_server import _load_check_language_runs
+
+    selected_domain = "https://bongamodels.com/"
+    other_normal_domain = "https://bongacams.com/"
+    _write("_system", "manual", "domains.json", {"domains": [selected_domain, other_normal_domain]})
+    _write(selected_domain, "manual", "capture_runs.json", {"runs": [{"run_id": "selected-run", "created_at": "2026-03-11T00:00:00Z", "jobs": []}]})
+    _write(other_normal_domain, "manual", "capture_runs.json", {"runs": [{"run_id": "other-run", "created_at": "2026-03-12T00:00:00Z", "jobs": []}]})
+    _seed_phase6_prereqs(selected_domain, "selected-run", "en")
+    _seed_phase6_prereqs(other_normal_domain, "other-run", "en")
+
+    runs = _load_check_language_runs(selected_domain)
+    assert [row["run_id"] for row in runs] == ["selected-run"]
+    assert {row["domain"] for row in runs} == {selected_domain}
+
+
+@pytest.mark.parametrize(
     ("selected_domain", "expected_target_url"),
     [
         ("https://bongacams.com/", "https://de.bongacams.com/"),
