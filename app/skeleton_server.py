@@ -128,6 +128,7 @@ SUPPORTED_CHECK_LANGUAGE_DOMAINS = [
     "https://bongacash.com/",
     GITHUB_PAGES_TESTSITE_CANONICAL_DOMAIN,
 ]
+NORMAL_CHECK_LANGUAGE_DOMAINS = tuple(SUPPORTED_CHECK_LANGUAGE_DOMAINS[:3])
 
 
 # In-memory job status store (cleared on restart — for UI feedback only)
@@ -352,6 +353,8 @@ def _check_languages_run_domains(value: str) -> list[str]:
     domain = _normalize_check_languages_domain(value)
     if not domain:
         return []
+    if domain in NORMAL_CHECK_LANGUAGE_DOMAINS:
+        return [domain]
     if not _is_special_check_languages_test_domain(domain):
         return [domain]
     out = {
@@ -367,11 +370,7 @@ def _check_languages_run_domains(value: str) -> list[str]:
 
 
 def _build_check_languages_target_url(selected_domain: str, target_language: str) -> str:
-    if selected_domain in {
-        "https://bongacams.com/",
-        "https://bongamodels.com/",
-        "https://bongacash.com/",
-    }:
+    if selected_domain in NORMAL_CHECK_LANGUAGE_DOMAINS:
         return _build_language_subdomain_domain(selected_domain, target_language)
     github_pages = _parse_github_pages_project_language_url(selected_domain)
     if github_pages is not None:
@@ -388,11 +387,7 @@ def _target_capture_url_from_reference_url(reference_url: str, selected_domain: 
     if not target.scheme or not target.netloc:
         raise ValueError("generated target URL is invalid")
 
-    if selected_domain in {
-        "https://bongacams.com/",
-        "https://bongamodels.com/",
-        "https://bongacash.com/",
-    }:
+    if selected_domain in NORMAL_CHECK_LANGUAGE_DOMAINS:
         return urlunparse((target.scheme, target.netloc, source.path, source.params, source.query, source.fragment))
 
     github_pages = _parse_github_pages_project_language_url(selected_domain)
