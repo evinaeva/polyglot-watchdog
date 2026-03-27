@@ -2736,3 +2736,34 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c63fa6cb74832cb1e40894edda7576)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #180 — 2026-03-27T09:52:04Z
+
+- Title: Conservative extraction of element-signature helper functions
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/180
+- Author: evinaeva
+- Base branch: main
+- Head branch: ng2tv7-codex/conduct-conservative-refactor-of-skeleton_server.py
+- Merge commit: fa97d509e4da4ffc1f6b2c5fc881c02b2149732c
+- Changed files:
+  - app/element_signature_utils.py
+  - app/skeleton_server.py
+- Description:
+  ### Motivation
+  - Reduce `app/skeleton_server.py` surface area by moving a small set of pure, deterministic helpers into a dedicated module while keeping behavior identical.
+  - Target only low-risk, leaf helpers that have explicit input→output semantics and do not touch handlers, orchestration, or global state.
+  
+  ### Description
+  - Added a new module `app/element_signature_utils.py` containing six helpers: `_normalize_class_list`, `_normalize_signature_attributes`, `_build_element_signature`, `_signature_is_specific`, `_signature_key`, and `_signature_description`.
+  - Removed the in-file definitions of those six helpers from `app/skeleton_server.py` and re-exported them via an import in `app/skeleton_server.py` so the same symbols remain available at the original module level (`from app.element_signature_utils import ...`).
+  - No changes were made to routing, handlers, auth/session/CSRF, JSON contracts, status codes, storage semantics, or orchestration logic; this is a module-boundary extraction only.
+  
+  ### Testing
+  - Verified `import app.skeleton_server` succeeds after the change (import check: success).
+  - Verified byte-compile for modified files with `python -m py_compile app/skeleton_server.py app/element_signature_utils.py` (success).
+  - Verified symbol availability via `hasattr(app.skeleton_server, ...)` for all six extracted names (all present).
+  - Ran the focused pytest suites covering affected areas with `PYTHONPATH=. pytest -q tests/test_stage_a_read_routes_api.py tests/test_stage_b_operator_flow_api.py` and observed `38 passed, 1 warning` both before and after the change (no regressions in the exercised tests).
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c6511bf44c832c8b19d2acbdfe644a)
+- Notes: Auto-generated from merged PR metadata.
