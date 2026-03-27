@@ -2865,3 +2865,35 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c66687bfe8832c9574fcdf1fdf2971)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #184 — 2026-03-27T12:28:15Z
+
+- Title: Refactor check-languages domain resolution and add regression tests
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/184
+- Author: evinaeva
+- Base branch: main
+- Head branch: zxv95y-codex/refactor-check-languages-domain-resolution
+- Merge commit: 71a2247642dcb92a466949ee5e30db143d0d7ed9
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  - The legacy multi-domain family logic was too generic and could merge runs/artifacts across unrelated domain keys. 
+  - The real product has exactly three normal production domains and one special GitHub Pages test domain with bespoke expansion rules. 
+  - Make normal domains strict to avoid cross-domain aggregation while preserving the explicit testsite handling.
+  
+  ### Description
+  - Introduced `NORMAL_CHECK_LANGUAGE_DOMAINS` as the explicit tuple of the three production domains and used it where domain-kind differentiation is required. 
+  - Made `_check_languages_run_domains` return a single-element list `[{domain}]` for normal domains so there is no family expansion or sibling/alias grouping for those domains. 
+  - Updated `_build_check_languages_target_url` and `_target_capture_url_from_reference_url` to use `NORMAL_CHECK_LANGUAGE_DOMAINS` for `{lang}.{domain}` behavior. 
+  - Added regression tests in `tests/test_check_languages_page.py` covering all four supported domains and asserting strict run discovery and target-domain generation, plus a test to ensure normal domains do not aggregate runs across domain keys.
+  
+  ### Testing
+  - `python -m py_compile app/skeleton_server.py tests/test_check_languages_page.py` ran successfully. 
+  - Attempted `PYTHONPATH=. pytest -q tests/test_check_languages_page.py -k "run_domains_are_domain_strict or target_domain_generation_for_all_supported_domains or normal_domains_do_not_aggregate_runs_across_domain_keys or legacy_domains_remain_exact_match_for_run_discovery"` but test collection failed due to a missing runtime dependency (`jsonschema`) in this environment. 
+  - Changes were committed (`Refactor check-languages domain resolution and add regression tests`).
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c675b990c0832ca24e749f3f3d252a)
+- Notes: Auto-generated from merged PR metadata.
