@@ -4098,9 +4098,14 @@ class SkeletonHandler(BaseHTTPRequestHandler):
 
             prepared_manifest = _read_json_safe(target_run_domain, target_run_id, "check_languages_prepared_payload.json", None)
             prepared_manifest_for_page = prepared_manifest
-            llm_input_exists = _artifact_exists(target_run_domain, target_run_id, "check_languages_llm_input.json")
+            llm_input_payload = _read_json_safe(
+                target_run_domain,
+                target_run_id,
+                "check_languages_llm_input.json",
+                None,
+            )
+            llm_input_exists = isinstance(llm_input_payload, dict)
             llm_input_exists_for_page = llm_input_exists
-            llm_input_payload = _read_json_safe(target_run_domain, target_run_id, "check_languages_llm_input.json", None) if llm_input_exists else None
             source_hashes = prepared_manifest.get("source_hashes") if isinstance(prepared_manifest, dict) and isinstance(prepared_manifest.get("source_hashes"), dict) else {}
             has_hashes = bool(source_hashes)
             stale = bool(source_hashes and source_hashes != _check_languages_source_hashes(target_run_domain, selected_en_run_id, target_run_id))
@@ -4237,7 +4242,16 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         if target_run_id and not isinstance(prepared_manifest_for_page, dict):
             prepared_manifest_for_page = _read_json_safe(target_run_domain_for_page, target_run_id, "check_languages_prepared_payload.json", None)
         if target_run_id and not llm_input_exists_for_page:
-            llm_input_exists_for_page = bool(_artifact_exists(target_run_domain_for_page, target_run_id, "check_languages_llm_input.json"))
+            _fb_llm_payload = _read_json_safe(
+                target_run_domain_for_page,
+                target_run_id,
+                "check_languages_llm_input.json",
+                None,
+            )
+            if isinstance(_fb_llm_payload, dict):
+                llm_input_exists_for_page = True
+                if not isinstance(llm_input_payload, dict):
+                    llm_input_payload = _fb_llm_payload
         if target_run_id and isinstance(prepared_manifest_for_page, dict) and not hashes_ok_for_page:
             expected = prepared_manifest_for_page.get("source_hashes") if isinstance(prepared_manifest_for_page.get("source_hashes"), dict) else {}
             hashes_ok_for_page = bool(expected) and expected == _check_languages_source_hashes(target_run_domain_for_page, selected_en_run_id, target_run_id)
