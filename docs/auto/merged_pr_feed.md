@@ -2705,3 +2705,34 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c63d643f78832c945593b2e9a28f4a)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #179 — 2026-03-27T08:54:22Z
+
+- Title: Sanitize PR entries: strip Testing sections and omit merge metadata from AI payload
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/179
+- Author: evinaeva
+- Base branch: main
+- Head branch: bgjcy8-codex/apply-patch-to-reduce-llm-input-noise
+- Merge commit: 6d2fa0875f0fe83bfc357629630ad426f6ee33b3
+- Changed files:
+  - .github/docs_autoupdate/scripts/docs_ai_sync.py
+  - tests/test_docs_autoupdate_scripts.py
+- Description:
+  ### Motivation
+  - Reduce noise and avoid leaking CI/test details into the AI prompt by removing free-form "Testing" sections from PR descriptions and raw entry text. 
+  - Avoid sending merge metadata that the AI doesn't need by omitting `merged_at` and `merge_commit` from the AI payload.
+  
+  ### Description
+  - Added `strip_testing_section` to remove standalone "Testing" sections from a description string. 
+  - Added `sanitize_entry_text` to remove testing blocks from raw PR entry text while preserving other content. 
+  - Updated the AI payload construction to use `strip_testing_section(e.get("description", ""))` and `sanitize_entry_text(e["raw"])` and to drop `merged_at` and `merge_commit` fields. 
+  - Kept existing feed parsing logic intact and ensured sanitized text is used before sending to the AI model.
+  
+  ### Testing
+  - Updated unit test `test_docs_ai_noop_and_state_advancement_and_blank_model_fallback` to reflect the changed payload and ran the test suite. 
+  - Added `test_docs_ai_strip_testing_section_helpers` which validates `strip_testing_section` and `sanitize_entry_text` behavior. 
+  - Ran `pytest tests/test_docs_autoupdate_scripts.py` and all tests passed.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c63fa6cb74832cb1e40894edda7576)
+- Notes: Auto-generated from merged PR metadata.
