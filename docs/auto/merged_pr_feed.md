@@ -3097,3 +3097,35 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c6927d045c832c91c75461a83dbb7a)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #192 — 2026-03-27T14:49:53Z
+
+- Title: Add LLM review telemetry diagnostics to check-languages page
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/192
+- Author: evinaeva
+- Base branch: main
+- Head branch: bxggzr-codex/add-llm-review-diagnostics-block
+- Merge commit: a0d9b51c7a0b6af0b290af92523523bde39107cc
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+  - web/templates/check-languages.html
+- Description:
+  ### Motivation
+  - Provide a compact, operator-facing diagnostics block on the `/check-languages` page so the UI clearly shows exactly which artifacts and gs:// lookup paths were attempted for LLM review telemetry and why the page reports "LLM telemetry missing" or similar labels.
+  
+  ### Description
+  - Added reader-side diagnostics and lookup helpers in `app/skeleton_server.py` including `_read_llm_review_artifact`, `_build_gs_lookup_path`, and `_is_missing_read_error`, and tracking variables for telemetry status, lookup paths, and lookup usage.  These expose the exact domain/run_id/filename/bucket and resolved `gs://...` paths used by the page. 
+  - Resolved `llm_review_stats.json` read status into explicit categories (`valid`, `missing`, `read_error`, `malformed_json`, `invalid_payload`, `not_attempted`) and surfaced short error summaries for read failures. 
+  - Exposed primary/fallback lookup paths and which path the page actually used for `check_languages_llm_input.json` and added `llm_review_state_reason` and other booleans used to decide the final UI label. 
+  - Rendered a new compact details block `{{llm_review_diagnostics}}` next to the existing LLM Review UI; template change in `web/templates/check-languages.html` only appends the diagnostics block without altering existing UI. 
+  - Added three focused tests in `tests/test_check_languages_page.py` asserting (a) missing-telemetry diagnostics (lookup filename/path and state reason), (b) valid-telemetry diagnostics (`read_status=valid` and telemetry payload valid), and (c) distinction between primary vs fallback lookup usage for the LLM input artifact.
+  
+  ### Testing
+  - Added tests: `test_llm_review_diagnostics_show_missing_telemetry_lookup_and_reason`, `test_llm_review_diagnostics_show_valid_telemetry_status`, and `test_llm_review_diagnostics_show_primary_vs_fallback_llm_input_lookup_usage` in `tests/test_check_languages_page.py` that assert the diagnostics block content and lookup-path visibility. 
+  - Static checks passed: `python -m py_compile app/skeleton_server.py tests/test_check_languages_page.py` succeeded and an AST parse sanity check succeeded. 
+  - Attempted to run the three new tests with `pytest`, but full test execution was blocked in this environment due to a missing external dependency (`jsonschema`).
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c69460d968832c9044b1138ec5699c)
+- Notes: Auto-generated from merged PR metadata.
