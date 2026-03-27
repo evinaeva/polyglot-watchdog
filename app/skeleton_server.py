@@ -323,6 +323,23 @@ def _is_supported_check_languages_domain(value: str) -> bool:
     return domain in SUPPORTED_CHECK_LANGUAGE_DOMAINS or _parse_github_pages_project_language_url(domain) is not None
 
 
+def _is_special_check_languages_test_domain(domain: str) -> bool:
+    normalized = _normalize_check_languages_domain(domain)
+    if not normalized:
+        return False
+    if normalized == GITHUB_PAGES_TESTSITE_CANONICAL_DOMAIN:
+        return True
+    parsed = _parse_github_pages_project_language_url(normalized)
+    return parsed is not None and parsed.get("project_prefix") == GITHUB_PAGES_TESTSITE_PROJECT_PREFIX
+
+
+def _build_language_subdomain_domain(domain: str, language: str) -> str:
+    parsed = urlparse(domain)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ValueError("Selected domain is unsupported.")
+    return f"{parsed.scheme}://{language}.{parsed.netloc}/"
+
+
 def _check_languages_site_family_key(value: str) -> str:
     domain = _normalize_check_languages_domain(value)
     github_pages = _parse_github_pages_project_language_url(domain)
@@ -333,27 +350,29 @@ def _check_languages_site_family_key(value: str) -> str:
 
 def _check_languages_run_domains(value: str) -> list[str]:
     domain = _normalize_check_languages_domain(value)
-    family_key = _check_languages_site_family_key(domain)
-    if family_key == domain:
-        if domain == GITHUB_PAGES_TESTSITE_CANONICAL_DOMAIN:
-            return [domain, GITHUB_PAGES_TESTSITE_LEGACY_ROOT_DOMAIN]
+    if not domain:
+        return []
+    if not _is_special_check_languages_test_domain(domain):
         return [domain]
-    out = {domain}
-    if domain == GITHUB_PAGES_TESTSITE_CANONICAL_DOMAIN:
-        out.add(GITHUB_PAGES_TESTSITE_LEGACY_ROOT_DOMAIN)
+    out = {
+        domain,
+        GITHUB_PAGES_TESTSITE_CANONICAL_DOMAIN,
+        GITHUB_PAGES_TESTSITE_LEGACY_ROOT_DOMAIN,
+    }
     for item in _list_domains():
-        if _check_languages_site_family_key(item) == family_key:
-            out.add(item)
+        normalized_item = _normalize_check_languages_domain(item)
+        if _is_special_check_languages_test_domain(normalized_item):
+            out.add(normalized_item)
     return sorted(out)
 
 
 def _build_check_languages_target_url(selected_domain: str, target_language: str) -> str:
-    if selected_domain == "https://bongacams.com/":
-        return f"https://{target_language}.bongacams.com/"
-    if selected_domain == "https://bongamodels.com/":
-        return f"https://{target_language}.bongamodels.com/"
-    if selected_domain == "https://bongacash.com/":
-        return f"https://{target_language}.bongacash.com/"
+    if selected_domain in {
+        "https://bongacams.com/",
+        "https://bongamodels.com/",
+        "https://bongacash.com/",
+    }:
+        return _build_language_subdomain_domain(selected_domain, target_language)
     github_pages = _parse_github_pages_project_language_url(selected_domain)
     if github_pages is not None:
         return f"{github_pages['scheme']}://{github_pages['host']}{github_pages['project_prefix']}/{target_language}/{github_pages['page_tail']}"
@@ -770,6 +789,23 @@ def _check_languages_llm_input_artifact_status(domain: str, run_id: str) -> dict
     if not isinstance(payload, dict):
         return {"status": "invalid_payload", "exists": True, "payload": None, "error": "expected object"}
     return {"status": "valid", "exists": True, "payload": payload, "error": ""}
+
+
+def _parse_gs_uri_safe(uri: str) -> tuple[str, str, str, str] | None:
+    parsed = _parse_gs_uri(uri)
+    if not parsed:
+        return None
+    bucket, path = parsed
+    normalized_path = str(path or "").strip("/")
+    parts = [part for part in normalized_path.split("/") if part]
+    if len(parts) < 3:
+        return None
+    filename = parts[-1]
+    run_id = parts[-2]
+    domain = "/".join(parts[:-2]).strip()
+    if not bucket or not domain or not run_id or not filename:
+        return None
+    return bucket, domain, run_id, filename
 
 
 def _build_exception_diagnostics(exc: Exception, *, stage: str, substage: str, replay_context: dict | None = None) -> dict:
@@ -3540,6 +3576,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         latest_job = None
         target_run_domain_for_page = domain
         prepared_manifest_for_page = None
+        manifest_domain_for_page = ""
+        manifest_llm_input_artifact_for_page = ""
         llm_input_exists_for_page = False
         hashes_ok_for_page = False
         llm_running = False
@@ -3707,6 +3745,24 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 page_state = "ready_to_start"
 
             prepared_manifest = _read_json_safe(target_run_domain, target_run_id, "check_languages_prepared_payload.json", None)
+            if isinstance(prepared_manifest, dict):
+                manifest_llm_input_artifact_for_page = str(prepared_manifest.get("llm_input_artifact", "")).strip()
+                candidate_manifest_domain = str(prepared_manifest.get("domain", "")).strip()
+                if not candidate_manifest_domain and manifest_llm_input_artifact_for_page:
+                    parsed_artifact = _parse_gs_uri_safe(manifest_llm_input_artifact_for_page)
+                    if parsed_artifact is not None:
+                        _, parsed_domain, parsed_run_id, _ = parsed_artifact
+                        if parsed_run_id == target_run_id:
+                            candidate_manifest_domain = parsed_domain
+                if candidate_manifest_domain:
+                    manifest_domain_for_page = candidate_manifest_domain
+                    if candidate_manifest_domain != target_run_domain:
+                        target_run_domain = candidate_manifest_domain
+                        target_run_domain_for_page = candidate_manifest_domain
+                        corrected_manifest = _read_json_safe(target_run_domain, target_run_id, "check_languages_prepared_payload.json", None)
+                        if isinstance(corrected_manifest, dict):
+                            prepared_manifest = corrected_manifest
+                            manifest_llm_input_artifact_for_page = str(prepared_manifest.get("llm_input_artifact", "")).strip()
             prepared_manifest_for_page = prepared_manifest
             llm_input_diagnostics = _check_languages_llm_input_artifact_status(target_run_domain, target_run_id)
             llm_input_artifact_status_for_page = str(llm_input_diagnostics.get("status", "missing"))
@@ -3888,6 +3944,9 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 f"<li>hashes_ok_for_page: <strong>{_h(str(hashes_ok_for_page).lower())}</strong></li>"
                 f"<li>llm_running: <strong>{_h(str(llm_running).lower())}</strong></li>"
                 f"<li>check_languages_llm_input.json read status: <strong>{_h(llm_input_artifact_status_for_page)}</strong></li>"
+                f"<li>manifest_domain: <strong>{_h(manifest_domain_for_page or '—')}</strong></li>"
+                f"<li>resolved_target_run_domain: <strong>{_h(target_run_domain_for_page or '—')}</strong></li>"
+                f"<li>llm_input_artifact: <strong>{_h(manifest_llm_input_artifact_for_page or '—')}</strong></li>"
                 f"<li>final llm_enabled: <strong>{_h(str(llm_enabled).lower())}</strong></li>"
                 "</ul>"
             )
