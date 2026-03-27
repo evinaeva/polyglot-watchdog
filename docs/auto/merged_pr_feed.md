@@ -3195,3 +3195,34 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c69c4c9df0832cb8cfd67770eba840)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #195 — 2026-03-27T15:34:07Z
+
+- Title: Extract check_languages logic into service/presenter modules and refactor skeleton_server to use them
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/195
+- Author: evinaeva
+- Base branch: main
+- Head branch: lmy7ke-codex/refactor-app/skeleton_server.py-for-separation-of-concerns
+- Merge commit: 459e091da808faeee626bd3e67c5690b15831a60
+- Changed files:
+  - app/check_languages_presenter.py
+  - app/check_languages_service.py
+  - app/skeleton_server.py
+- Description:
+  ### Motivation
+  - Move the large `check_languages` feature surface out of `skeleton_server.py` to improve modularity and readability.
+  - Provide a dedicated service module to encapsulate domain/URL normalization, run discovery, replay job generation, artifact checks, and diagnostics.
+  - Provide a small presenter for LLM telemetry display logic so UI formatting is separated from service logic.
+  
+  ### Description
+  - Added `app/check_languages_service.py` which implements domain normalization, GitHub Pages testsite parsing, run discovery and loading, target run id generation, replay scope/job construction, artifact readiness and payload checks, LLM input artifact validation, GS URI parsing helpers, exception diagnostics, and persistence helpers for failure artifacts; it also exports constants like `CANONICAL_TARGET_LANGUAGES` and supported domain lists.
+  - Added `app/check_languages_presenter.py` which implements `_llm_review_display` and a small HTML-escape helper `_h` to format LLM telemetry display data for the UI.
+  - Refactored `app/skeleton_server.py` to import the new service and presenter functions/constants and delegate `check_languages`-related operations to them, removing the duplicated implementation from the server file and wiring the server helpers to the service (`_service_*`) equivalents.
+  - Preserved existing public behavior while centralizing logic and introducing clearer boundaries between orchestration (`skeleton_server.py`), business logic (`check_languages_service.py`), and presentation (`check_languages_presenter.py`).
+  
+  ### Testing
+  - No automated tests were run as part of this change. Please run the project test suite with `pytest` and the application integration checks to validate behavior after merging.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c68cdbe80c832cb04822ba7538b06c)
+- Notes: Auto-generated from merged PR metadata.
