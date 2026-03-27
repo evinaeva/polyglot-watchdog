@@ -2664,3 +2664,44 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c6399fc73c832ca0d6f0cd588ebb1a)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #178 — 2026-03-27T08:36:53Z
+
+- Title: Minimal helper extraction from app/skeleton_server.py
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/178
+- Author: evinaeva
+- Base branch: main
+- Head branch: 1lso9p-codex/surgical-refactor-app/skeleton_server.py
+- Merge commit: a45e50e41924fc200b3cd25a2d071dc6724fdbde
+- Changed files:
+  - app/artifact_helpers.py
+  - app/server_utils.py
+  - app/skeleton_server.py
+- Description:
+  ## Summary
+  - extracted low-risk utility helpers from `app/skeleton_server.py` into `app/server_utils.py`
+  - extracted low-risk artifact/storage helpers from `app/skeleton_server.py` into `app/artifact_helpers.py`
+  - kept `app/skeleton_server.py` as the entrypoint and updated imports only
+  
+  ## What was moved
+  ### app/server_utils.py
+  - query param helpers: `_require_query_params`, `_missing_required_query_params`
+  - run id/timestamp helpers: `_validate_run_id`, `_utc_now_rfc3339`, `_parse_utc_timestamp`
+  - sorting/conversion/coalesce/hash helpers: `_issue_sort_key`, `_as_int`, `_as_float`, `_as_bool`, `_first_present`, `_coalesce`, `_stable_json_hash`
+  
+  ### app/artifact_helpers.py
+  - artifact read/existence helpers: `_read_json_safe`, `_read_json_required`, `_read_list_artifact_required`, `_read_list_artifact_optional_strict`, `_artifact_exists`, `_artifact_exists_strict`, `_require_artifact_exists`, `_capture_artifacts_ready`
+  - URI/artifact parsing helpers: `_parse_gs_uri`, `_parse_http_uri`, `_read_json_artifact_from_gs_uri`
+  - technical payload/url helpers: `_not_ready_payload`, `_structured_not_ready`, `_page_screenshot_view_url`
+  
+  ## Risk profile
+  - mechanical extraction only: function bodies were moved without behavior changes
+  - no route dispatch, server bootstrap, or handler orchestration was moved
+  - no HTTP contracts/status codes/error texts/pipeline order/constants were changed
+  
+  ## Validation
+  - `python -m py_compile app/skeleton_server.py app/server_utils.py app/artifact_helpers.py`
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c63d643f78832c945593b2e9a28f4a)
+- Notes: Auto-generated from merged PR metadata.
