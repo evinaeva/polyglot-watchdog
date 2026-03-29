@@ -3294,3 +3294,37 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c950052088832ca27d3e67a6da8e1b)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #198 — 2026-03-29T17:11:38Z
+
+- Title: Add PHASE6_REVIEW_PROVIDER preflight for check_languages LLM stage and surface failures
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/198
+- Author: evinaeva
+- Base branch: main
+- Head branch: yoifxp-codex/audit-and-fix-llm-review-flow
+- Merge commit: 7b42e2fbad479db80fc82e92f679b5ab083005bb
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  
+  - Ensure the Phase 6 LLM review does not start when the LLM review provider is not configured by performing an explicit preflight check.  
+  
+  ### Description
+  
+  - Introduce a preflight helper ` _check_languages_llm_preflight_error()` and exception class ` _CheckLanguagesLlmPreflightError` to validate `PHASE6_REVIEW_PROVIDER` before launching LLM work.  
+  - Call the preflight in ` _run_check_languages_llm_async()` and raise the preflight exception early instead of proceeding to Phase 6 execution.  
+  - Surface preflight failures in job status records by setting `stage` to `llm_preflight_failed` and `workflow_state` to `failed_before_llm` when applicable, and update the composed flow ` _run_check_languages_async()` to upsert a failed preflight job record and abort LLM launch.  
+  - Add a UI preflight check in the POST handler for the `/check-languages` action to redirect with a clear error message when `PHASE6_REVIEW_PROVIDER` is not configured, and map the new `llm_preflight_failed` stage into the workflow state display.  
+  - Update and add tests in `tests/test_check_languages_page.py` to cover preflight behavior for both web UI and async worker paths.  
+  
+  ### Testing
+  
+  - Ran unit tests in `tests/test_check_languages_page.py` covering preflight, run action, and async LLM launch scenarios and they succeeded.  
+  - New tests assert the UI blocks starting LLM when `PHASE6_REVIEW_PROVIDER` is unset and that a queued thread is started when it is set.  
+  - Tests validate job records contain `stage: llm_preflight_failed` and `workflow_state: failed_before_llm` when preflight fails.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c952a6c234832cb60e8c1e041d19f3)
+- Notes: Auto-generated from merged PR metadata.
