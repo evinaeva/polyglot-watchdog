@@ -3258,3 +3258,39 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c94a9b5a38832c94d5a2263c595051)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #197 — 2026-03-29T16:25:03Z
+
+- Title: Improve /urls UI: template, styles, and load behavior; update tests
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/197
+- Author: evinaeva
+- Base branch: main
+- Head branch: gb5u1s-codex/refine-ui-of-/urls-page
+- Merge commit: b518afadbac65356de6e8905f5b672890e208e4d
+- Changed files:
+  - tests/test_stage_c_operator_workflow.py
+  - web/static/styles.css
+  - web/static/urls.js
+  - web/templates/urls.html
+- Description:
+  ### Motivation
+  
+  - Improve the usability and visual polish of the /urls page by refining the domain combobox, controls, and action buttons and by making the page responsive.  
+  - Prevent visual button state changes when the page auto-loads data during initialization.  
+  - Keep tests in sync with changed UI text and structure.
+  
+  ### Description
+  
+  - Updated the `/urls` template: changed the main heading and subtitle, moved and clarified the inline help text, renamed the saved domains button label, added an expanded "Continue to First Run" label, and rearranged the "Updated at" display into the table header.  
+  - Overhauled `web/static/styles.css` to style the domain combobox, add `.page-subtitle`, improve focus/hover states, add responsive behavior, and introduce polished button and menu visuals.  
+  - Modified `web/static/urls.js` so `load` accepts an `options` parameter (`userInitiated` flag) and suppresses button state changes and status updates when `load` is invoked automatically on initialization.  
+  - Adjusted `tests/test_stage_c_operator_workflow.py` expected HTML strings to match the updated template and UI labels.
+  
+  ### Testing
+  
+  - Ran the modified UI flow test file with `pytest tests/test_stage_c_operator_workflow.py` and the test completed successfully.  
+  - Ran the affected front-end initialization path by exercising the `document.addEventListener('pw:i18n:ready', ...)` auto-load branch to verify no user-facing loading animation is shown; this automated check passed.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c950052088832ca27d3e67a6da8e1b)
+- Notes: Auto-generated from merged PR metadata.
