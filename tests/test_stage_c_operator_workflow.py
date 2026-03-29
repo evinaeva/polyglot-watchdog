@@ -104,7 +104,9 @@ def test_stage_c_workflow_routes_and_artifact_endpoints(api_env):
 
     status_urls, body_urls = _request("GET", api_env, "/urls")
     assert status_urls == HTTPStatus.OK
-    assert '<h1>ADD URL</h1>' in body_urls
+    assert '<h1>Add Domen. Add URL list.</h1>' in body_urls
+    assert '>Saved Domains</button>' in body_urls
+    assert 'Continue to First Run &gt;&gt;&gt;' in body_urls
     status_runs, body_runs = _request("GET", api_env, "/runs")
     assert status_runs == HTTPStatus.OK
     assert 'selectedRunId' in body_runs
