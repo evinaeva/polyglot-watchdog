@@ -1206,6 +1206,57 @@ def test_get_check_languages_completed_llm_run_shows_full_fallback_clearly(api_e
     assert "No successful LLM responses" in body
 
 
+def test_get_check_languages_reads_llm_telemetry_even_when_listing_reports_missing(api_env, monkeypatch):
+    from app import skeleton_server
+
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_check_languages_completed_run(domain, "run-en", "fr", target_run_id)
+    _write(domain, target_run_id, "llm_review_stats.json", _llm_review_stats_completed_payload())
+
+    original_exists = skeleton_server._artifact_exists
+
+    def _missing_listing(domain_arg: str, run_id_arg: str, filename: str) -> bool:
+        if filename == "llm_review_stats.json":
+            return False
+        return original_exists(domain_arg, run_id_arg, filename)
+
+    monkeypatch.setattr("app.skeleton_server._artifact_exists", _missing_listing)
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert "State: <strong>LLM telemetry missing</strong>" not in body
+    assert "Review mode: llm" in body
+    assert "Configured provider/model: llm / openrouter/free" in body
+    assert "Responses received: 1" in body
+
+
+def test_get_check_languages_gate_diagnostics_include_llm_telemetry_lookup_context(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_check_languages_completed_run(domain, "run-en", "fr", target_run_id)
+    _write(domain, target_run_id, "llm_review_stats.json", _llm_review_stats_completed_payload())
+
+    status, body, _ = _request(
+        "GET",
+        api_env,
+        f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}&show_gate_diagnostics=1",
+    )
+    assert status == HTTPStatus.OK
+    assert "latest_job_status: <strong>succeeded</strong>" in body
+    assert "latest_job_stage: <strong>completed</strong>" in body
+    assert "latest_job_workflow_state: <strong>completed</strong>" in body
+    assert "telemetry_state_used_by_ui: <strong>" in body
+    assert "final_ui_label_for_llm_review: <strong>" in body
+    assert f"telemetry_lookup_domain: <strong>{domain}</strong>" in body
+    assert f"telemetry_lookup_run_id: <strong>{target_run_id}</strong>" in body
+    assert "telemetry_lookup_filename: <strong>llm_review_stats.json</strong>" in body
+    assert "telemetry_lookup_bucket: <strong>test-bucket</strong>" in body
+    assert f"telemetry_actual_lookup_path: <strong>gs://test-bucket/{domain}/{target_run_id}/llm_review_stats.json</strong>" in body
+    assert "telemetry_read_status: <strong>valid</strong>" in body
+    assert "telemetry_payload_valid_for_ui: <strong>true</strong>" in body
+
+
 def test_llm_review_state_missing_telemetry_in_progress(api_env):
     domain = SUPPORTED_MAIN_DOMAIN
     _seed_runs(domain)
