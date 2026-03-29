@@ -25,7 +25,7 @@ The repository already includes:
 - visible navigation between operator workflow pages
 - image-text review coverage tracking through `coverage_gaps.json`
 - explicit Phase 6 review mode: `test-heuristic`, `disabled`, or `llm`
-- fail-fast behavior when review mode is missing
+- fail-fast behavior when review mode is missing or misconfigured
 - Europe/Tallinn timestamp display with DST awareness
 
 ## What is not complete
