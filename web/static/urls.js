@@ -663,37 +663,46 @@ async function maybeLoadDomains() {
   }
 }
 
-async function load() {
+async function load(options = {}) {
+  const { userInitiated = true } = options;
   setError('');
   setStatus('');
   syncContinueLink();
-  setButtonState(loadButton, 'loading', {
-    idleLabel: t('urls.load', 'Load existing'),
-    loadingLabel: t('urls.button.loading', 'Loading...'),
-    activatedLabel: t('urls.button.loaded', 'Loaded'),
-    errorLabel: t('urls.button.error', 'Failed'),
-  });
+  if (userInitiated) {
+    setButtonState(loadButton, 'loading', {
+      idleLabel: t('urls.load', 'Load existing'),
+      loadingLabel: t('urls.button.loading', 'Loading...'),
+      activatedLabel: t('urls.button.loaded', 'Loaded'),
+      errorLabel: t('urls.button.error', 'Failed'),
+    });
+  }
   try {
     recipes = (await callApi(`/api/recipes?domain=${encodeURIComponent(selectedDomain())}`, 'GET')).recipes || [];
     const data = await callApi(`/api/seed-urls?domain=${encodeURIComponent(selectedDomain())}`, 'GET');
     render(data);
-    markButtonActivated(loadButton, {
-      idleLabel: t('urls.load', 'Load existing'),
-      loadingLabel: t('urls.button.loading', 'Loading...'),
-      activatedLabel: t('urls.button.loaded', 'Loaded'),
-      errorLabel: t('urls.button.error', 'Failed'),
-    });
-    setStatus(t('urls.status.loaded', 'URLs loaded.'), 'success');
+    if (userInitiated) {
+      markButtonActivated(loadButton, {
+        idleLabel: t('urls.load', 'Load existing'),
+        loadingLabel: t('urls.button.loading', 'Loading...'),
+        activatedLabel: t('urls.button.loaded', 'Loaded'),
+        errorLabel: t('urls.button.error', 'Failed'),
+      });
+      setStatus(t('urls.status.loaded', 'URLs loaded.'), 'success');
+    }
   } catch (error) {
-    setButtonState(loadButton, 'error', {
-      idleLabel: t('urls.load', 'Load existing'),
-      loadingLabel: t('urls.button.loading', 'Loading...'),
-      activatedLabel: t('urls.button.loaded', 'Loaded'),
-      errorLabel: t('urls.button.error', 'Failed'),
-    });
+    if (userInitiated) {
+      setButtonState(loadButton, 'error', {
+        idleLabel: t('urls.load', 'Load existing'),
+        loadingLabel: t('urls.button.loading', 'Loading...'),
+        activatedLabel: t('urls.button.loaded', 'Loaded'),
+        errorLabel: t('urls.button.error', 'Failed'),
+      });
+    }
     setError(error.message || t('urls.errors.load_failed', 'Failed to load'));
-    setStatus(t('urls.status.load_failed', 'Load failed.'), 'error');
-    setTimeout(() => setButtonState(loadButton, 'idle', { idleLabel: t('urls.load', 'Load existing') }), ACTIVATION_TIMEOUT_MS);
+    if (userInitiated) {
+      setStatus(t('urls.status.load_failed', 'Load failed.'), 'error');
+      setTimeout(() => setButtonState(loadButton, 'idle', { idleLabel: t('urls.load', 'Load existing') }), ACTIVATION_TIMEOUT_MS);
+    }
   }
 }
 
@@ -886,6 +895,6 @@ document.addEventListener('pw:i18n:ready', async () => {
   syncContinueLink();
   refreshRecipeDomainOptions();
   if (selectedDomain()) {
-    await load();
+    await load({ userInitiated: false });
   }
 });
