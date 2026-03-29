@@ -3392,3 +3392,34 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c95d860de8832cade88a6ca8e4bf11)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #201 — 2026-03-29T17:51:39Z
+
+- Title: Prefer latest run by timestamp and preserve manual selection across /workflow and /pulls
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/201
+- Author: evinaeva
+- Base branch: main
+- Head branch: hm6406-codex/fix-run-selection-persistence-regression
+- Merge commit: 8dfb3585f7835992e0cb16ea498fa29e5efefb97
+- Changed files:
+  - tests/test_operator_ui_runtime_regressions.py
+  - web/static/pulls.js
+  - web/static/workflow.js
+- Description:
+  ### Motivation
+  - A regression caused the UI to default to the alphabetically-first run and to lose a user-selected run when navigating from `/workflow` to `/pulls`; the intended behaviour is to default to the most recent run by timestamp and to always preserve an explicit user selection.
+  
+  ### Description
+  - `web/static/workflow.js`: when no explicit `run_id` is present, persist the top (newest) option into `activeRunId` and update the URL query via `setQuery` so downstream pages receive the chosen run; this commits the timestamp-based default instead of leaving only a visual selection. (bug fix logic)
+  - `web/static/pulls.js`: added `parseCreatedAt`, `sortRunsNewestFirst`, and `resolveRunId(domain, explicitRunId)` so `/pulls` preserves an explicit `run_id` and otherwise fetches `/api/capture/runs` and selects the newest run by `created_at`, then canonicalizes the URL with `history.replaceState` (navigation/state propagation + bug fix logic).
+  - `tests/test_operator_ui_runtime_regressions.py`: added targeted JS runtime tests that verify (1) `/workflow` defaults to latest by timestamp, (2) a manual selection is preserved and propagated to `/pulls`, and (3) `/pulls` respects explicit `run_id` and falls back to latest when missing; updated an existing pulls-links test to account for asynchronous initialization. (tests)
+  - Files changed: `web/static/workflow.js`, `web/static/pulls.js`, `tests/test_operator_ui_runtime_regressions.py`.
+  
+  ### Testing
+  - Ran the new and updated runtime tests with: `pytest -q tests/test_operator_ui_runtime_regressions.py -k "workflow_defaults_to_latest_run_by_timestamp_and_preserves_manual_selection_for_pulls_link or pulls_respects_explicit_run_and_uses_latest_timestamp_when_missing or pulls_top_and_bottom_next_step_links_receive_same_runtime_href"` and all targeted tests passed.
+  - Ran the full runtime regression suite: `pytest -q tests/test_operator_ui_runtime_regressions.py` and observed `14 passed`.
+  - No server/API contract or storage changes were made; tests focused on client runtime behaviour and passed.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c96403bb2c832cabf2281b2117bf6e)
+- Notes: Auto-generated from merged PR metadata.
