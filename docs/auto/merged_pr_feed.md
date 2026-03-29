@@ -3454,3 +3454,34 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c967007ad8832caa9f3adf41a48fca)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #203 — 2026-03-29T20:49:21Z
+
+- Title: Fix selected run propagation drift from workflow to pulls
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/203
+- Author: evinaeva
+- Base branch: main
+- Head branch: 04h9lx-codex/fix-run-propagation-from-workflow-to-pulls
+- Merge commit: e0cbe303f24d6a5d33bf4decb56aa5b391759896
+- Changed files:
+  - tests/test_operator_ui_runtime_regressions.py
+  - web/static/pulls.js
+- Description:
+  ### Motivation
+  - The `/pulls` page sometimes drifted back to a stale `run_id` because multiple handlers re-parsed `window.location.search` after the initial resolution, causing UI summary, links and actions to disagree with the selected run. 
+  - The goal is to make an explicit, single source of truth for the effective run on `/pulls` so an explicit selection from `/workflow` is honoured end-to-end and async interactions cannot overwrite it.
+  
+  ### Description
+  - Introduced a single resolved context object `currentPullsContext` and accessor helpers `setCurrentPullsContext` and `getCurrentPullsContext` to pin the effective `(domain, runId)` once resolved in `loadPulls()` and to be reused across the page. 
+  - Updated `loadPulls()` so it resolves the run with `resolveRunId(domain, queryRunId)`, calls `setCurrentPullsContext(domain, runId)` immediately after resolution, and then uses that resolved value for summary, links and fetches. 
+  - Replaced post-init usages of `pullsQuery()` in interactive handlers (filters, whitelist removal, prepare captured data) with `getCurrentPullsContext()` so they use the resolved run instead of reparsing `window.location.search`. 
+  - Files changed: `web/static/pulls.js` (bug fix logic, state propagation, summary rendering, small refactor) and `tests/test_operator_ui_runtime_regressions.py` (test updates to cover regression and async drift).
+  
+  ### Testing
+  - Ran `pytest -q tests/test_operator_ui_runtime_regressions.py -k "workflow_defaults_to_latest_run_by_timestamp_and_preserves_manual_selection_for_pulls_link or pulls_respects_explicit_run_and_uses_latest_timestamp_when_missing_and_keeps_single_resolved_run or pulls_top_and_bottom_next_step_links_receive_same_runtime_href"` which passed (3 passed, 11 deselected). 
+  - Ran the full runtime regression file with `pytest -q tests/test_operator_ui_runtime_regressions.py` which passed (14 passed). 
+  - The updated tests assert that an explicit `run_id` is honored end-to-end on `/pulls`, fallback selection chooses the newest-by-timestamp when missing, workflow context summary and links reflect the resolved run, and async query mutations after init do not cause the page to drift to a stale `run_id`.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c98b3e5424832cab8b24fabe6ded69)
+- Notes: Auto-generated from merged PR metadata.
