@@ -33,6 +33,7 @@ let allPullRows = [];
 let whitelistEntries = [];
 let previewResizeObserver = null;
 let eligiblePollingTimer = null;
+let currentPullsContext = { domain: '', runId: '' };
 let previewState = {
   isOpen: false,
   row: null,
@@ -55,6 +56,15 @@ const DECISION_TO_UI = {
 function pullsQuery() {
   const params = new URLSearchParams(window.location.search);
   return { domain: (params.get('domain') || '').trim(), runId: (params.get('run_id') || '').trim() };
+}
+
+function setCurrentPullsContext(domain, runId) {
+  currentPullsContext = { domain: String(domain || '').trim(), runId: String(runId || '').trim() };
+}
+
+function getCurrentPullsContext() {
+  if (currentPullsContext.domain) return { ...currentPullsContext };
+  return pullsQuery();
 }
 
 function parseCreatedAt(value) {
@@ -281,12 +291,11 @@ function renderWhitelist() {
     chip.className = 'pulls-whitelist-chip';
     chip.textContent = `Remove ${entry.description || entry.tag || 'signature'}`;
     chip.addEventListener('click', async () => {
-      const { domain } = pullsQuery();
+      const { domain, runId } = getCurrentPullsContext();
       try {
         await removeFromWhitelist(domain, entry.signature_key);
         setWhitelistStatus(`Removed ${entry.description || entry.tag || 'signature'} from whitelist.`, 'ok');
-        await reloadPullRows(domain, pullsQuery().runId);
-        const { runId } = pullsQuery();
+        await reloadPullRows(domain, runId);
         if (!allPullRows.length) {
           pullsTable.classList.add('hidden');
           setPullsStatus('No items found for this run.', 'empty');
@@ -811,6 +820,7 @@ async function loadPulls() {
   }
 
   runId = await resolveRunId(domain, queryRunId);
+  setCurrentPullsContext(domain, runId);
   if (runId && runId !== queryRunId) {
     const params = new URLSearchParams(window.location.search);
     params.set('domain', domain);
@@ -863,12 +873,12 @@ async function loadPulls() {
 }
 
 pullsUrlSearch.addEventListener('input', () => {
-  const { domain, runId } = pullsQuery();
+  const { domain, runId } = getCurrentPullsContext();
   renderRows(domain, runId);
 });
 
 pullsElementTypeFilter.addEventListener('change', () => {
-  const { domain, runId } = pullsQuery();
+  const { domain, runId } = getCurrentPullsContext();
   renderRows(domain, runId);
 });
 
@@ -878,7 +888,7 @@ pullsWhitelistAdd.addEventListener('click', async () => {
 });
 
 pullsPrepareCapturedData.addEventListener('click', async () => {
-  const { domain, runId } = pullsQuery();
+  const { domain, runId } = getCurrentPullsContext();
   if (!domain || !runId) {
     setPrepareCapturedDataStatus('Missing required query params: domain and run_id.', 'error');
     return;

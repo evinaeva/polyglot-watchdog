@@ -984,13 +984,13 @@ def test_workflow_defaults_to_latest_run_by_timestamp_and_preserves_manual_selec
     assert any("run_id=run-aaa" in entry for entry in out["historyUrls"])
 
 
-def test_pulls_respects_explicit_run_and_uses_latest_timestamp_when_missing():
+def test_pulls_respects_explicit_run_and_uses_latest_timestamp_when_missing_and_keeps_single_resolved_run():
     script = textwrap.dedent(
         r"""
         const fs = require('fs');
         const vm = require('vm');
 
-        function runScenario(search) {
+        function runScenario(search, mutateSearchAfterInit = '') {
           function makeElement(id='') {
             const listeners = {};
             return {
@@ -1008,6 +1008,7 @@ def test_pulls_respects_explicit_run_and_uses_latest_timestamp_when_missing():
               appendChild(child){ this.children.push(child); return child; },
               append(...nodes){ this.children.push(...nodes); },
               addEventListener(type, cb){ listeners[type] = cb; },
+              dispatch(type){ if (listeners[type]) return listeners[type]({ target: this }); },
               querySelector(){ return { innerHTML: '', appendChild(){} }; },
             };
           }
@@ -1017,6 +1018,7 @@ def test_pulls_respects_explicit_run_and_uses_latest_timestamp_when_missing():
           const pullCalls = [];
           const runsCalls = [];
           const replaced = [];
+          const generatedRunIds = [];
 
           const sandbox = {
             console,
@@ -1031,7 +1033,7 @@ def test_pulls_respects_explicit_run_and_uses_latest_timestamp_when_missing():
             setTimeout: (fn) => { fn(); return 1; },
             clearTimeout: () => {},
             ResizeObserver: function(){ this.observe = () => {}; this.disconnect = () => {}; },
-            fetch: async (url) => {
+            fetch: async (url, init = {}) => {
               if (url.startsWith('/api/pulls?')) {
                 pullCalls.push(url);
                 return { ok: true, status: 200, json: async () => ({ rows: [] }) };
@@ -1040,34 +1042,75 @@ def test_pulls_respects_explicit_run_and_uses_latest_timestamp_when_missing():
                 runsCalls.push(url);
                 return { ok: true, status: 200, json: async () => ({
                   runs: [
-                    { run_id: 'run-aaa', created_at: '2026-03-27T10:00:00Z' },
-                    { run_id: 'run-zzz', created_at: '2026-03-28T10:00:00Z' },
+                    { run_id: 'run-zzz', created_at: '2026-03-27T10:00:00Z' },
+                    { run_id: 'run-aaa', created_at: '2026-03-28T10:00:00Z' },
                   ],
                 }) };
               }
               if (url.startsWith('/api/element-type-whitelist?')) return { ok: true, status: 200, json: async () => ({ entries: [] }) };
+              if (url.startsWith('/api/workflow/status?')) {
+                return { ok: true, status: 200, json: async () => ({ eligible_dataset: { status: 'ready', en_standard_display_name: 'EN_standard_10:00|29.03.2026' }, run: {} }) };
+              }
+              if (url === '/api/workflow/generate-eligible-dataset') {
+                if (init?.body) {
+                  const parsed = JSON.parse(init.body);
+                  generatedRunIds.push(parsed.run_id || '');
+                }
+                return {
+                  ok: true,
+                  status: 200,
+                  json: async () => ({ status: 'started' }),
+                  text: async () => '',
+                  body: {
+                    getReader: () => ({
+                      read: async () => ({ done: true, value: null }),
+                    }),
+                  },
+                };
+              }
               return { ok: true, status: 200, json: async () => ({}) };
             },
           };
 
           vm.createContext(sandbox);
           vm.runInContext(fs.readFileSync('web/static/pulls.js', 'utf8'), sandbox);
-          return new Promise((resolve) => setTimeout(() => resolve({ pullCalls, runsCalls, replaced }), 0));
+          return new Promise((resolve) => setTimeout(async () => {
+            if (mutateSearchAfterInit) sandbox.window.location.search = mutateSearchAfterInit;
+            await els.pullsPrepareCapturedData.dispatch('click');
+            resolve({
+              pullCalls,
+              runsCalls,
+              replaced,
+              summary: els.pullsWorkflowContextSummary.textContent,
+              contextHref: els.pullsOpenContexts.href,
+              issuesHref: els.pullsOpenIssues.href,
+              nextHref: els.continueCheckLanguages.href,
+              prepareStatus: els.pullsPrepareCapturedDataStatus.textContent,
+              generatedRunIds,
+            });
+          }, 0));
         }
 
         (async () => {
-          const explicit = await runScenario('?domain=example.com&run_id=run-aaa');
+          const explicit = await runScenario('?domain=example.com&run_id=run-zzz', '?domain=example.com&run_id=run-aaa');
           const inferred = await runScenario('?domain=example.com');
           console.log(JSON.stringify({ explicit, inferred }));
         })().catch((err) => { console.error(err); process.exit(1); });
         """
     )
     out = _run_node_json(script)
-    assert any("run_id=run-aaa" in call for call in out["explicit"]["pullCalls"])
+    assert any("run_id=run-zzz" in call for call in out["explicit"]["pullCalls"])
     assert out["explicit"]["runsCalls"] == []
-    assert any("run_id=run-zzz" in call for call in out["inferred"]["pullCalls"])
+    assert "run: run-zzz" in out["explicit"]["summary"]
+    assert out["explicit"]["contextHref"].endswith("domain=example.com&run_id=run-zzz")
+    assert out["explicit"]["issuesHref"].endswith("domain=example.com&run_id=run-zzz")
+    assert out["explicit"]["nextHref"].endswith("domain=example.com&en_run_id=run-zzz")
+    assert out["explicit"]["prepareStatus"] == "Captured data prepared successfully: EN_standard_10:00|29.03.2026."
+    assert out["explicit"]["generatedRunIds"] == ["run-zzz"]
+    assert any("run_id=run-aaa" in call for call in out["inferred"]["pullCalls"])
     assert len(out["inferred"]["runsCalls"]) == 1
-    assert any("run_id=run-zzz" in url for url in out["inferred"]["replaced"])
+    assert any("run_id=run-aaa" in url for url in out["inferred"]["replaced"])
+    assert out["inferred"]["generatedRunIds"] == ["run-aaa"]
 
 
 def test_urls_saved_domain_menu_filters_malformed_values_and_supports_selection():
