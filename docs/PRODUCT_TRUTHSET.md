@@ -67,7 +67,7 @@ The following statements are allowed and should be treated as true:
 - the operator workflow is intentionally distributed across multiple pages/tabs;
 - the product includes a new `/check-languages` page for running phase-six language checks comparing a target run against an English reference, with a two-step orchestration (payload preparation and LLM review), support for GitHub Pages project language paths and site-family run discovery, and stable JSON hashing with source hash checks to detect stale prepared payloads;
 - the `/urls` page now supports seed URL and recipe management (including upload, attach, and delete), uses persisted domains, and remembers the last-used first-run domain across reloads;
-- phase-six runtime mode selection is explicit (`test-heuristic`, `disabled`, `llm`) and missing mode is a hard error;
+- phase-six runtime mode selection is explicit (`test-heuristic`, `disabled`, `llm`) and missing or misconfigured mode is a hard error;
 - image-backed review coverage is tracked separately from issues via `coverage_gaps.json` statuses (`image_text_reviewed`, `image_text_not_reviewed`, `image_text_review_blocked`);
 - SVG deterministic text extraction and Google Vision fallback are available for OCR when OCR.Space is unavailable;
 - timestamps are displayed in Europe/Tallinn timezone with DST awareness;

@@ -329,7 +329,7 @@ The correct outcome is a smaller, evidence-backed review queue for a human opera
 
 ## 14. Review mode and image coverage reporting
 
-- Phase 6 runtime requires an explicit review mode (`test-heuristic`, `disabled`, or `llm`) via CLI flag or `PHASE6_REVIEW_PROVIDER`. Missing mode is a hard error.
+- Phase 6 runtime requires an explicit review mode (`test-heuristic`, `disabled`, or `llm`) via CLI flag or `PHASE6_REVIEW_PROVIDER`. A missing or misconfigured mode (e.g., `llm` mode without a configured provider) is a hard error.
 - Phase 6 emits `coverage_gaps.json` for image-backed target items that were not actually image-text-reviewed.
 - Coverage status is tracked independently from `issues.json` and uses:
   - `image_text_reviewed`

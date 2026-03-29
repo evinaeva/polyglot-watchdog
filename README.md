@@ -1,14 +1,111 @@
 # Polyglot Watchdog
 
-Polyglot Watchdog is a contract-first operator console and pipeline for localization QA across baseline and target-language web experiences.
+Polyglot Watchdog is a contract-first localization QA pipeline and operator console.
 
-This repository is **not** a blank scaffold. It already contains a real artifact model, canonical storage paths, multiple implemented phase runners, and operator-facing UI surfaces backed in part by persisted artifacts.
+This repository already contains real pipeline and storage code. It is not a blank scaffold and not a UI-only mock project.
 
-At the same time, it is **not yet production-ready**. Some operator flows remain incomplete or pre-production hardening is still in progress, and release-facing documentation must remain aligned with the actual state of the codebase.
+Current stage: late prototype / pre-production / operator-console-in-progress.
 
-This README is the product truth-set entry point for contributors.
+The project is not yet production-ready.
 
-For v1.0 scope and release readiness, also read:
+## What exists today
+
+The repository already includes:
+
+- canonical artifact storage paths and artifact readers/writers
+- deterministic run-level artifact handling
+- implemented phase runners for Phase 1, Phase 3, Phase 4, and Phase 6
+- a `/urls` operator page for seed URL management
+- persisted domain selection and last-used first-run domain memory on `/urls`
+- a `/check-languages` operator page for Phase 6 language checks
+- two-step Phase 6 orchestration: payload preparation, then LLM review
+- target-language selection and job orchestration
+- support for GitHub Pages project site paths in language checks
+- persisted issue artifacts and operator-facing issue exploration
+- visible navigation between operator workflow pages
+- image-text review coverage tracking through `coverage_gaps.json`
+- explicit Phase 6 review mode: `test-heuristic`, `disabled`, or `llm`
+- fail-fast behavior when review mode is missing or misconfigured
+- Europe/Tallinn timestamp display with DST awareness
+
+## What is not complete
+
+Some operator-facing flows are still being hardened.
+
+Not all v1.0 screens are fully release-ready.
+
+Because of that, the repository must not be described as production-ready.
+
+## v1.0 scope
+
+For v1.0, the required product scope is:
+
+- seed URL management through the operator UI
+- deterministic baseline and scripted capture planning
+- canonical persisted capture artifacts
+- review and annotation support
+- deterministic eligible dataset generation
+- target-language comparison and issue generation through Phase 6
+- issue exploration backed by persisted artifacts
+
+## What does not block v1.0
+
+The following may remain incomplete without blocking v1.0:
+
+- OCR and Phase 4 hardening work
+- crawler improvements beyond the accepted manual seed URL workflow
+- additional UI polish outside the core operator workflow
+- keeping the workflow split across multiple pages instead of one screen
+
+## Operator workflow model
+
+The v1.0 workflow is multi-page by design.
+
+It does not need to live on a single route or screen.
+
+A valid operator flow may span separate pages for:
+
+- URL management
+- capture or run review
+- annotation or review work
+- issue exploration
+
+This is an official product workflow, not a workaround.
+
+For v1.0, the important requirement is that the operator can complete the workflow through official UI pages with clear navigation and persisted state.
+
+The workflow must not depend on hidden routes, developer-only actions, or manual steps outside the product interface.
+
+## Contributor guidance
+
+When updating product docs or UI copy, keep these points true:
+
+- the repository contains real artifact-backed pipeline components
+- the project is pre-production
+- the workflow may be intentionally split across multiple pages
+- manual seed URL workflow is valid for v1.0
+- production-ready wording is not allowed until release criteria are met
+
+Do not reintroduce outdated claims such as:
+
+- no phases are implemented
+- the repository is only a UI scaffold
+- a multi-page workflow means the product is not integrated
+- the project is already production-ready
+
+## Phase 6 notes
+
+Phase 6 uses persisted issue artifacts.
+
+Phase 6 review mode is explicit and required.
+
+Image-text review coverage is tracked separately from issues in `coverage_gaps.json`.
+
+OCR remains additive and non-blocking for v1.0. Approved image-backed OCR handoff may be used where available, but OCR does not expand the top-level contract scope for v1.0.
+
+## Important files
+
+Read these files when working on product status or release messaging:
 
 - `contract/watchdog_contract_v1.0.md`
 - `docs/Interactive Capture Architecture.md`
@@ -18,120 +115,21 @@ For v1.0 scope and release readiness, also read:
 - `RELEASE_CRITERIA.md`
 - `docs/PRODUCT_TRUTHSET.md`
 
-## Current product status
+## Main repo areas
 
-Current stage: **late prototype / pre-production / operator-console-in-progress**
+- `app/` operator server and route handlers
+- `pipeline/` phase runners, storage, runtime config, artifact logic
+- `web/` templates and static UI assets
+- `tests/` contract, pipeline, route, and review-related tests
+- `contract/` normative contract documents
+- `docs/` architecture and implementation guidance
 
-What is already real in the repository:
+## Documentation sync rule
 
-- canonical artifact storage paths and JSON artifact writers/readers;
-- deterministic pipeline/storage conventions for run-level artifacts;
-- implemented phase runners for key contract-aligned flows, including Phase 1, Phase 3, Phase 4, and Phase 6;
-- a `/urls` operator surface for managing seed URLs and interaction recipes (upload, attach, delete), with persisted domain selection and last-used first-run domain memory;
-- a `/check-languages` operator surface for running phase-six language checks with a two-step orchestration (payload preparation and LLM review), target-language selection, GitHub Pages project site support, and job orchestration;
-- operator-facing issue exploration backed by persisted issue artifacts;
-- operator workflow pages are now visibly linked via global navigation;
-- Phase 6 image-text review coverage tracking via `coverage_gaps.json` with statuses (`image_text_reviewed`, `image_text_not_reviewed`, `image_text_review_blocked`);
-- SVG deterministic text extraction and Google Vision fallback for OCR when OCR.Space is unavailable;
-- explicit Phase 6 review mode requirement (`test-heuristic`, `disabled`, `llm`) with fail-fast when missing;
-- Tallinn timezone (Europe/Tallinn) display formatting with DST awareness for all timestamps.
+If product status or release messaging changes, update these together:
 
-What is not yet complete:
+- `README.md`
+- `RELEASE_CRITERIA.md`
+- `docs/PRODUCT_TRUTHSET.md`
 
-- some operator-visible flows are still incomplete or still being hardened for pre-production;
-- not all required v1.0 screens are fully release-ready;
-- release-facing messaging must stay aligned with actual implementation status.
-
-## v1.0 scope
-
-v1.0 is defined by the contract and implementation docs.
-
-In practical terms, v1.0 means:
-
-- seed URL management through the operator UI;
-- deterministic baseline and scripted-state capture planning;
-- canonical persisted artifacts for capture outputs;
-- annotation/review support for baseline, scripted, and universal items;
-- deterministic eligible dataset generation;
-- target-language comparison and issue generation through Phase 6.
-
-The following are explicitly **deferred** from blocking v1.0:
-
-- OCR / Phase 4 work;
-- crawler improvements beyond the accepted manual seed URL workflow.
-
-## Operator workflow model
-
-The v1.0 operator workflow is **multi-surface / multi-step (multi-page / multi-tab) by design**.
-
-This means the operator may complete the workflow across multiple dedicated pages or tabs, for example:
-
-- URL management on one page;
-- run/capture review on another page;
-- annotation/review on another page;
-- issue exploration on another page.
-
-This is the **canonical product flow**, not a workaround.
-
-v1.0 does **not** require a single-screen or single-route experience.  
-It **does** require that all mandatory steps be available through the official product UI, with:
-
-- clear navigation between the required pages;
-- persisted state across steps;
-- no dependence on hidden routes;
-- no dependence on developer-only actions;
-- no required manual intervention outside the product interface.
-
-## What contributors should assume
-
-When changing the product:
-
-- do not describe the repository as entirely mock-backed or claim that no phases are implemented;
-- do not describe the product as production-ready unless the release criteria are met;
-- do not treat a multi-page operator workflow as a defect by itself;
-- treat the contract as normative for artifact semantics and phase boundaries;
-- treat `RELEASE_CRITERIA.md` as the release-ready checklist;
-- treat `docs/PRODUCT_TRUTHSET.md` as the status and messaging alignment document.
-
-## Canonical messaging rules
-
-Use these statements consistently:
-
-- "Polyglot Watchdog is a contract-first localization QA pipeline and operator console."
-- "The repository contains real artifact-backed pipeline components and partial operator UI integration."
-- "The project is pre-production and not yet production-ready."
-- "The operator workflow is multi-surface / multi-step (multi-page / multi-tab) by design."
-- "OCR beyond the current narrow approved image-backed handoff scope is deferred from v1.0."
-- "OCR remains non-blocking/additive for v1.0 scope; when OCR handoff exists, Phase 6 may use usable OCR text as canonical comparison text for approved image-backed items and otherwise falls back to normalized DOM text."
-- "Manual seed URL workflow is valid for v1.0."
-- "Phase 6 uses a two-layer taxonomy: persisted `issue.category` (coarse contract) and evidence-level `review_class` (detailed QA)."
-- "Phase 6 compares curated EN reference content against curated target-language content; OCR text is consumed only for approved `<img>` elements, is supporting input overall, and does not introduce new top-level contract categories."
-- "Phase 6 review mode is explicit (`test-heuristic`, `disabled`, `llm`); missing mode is a hard error."
-- "Image-text review coverage is tracked separately from issues via `coverage_gaps.json` with statuses: `image_text_reviewed`, `image_text_not_reviewed`, `image_text_review_blocked`."
-
-Avoid these outdated statements:
-
-- "No pipeline phases are implemented."
-- "The repository is only a UI scaffold."
-- "The full operator workflow must exist on a single page to count as integrated."
-- "The current product is production-ready."
-
-## Repo areas
-
-- `app/` — operator server and route handlers
-- `pipeline/` — phase runners, storage, runtime config, artifact logic
-- `web/` — templates and static UI assets
-- `tests/` — contract, pipeline, route, and review-related tests
-- `contract/` — normative contract documents
-- `docs/` — architecture and implementation guidance
-
-## Working agreement for future updates
-
-Any change to public-facing product positioning must keep these in sync:
-
-1. `README.md`
-2. About page copy
-3. `RELEASE_CRITERIA.md`
-4. `docs/PRODUCT_TRUTHSET.md`
-
-If implementation status changes and any of the above are not updated, the documentation is considered out of sync.
+If these documents disagree, the documentation is out of sync.
