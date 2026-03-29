@@ -101,6 +101,7 @@ from app.check_languages_service import (
     _build_check_languages_target_url,
     _build_exception_diagnostics,
     _check_languages_payload_status,
+    _check_languages_llm_review_telemetry_status,
     _check_languages_source_hashes,
     _check_languages_site_family_key,
     _check_languages_llm_input_artifact_status,
@@ -2937,6 +2938,15 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         llm_lookup_run_id = ""
         llm_lookup_filename = "check_languages_llm_input.json"
         llm_lookup_path = ""
+        llm_telemetry_lookup_domain = ""
+        llm_telemetry_lookup_run_id = ""
+        llm_telemetry_lookup_filename = "llm_review_stats.json"
+        llm_telemetry_lookup_path = ""
+        llm_telemetry_read_status = "not_evaluated"
+        llm_telemetry_error_summary = ""
+        llm_telemetry_valid_for_ui = False
+        llm_telemetry_state_for_ui = "not_evaluated"
+        llm_telemetry_final_label = "Telemetry not evaluated yet."
         llm_preview = "—"
         failure_payload = None
 
@@ -3016,8 +3026,17 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             target_run_domain = str((run_map.get(target_run_id) or {}).get("domain", "")).strip() or str((latest_job or {}).get("domain", "")).strip() or domain
             target_run_domain_for_page = target_run_domain
             issues_exists = _artifact_exists(target_run_domain, target_run_id, "issues.json")
-            llm_stats_exists = _artifact_exists(target_run_domain, target_run_id, "llm_review_stats.json")
-            llm_stats_payload = _read_json_safe(target_run_domain, target_run_id, "llm_review_stats.json", None) if llm_stats_exists else None
+            llm_telemetry_lookup_domain = target_run_domain
+            llm_telemetry_lookup_run_id = target_run_id
+            try:
+                llm_telemetry_lookup_path = f"gs://{llm_lookup_bucket}/{storage.artifact_path(llm_telemetry_lookup_domain, llm_telemetry_lookup_run_id, llm_telemetry_lookup_filename)}"
+            except Exception:
+                llm_telemetry_lookup_path = ""
+            llm_stats_diag = _check_languages_llm_review_telemetry_status(llm_telemetry_lookup_domain, llm_telemetry_lookup_run_id)
+            llm_telemetry_read_status = str(llm_stats_diag.get("status", "missing"))
+            llm_stats_exists = bool(llm_stats_diag.get("exists"))
+            llm_stats_payload = llm_stats_diag.get("payload") if llm_telemetry_read_status == "valid" else None
+            llm_telemetry_error_summary = str(llm_stats_diag.get("error", "")).strip()
             workflow_state = str((latest_job or {}).get("workflow_state", "")).strip().lower()
             latest_status = str((latest_job or {}).get("status", "")).strip().lower()
             stage = str((latest_job or {}).get("stage", "")).strip().lower()
@@ -3040,6 +3059,9 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 }
                 workflow_state = stage_state_map.get(str((latest_job or {}).get("stage", "")).strip().lower(), "")
             llm_display = _llm_review_display(latest_job, llm_stats_payload, llm_stats_exists, workflow_state or page_state)
+            llm_telemetry_valid_for_ui = isinstance(llm_stats_payload, dict)
+            llm_telemetry_state_for_ui = str(llm_display.get("state", "")).strip() or "unknown"
+            llm_telemetry_final_label = llm_telemetry_state_for_ui
             warning_html = f'<p class="warning">{_h(llm_display["warning"])}</p>' if llm_display["warning"] else ""
             llm_review_block = (
                 f"<p>{_h(llm_display['process_summary'])}</p>"
@@ -3308,6 +3330,19 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 f"<li>lookup_run_id: <strong>{_h(llm_lookup_run_id or '—')}</strong></li>"
                 f"<li>lookup_filename: <strong>{_h(llm_lookup_filename or '—')}</strong></li>"
                 f"<li>actual_llm_input_lookup_path: <strong>{_h(llm_lookup_path or '—')}</strong></li>"
+                f"<li>latest_job_status: <strong>{_h(str((latest_job or {}).get('status', '') or '—'))}</strong></li>"
+                f"<li>latest_job_stage: <strong>{_h(str((latest_job or {}).get('stage', '') or '—'))}</strong></li>"
+                f"<li>latest_job_workflow_state: <strong>{_h(str((latest_job or {}).get('workflow_state', page_state) or '—'))}</strong></li>"
+                f"<li>telemetry_state_used_by_ui: <strong>{_h(llm_telemetry_state_for_ui or '—')}</strong></li>"
+                f"<li>final_ui_label_for_llm_review: <strong>{_h(llm_telemetry_final_label or '—')}</strong></li>"
+                f"<li>telemetry_lookup_domain: <strong>{_h(llm_telemetry_lookup_domain or '—')}</strong></li>"
+                f"<li>telemetry_lookup_run_id: <strong>{_h(llm_telemetry_lookup_run_id or '—')}</strong></li>"
+                f"<li>telemetry_lookup_filename: <strong>{_h(llm_telemetry_lookup_filename or '—')}</strong></li>"
+                f"<li>telemetry_lookup_bucket: <strong>{_h(llm_lookup_bucket or '—')}</strong></li>"
+                f"<li>telemetry_actual_lookup_path: <strong>{_h(llm_telemetry_lookup_path or '—')}</strong></li>"
+                f"<li>telemetry_read_status: <strong>{_h(llm_telemetry_read_status or '—')}</strong></li>"
+                f"<li>telemetry_short_error_summary: <strong>{_h(llm_telemetry_error_summary or '—')}</strong></li>"
+                f"<li>telemetry_payload_valid_for_ui: <strong>{_h(str(bool(llm_telemetry_valid_for_ui)).lower())}</strong></li>"
                 f"<li>final llm_enabled: <strong>{_h(str(llm_enabled).lower())}</strong></li>"
                 "</ul>"
             )
