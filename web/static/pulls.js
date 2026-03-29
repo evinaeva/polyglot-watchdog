@@ -57,6 +57,35 @@ function pullsQuery() {
   return { domain: (params.get('domain') || '').trim(), runId: (params.get('run_id') || '').trim() };
 }
 
+function parseCreatedAt(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return Number.NaN;
+  const ts = Date.parse(raw);
+  return Number.isFinite(ts) ? ts : Number.NaN;
+}
+
+function sortRunsNewestFirst(runs) {
+  return [...runs].sort((a, b) => {
+    const aTs = parseCreatedAt((a || {}).created_at);
+    const bTs = parseCreatedAt((b || {}).created_at);
+    if (Number.isFinite(aTs) && Number.isFinite(bTs) && aTs !== bTs) return bTs - aTs;
+    if (Number.isFinite(aTs) && !Number.isFinite(bTs)) return -1;
+    if (!Number.isFinite(aTs) && Number.isFinite(bTs)) return 1;
+    const aRunId = String((a || {}).run_id || '');
+    const bRunId = String((b || {}).run_id || '');
+    return bRunId.localeCompare(aRunId);
+  });
+}
+
+async function resolveRunId(domain, explicitRunId) {
+  if (explicitRunId) return explicitRunId;
+  const response = await fetch(`/api/capture/runs?${new URLSearchParams({ domain }).toString()}`);
+  const payload = await safeReadPayload(response);
+  if (!response.ok) throw new Error(payload.error || `Failed to load runs (${response.status})`);
+  const runs = sortRunsNewestFirst(Array.isArray(payload.runs) ? payload.runs : []);
+  return String(((runs[0] || {}).run_id) || '').trim();
+}
+
 function setPullsStatus(message, cls = '') {
   pullsStatus.className = cls;
   pullsStatus.textContent = message;
@@ -770,7 +799,25 @@ function renderRows(domain, runId) {
 }
 
 async function loadPulls() {
-  const { domain, runId } = pullsQuery();
+  const { domain, runId: queryRunId } = pullsQuery();
+  let runId = queryRunId;
+  if (!domain) {
+    pullsTable.classList.add('hidden');
+    pullsLanguageSummary.classList.add('hidden');
+    setPullsStatus('Missing required query params: domain and run_id.', 'error');
+    pullsPrepareCapturedData.disabled = true;
+    setPrepareCapturedDataStatus('Missing required query params: domain and run_id.', 'error');
+    return;
+  }
+
+  runId = await resolveRunId(domain, queryRunId);
+  if (runId && runId !== queryRunId) {
+    const params = new URLSearchParams(window.location.search);
+    params.set('domain', domain);
+    params.set('run_id', runId);
+    window.history.replaceState({}, '', `/pulls?${params.toString()}`);
+  }
+
   updateWorkflowSummary(domain, runId);
   const query = new URLSearchParams({ domain, run_id: runId }).toString();
 
@@ -793,7 +840,7 @@ async function loadPulls() {
     if (link) link.href = href;
   });
 
-  if (!domain || !runId) {
+  if (!runId) {
     pullsTable.classList.add('hidden');
     pullsLanguageSummary.classList.add('hidden');
     setPullsStatus('Missing required query params: domain and run_id.', 'error');
