@@ -3423,3 +3423,34 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c96403bb2c832cabf2281b2117bf6e)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #202 — 2026-03-29T18:04:38Z
+
+- Title: Adjust URLs page header and domain input styling; align nav/main widths
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/202
+- Author: evinaeva
+- Base branch: main
+- Head branch: 8d3eme-codex/fix-menu-block-width-and-input-color
+- Merge commit: ed8c3c09c1fe3fd17726e9483d56e5363773b169
+- Changed files:
+  - web/static/theme-graph.css
+  - web/templates/urls.html
+- Description:
+  ### Motivation
+  - Make the top navigation and page panels visually align so the menu block width matches other page blocks.
+  - Combine the page title and subtitle into a single visual block for a cleaner header layout.
+  - Make the domain input use the same dark input styling as the lower URL textarea for consistent appearance.
+  
+  ### Description
+  - Updated `web/templates/urls.html` to move the subtitle text into the `h1` as a `span` and added a `page-title` class for a single header block.
+  - Modified `web/static/theme-graph.css` to set `nav` width to `min(1200px, calc(100% - 36px))` and add `box-sizing: border-box` to `main` so container widths line up.
+  - Added `.page-title` / `.page-title-subtitle` styles and restyled `.domain-combobox #domainInput` to use the dark background, matching other inputs.
+  
+  ### Testing
+  - Ran `pytest -q tests/test_check_languages_page.py` which failed during collection with `ModuleNotFoundError: No module named 'app'` in this environment.
+  - Re-ran with `PYTHONPATH=. pytest -q tests/test_check_languages_page.py` which failed due to a missing dependency (`ModuleNotFoundError: No module named 'jsonschema'`).
+  - No other automated tests were executed in this environment; the CSS/template changes are limited to presentation-only edits and were committed as `Adjust URLs page header and input styling`.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c967007ad8832caa9f3adf41a48fca)
+- Notes: Auto-generated from merged PR metadata.
