@@ -1053,6 +1053,9 @@ def _run_check_languages_llm_async(job_id: str, domain: str, en_run_id: str, tar
 
     _jobs[job_id] = {"status": "running", "phase": "check_languages_llm", "domain": domain, "run_id": target_run_id}
     try:
+        llm_preflight_error = _check_languages_llm_preflight_error()
+        if llm_preflight_error:
+            raise _CheckLanguagesLlmPreflightError(llm_preflight_error)
         prepared = _read_json_safe(domain, target_run_id, "check_languages_prepared_payload.json", None)
         if not isinstance(prepared, dict):
             raise ValueError("Prepared payload missing. Run Prepare language check payload first.")
@@ -1078,8 +1081,6 @@ def _run_check_languages_llm_async(job_id: str, domain: str, en_run_id: str, tar
             "target_url": target_url,
         })
         review_mode = os.environ.get("PHASE6_REVIEW_PROVIDER", "").strip()
-        if not review_mode:
-            raise ValueError("PHASE6_REVIEW_PROVIDER is required for check-languages Phase 6 execution")
         phase6_run(domain=domain, en_run_id=en_run_id, target_run_id=target_run_id, review_mode=review_mode, prepared_llm_payload=llm_input_payload)
         _require_artifact_exists(domain, target_run_id, "issues.json")
         _jobs[job_id]["status"] = "done"
@@ -1096,17 +1097,33 @@ def _run_check_languages_llm_async(job_id: str, domain: str, en_run_id: str, tar
     except Exception as exc:
         _jobs[job_id]["status"] = "error"
         _jobs[job_id]["error"] = str(exc)
+        stage = "running_llm_review_failed"
+        workflow_state = "failed_during_llm"
+        if isinstance(exc, _CheckLanguagesLlmPreflightError):
+            stage = "llm_preflight_failed"
+            workflow_state = "failed_before_llm"
         _upsert_job_status(domain, target_run_id, {
             "job_id": job_id,
             "status": "failed",
             "type": "check_languages",
-            "stage": "running_llm_review_failed",
-            "workflow_state": "failed_during_llm",
+            "stage": stage,
+            "workflow_state": workflow_state,
             "en_run_id": en_run_id,
             "target_language": target_language,
             "target_url": target_url,
             "error": str(exc),
         })
+
+
+def _check_languages_llm_preflight_error() -> str | None:
+    review_mode = os.environ.get("PHASE6_REVIEW_PROVIDER", "").strip()
+    if not review_mode:
+        return "LLM review cannot start: PHASE6_REVIEW_PROVIDER is not configured."
+    return None
+
+
+class _CheckLanguagesLlmPreflightError(ValueError):
+    """Raised when LLM stage launch preflight fails before Phase 6 execution."""
 
 
 def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_language: str, target_run_id: str, target_url: str) -> None:
@@ -1116,6 +1133,20 @@ def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_
     if not isinstance(latest, dict):
         return
     if str(latest.get("workflow_state", "")).strip().lower() != "prepared_for_llm":
+        return
+    llm_preflight_error = _check_languages_llm_preflight_error()
+    if llm_preflight_error:
+        _upsert_job_status(domain, target_run_id, {
+            "job_id": f"{job_id}-llm-preflight",
+            "status": "failed",
+            "type": "check_languages",
+            "stage": "llm_preflight_failed",
+            "workflow_state": "failed_before_llm",
+            "en_run_id": en_run_id,
+            "target_language": target_language,
+            "target_url": target_url,
+            "error": llm_preflight_error,
+        })
         return
     llm_job_id = f"{job_id}-llm"
     _run_check_languages_llm_async(llm_job_id, domain, en_run_id, target_language, target_run_id, target_url)
@@ -2854,6 +2885,10 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             if not isinstance(prepared, dict):
                 self._redirect_check_languages(payload, message="Prepared payload is missing or invalid. Run preparation first.", level="error")
                 return
+            llm_preflight_error = _check_languages_llm_preflight_error()
+            if llm_preflight_error:
+                self._redirect_check_languages(payload, message=llm_preflight_error, level="error")
+                return
             expected_hashes = prepared.get("source_hashes") if isinstance(prepared.get("source_hashes"), dict) else {}
             if expected_hashes and expected_hashes != _check_languages_source_hashes(run_domain, en_run_id, target_run_id):
                 self._redirect_check_languages(payload, message="Prepared payload is stale. Re-run preparation before LLM review.", level="error")
@@ -3055,6 +3090,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                     "completed": "completed",
                     "running_target_capture_failed": "failed_before_llm",
                     "preparing_payload_failed": "failed_before_llm",
+                    "llm_preflight_failed": "failed_before_llm",
                     "running_llm_review_failed": "failed_during_llm",
                 }
                 workflow_state = stage_state_map.get(str((latest_job or {}).get("stage", "")).strip().lower(), "")

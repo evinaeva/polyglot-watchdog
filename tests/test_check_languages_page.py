@@ -1128,9 +1128,10 @@ def test_orchestrator_surfaces_missing_phase6_provider(monkeypatch):
     from app.skeleton_server import _run_check_languages_async
 
     _run_check_languages_async("job1", "https://bongacams.com/", "run-en", "fr", "run-en-check-fr", "https://fr.bongacams.com/")
-    failed = [rec for rec in updates if str(rec.get("stage")) in {"running_llm_review_failed", "running_comparison_failed"}]
+    failed = [rec for rec in updates if str(rec.get("stage")) in {"llm_preflight_failed", "running_llm_review_failed", "running_comparison_failed"}]
     assert failed
-    assert "PHASE6_REVIEW_PROVIDER is required" in str(failed[-1].get("error", ""))
+    assert "PHASE6_REVIEW_PROVIDER" in str(failed[-1].get("error", ""))
+    assert str(failed[-1].get("workflow_state", "")) == "failed_before_llm"
 
 
 def test_stale_check_languages_job_is_rendered_as_failed(api_env, monkeypatch):
@@ -1387,6 +1388,129 @@ def test_prepare_action_only_starts_prepare_worker(api_env, monkeypatch):
     assert status_post == HTTPStatus.FOUND
     assert "Language+check+payload+preparation+started." in location
     assert called == ["prepare"]
+
+
+def test_run_llm_action_fails_preflight_when_phase6_provider_missing(api_env, monkeypatch):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {"source_hashes": {}})
+    monkeypatch.delenv("PHASE6_REVIEW_PROVIDER", raising=False)
+
+    started_threads = []
+
+    class _FakeThread:
+        def __init__(self, target=None, args=(), daemon=None):
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+
+        def start(self):
+            started_threads.append((self.target, self.args))
+
+    monkeypatch.setattr("app.skeleton_server.threading.Thread", _FakeThread)
+
+    form = _query({
+        "selected_domain": domain,
+        "en_run_id": "run-en",
+        "target_language": "fr",
+        "target_run_id": target_run_id,
+        "action": "run_llm_review",
+    })
+    status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
+    assert status_post == HTTPStatus.FOUND
+    assert "LLM+review+cannot+start%3A+PHASE6_REVIEW_PROVIDER+is+not+configured." in location
+    assert started_threads == []
+
+    jobs = storage.read_json_artifact(domain, "manual", "capture_runs.json").get("runs", [])
+    target_run = next((row for row in jobs if str(row.get("run_id", "")) == target_run_id), {})
+    latest_job = (target_run.get("jobs") or [{}])[-1] if isinstance(target_run, dict) else {}
+    assert str(latest_job.get("stage", "")) != "queued_llm_review"
+    assert str(latest_job.get("stage", "")) != "running_llm_review"
+
+
+def test_run_llm_action_starts_llm_worker_when_phase6_provider_present(api_env, monkeypatch):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {"source_hashes": {}})
+    monkeypatch.setenv("PHASE6_REVIEW_PROVIDER", "test-heuristic")
+
+    started_threads = []
+
+    class _FakeThread:
+        def __init__(self, target=None, args=(), daemon=None):
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+
+        def start(self):
+            started_threads.append((self.target, self.args))
+
+    monkeypatch.setattr("app.skeleton_server.threading.Thread", _FakeThread)
+
+    form = _query({
+        "selected_domain": domain,
+        "en_run_id": "run-en",
+        "target_language": "fr",
+        "target_run_id": target_run_id,
+        "action": "run_llm_review",
+    })
+    status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
+    assert status_post == HTTPStatus.FOUND
+    assert "LLM+review+started+from+prepared+payload." in location
+    assert len(started_threads) == 1
+
+
+def test_run_llm_preflight_error_is_immediately_visible_and_not_telemetry_missing(api_env, monkeypatch):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {"source_hashes": {}})
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "fr", "review_context_count": 0, "review_contexts": []})
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {
+                "run_id": target_run_id,
+                "created_at": "2026-03-12T00:00:00Z",
+                "jobs": [
+                    {
+                        "job_id": "check-languages-1",
+                        "status": "succeeded",
+                        "type": "check_languages",
+                        "stage": "prepared_for_llm",
+                        "workflow_state": "prepared_for_llm",
+                        "en_run_id": "run-en",
+                        "target_language": "fr",
+                    }
+                ],
+            },
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+    monkeypatch.delenv("PHASE6_REVIEW_PROVIDER", raising=False)
+    monkeypatch.setattr("app.skeleton_server.threading.Thread", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("thread should not start")))
+
+    form = _query({
+        "selected_domain": domain,
+        "en_run_id": "run-en",
+        "target_language": "fr",
+        "target_run_id": target_run_id,
+        "action": "run_llm_review",
+    })
+    status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
+    assert status_post == HTTPStatus.FOUND
+    status_get, body, _ = _request("GET", api_env, location)
+    assert status_get == HTTPStatus.OK
+    assert "LLM review cannot start: PHASE6_REVIEW_PROVIDER is not configured." in body
+    assert "State: <strong>LLM stage not started</strong>" in body
+    assert "State: <strong>LLM telemetry missing</strong>" not in body
 
 
 def test_run_llm_button_disabled_without_prepared_payload(api_env):
@@ -2003,6 +2127,33 @@ def test_run_llm_uses_prepared_payload_as_actual_input(monkeypatch):
     _run_check_languages_llm_async("job-llm", domain, "run-en", "fr", target_run_id, "https://fr.bongacams.com/")
     assert isinstance(captured.get("prepared_llm_payload"), dict)
     assert captured["prepared_llm_payload"]["review_contexts"][0]["language"] == "fr"
+
+
+def test_run_llm_async_fails_preflight_before_running_stage_when_provider_missing(monkeypatch):
+    domain = "https://bongacams.com/"
+    target_run_id = "run-en-check-fr"
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {"source_hashes": {}, "en_run_id": "run-en", "target_run_id": target_run_id})
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"review_contexts": [{"language": "fr"}]})
+    _write(domain, "run-en", "eligible_dataset.json", [])
+    _write(domain, target_run_id, "eligible_dataset.json", [])
+    _write(domain, "run-en", "collected_items.json", [])
+    _write(domain, target_run_id, "collected_items.json", [])
+    _write(domain, "run-en", "page_screenshots.json", [])
+    _write(domain, target_run_id, "page_screenshots.json", [])
+
+    updates = []
+    monkeypatch.delenv("PHASE6_REVIEW_PROVIDER", raising=False)
+    monkeypatch.setattr("app.skeleton_server._upsert_job_status", lambda _domain, _run_id, rec: updates.append(rec))
+
+    from app.skeleton_server import _jobs, _run_check_languages_llm_async
+
+    _run_check_languages_llm_async("job-llm-preflight", domain, "run-en", "fr", target_run_id, "https://fr.bongacams.com/")
+    assert _jobs["job-llm-preflight"]["status"] == "error"
+    assert "PHASE6_REVIEW_PROVIDER" in _jobs["job-llm-preflight"]["error"]
+    assert not any(str(rec.get("stage")) == "running_llm_review" for rec in updates if isinstance(rec, dict))
+    failed = [rec for rec in updates if isinstance(rec, dict) and str(rec.get("stage")) == "llm_preflight_failed"]
+    assert failed
+    assert str(failed[-1].get("workflow_state")) == "failed_before_llm"
 
 
 def test_run_llm_uses_gs_llm_input_artifact_from_prepared_payload(monkeypatch):
