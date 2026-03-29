@@ -13,10 +13,7 @@
 
 body {
   font-family: "Inter", "Segoe UI", system-ui, sans-serif;
-  background:
-    radial-gradient(circle at 20% -10%, rgba(79, 209, 197, 0.12), transparent 35%),
-    radial-gradient(circle at 90% 0%, rgba(110, 231, 255, 0.1), transparent 28%),
-    linear-gradient(180deg, #0b1327 0%, var(--bg) 60%, #0c162f 100%);
+  background: var(--bg);
   color: var(--text);
 }
 
