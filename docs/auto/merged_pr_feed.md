@@ -3328,3 +3328,36 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c952a6c234832cb60e8c1e041d19f3)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #199 — 2026-03-29T17:17:31Z
+
+- Title: UI: Fix /urls title typo and improve contrast/layout
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/199
+- Author: evinaeva
+- Base branch: main
+- Head branch: b8ij5b-codex/update-ui-for-/urls-page
+- Merge commit: eb8862051a30e20235b981fdd470e16d7197bcc1
+- Changed files:
+  - web/static/theme-graph.css
+  - web/templates/urls.html
+- Description:
+  ### Motivation
+  - Correct a typographic error on the `/urls` page and address multiple readability and alignment issues that made helper text and form inputs hard to read on the current dark theme.
+  - Align the top navigation and textarea visuals with the site’s main content width so the page feels consistent without altering any behavior.
+  
+  ### Description
+  - Fixed the title typo by replacing `Add Domen. Add URL list.` with `Add Domain. Add URL list.` in `web/templates/urls.html` and kept the subtitle directly under the title in the same visual block.
+  - Removed the inline `style="width: 100%;"` from the `#urlsMultiline` textarea in `web/templates/urls.html` and added responsive width/box-sizing rules in `web/static/theme-graph.css` so the textarea matches the main content width and is no longer full-bleed.
+  - Improved text contrast by setting `.page-subtitle`, `.inline-help`, and `.updated-at-inline` to a lighter, readable color and made `#domainInput` typed text darker with a distinct placeholder color; preserved existing focus/hover rules.
+  - Centered and constrained the top `nav` by applying `margin: auto`, `max-width`, and `width` rules and adjusted `.nav-links` / `.language-toggle` flex rules so the language switcher remains inside the centered nav block.
+  - Replaced the footer gradient with a flat background using `var(--bg)` to match the page palette and ensure readable footer content.
+  - Files changed: `web/templates/urls.html` (markup/copy/layout-only) and `web/static/theme-graph.css` (CSS/style/layout-only). All IDs and JS hooks (`domainInput`, `urlsMultiline`, `updatedAt`, etc.) were preserved.
+  
+  ### Testing
+  - Ran `pytest -q tests/test_operator_ui_runtime_regressions.py` which completed successfully: `12 passed`.
+  - Verified changed templates and CSS by re-opening `web/templates/urls.html` and `web/static/theme-graph.css` to confirm the title text, subtitle placement, contrast rules, `#domainInput` colors, `#urlsMultiline` sizing, nav centering, and flat footer background were applied.
+  - Notes: no end-to-end browser screenshots were produced in this environment; visual verification was performed by reviewing the updated templates/CSS and running the specified unit test collection.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c95d860de8832cade88a6ca8e4bf11)
+- Notes: Auto-generated from merged PR metadata.
