@@ -859,7 +859,7 @@ def test_pulls_top_and_bottom_next_step_links_receive_same_runtime_href():
         const sandbox = {
           console,
           URLSearchParams,
-          window: { location: { search: '?domain=example.com&run_id=run-77' }, addEventListener(){} },
+          window: { location: { search: '?domain=example.com&run_id=run-77' }, history: { replaceState(){} }, addEventListener(){} },
           document: { getElementById: (id) => els[id], createElement: () => makeElement('created'), addEventListener(){} },
           safeReadPayload: async (response) => response.json(),
           setTimeout: (fn) => { fn(); return 1; },
@@ -875,13 +875,199 @@ def test_pulls_top_and_bottom_next_step_links_receive_same_runtime_href():
         vm.createContext(sandbox);
         vm.runInContext(fs.readFileSync('web/static/pulls.js', 'utf8'), sandbox);
 
-        console.log(JSON.stringify({ top: els.continueCheckLanguages.href, bottom: els.continueCheckLanguagesBottom.href }));
+        setTimeout(() => {
+          console.log(JSON.stringify({ top: els.continueCheckLanguages.href, bottom: els.continueCheckLanguagesBottom.href }));
+        }, 0);
         """
     )
     out = _run_node_json(script)
     expected = "/check-languages?domain=example.com&en_run_id=run-77"
     assert out["top"] == expected
     assert out["bottom"] == expected
+
+
+def test_workflow_defaults_to_latest_run_by_timestamp_and_preserves_manual_selection_for_pulls_link():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function makeElement(id='') {
+          const listeners = {};
+          const el = {
+            id,
+            _value: '',
+            href: '',
+            innerHTML: '',
+            textContent: '',
+            className: '',
+            dataset: {},
+            disabled: false,
+            children: [],
+            options: [],
+            classList: { add(){}, remove(){}, toggle(){} },
+            setAttribute(){},
+            appendChild(child){ this.children.push(child); this.options.push(child); return child; },
+            append(...nodes){ this.children.push(...nodes); },
+            addEventListener(type, cb){ listeners[type] = cb; },
+            dispatch(type){ if (listeners[type]) return listeners[type]({ target: this }); },
+            querySelector(){ return makeElement('qs'); },
+            get value(){ return this._value; },
+            set value(v){ this._value = String(v || ''); },
+          };
+          return el;
+        }
+
+        const ids = ['wfDomain','wfRefreshUrls','wfSavedUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
+        const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
+        els.wfDomain.value = 'example.com';
+        els.wfExistingRuns.options = [];
+        Object.defineProperty(els.wfExistingRuns, 'innerHTML', {
+          set(value) { this._innerHTML = value; if (value === '') { this.children = []; this.options = []; this._value = ''; } },
+          get() { return this._innerHTML || ''; },
+        });
+
+        const historyUrls = [];
+
+        const sandbox = {
+          console,
+          URLSearchParams,
+          window: {
+            location: { search: '?domain=example.com' },
+            history: { replaceState: (_s, _t, url) => historyUrls.push(url) },
+          },
+          document: {
+            getElementById: (id) => els[id],
+            createElement: () => makeElement('created'),
+          },
+          fetch: async (url) => {
+            if (url === '/api/domains') return { ok: true, json: async () => ({ items: ['example.com'] }) };
+            if (url.startsWith('/api/seed-urls?')) return { ok: true, json: async () => ({ urls: [] }) };
+            if (url.startsWith('/api/capture/runs?')) {
+              return {
+                ok: true,
+                json: async () => ({
+                  runs: [
+                    { run_id: 'run-aaa', created_at: '2026-03-27T10:00:00Z', jobs: [] },
+                    { run_id: 'run-zzz', created_at: '2026-03-28T10:00:00Z', jobs: [] },
+                  ],
+                }),
+              };
+            }
+            if (url.startsWith('/api/workflow/status?')) return { ok: true, json: async () => ({ capture: { status: 'ready' }, run: {} }) };
+            if (url.startsWith('/api/capture/contexts?')) return { ok: true, json: async () => ({ contexts: [] }) };
+            return { ok: true, json: async () => ({}) };
+          },
+          setInterval: () => 1,
+          clearInterval: () => {},
+          safeReadPayload: async (response) => response.json(),
+        };
+
+        vm.createContext(sandbox);
+        vm.runInContext(fs.readFileSync('web/static/workflow.js', 'utf8'), sandbox);
+
+        (async () => {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          const defaultSelected = els.wfExistingRuns.value;
+          const defaultContinueHref = els.wfContinuePulls.href;
+          els.wfExistingRuns.value = 'run-aaa';
+          await els.wfUseExistingRun.dispatch('click');
+          const manualContinueHref = els.wfContinuePulls.href;
+          console.log(JSON.stringify({ defaultSelected, defaultContinueHref, manualContinueHref, historyUrls }));
+        })().catch((err) => { console.error(err); process.exit(1); });
+        """
+    )
+    out = _run_node_json(script)
+    assert out["defaultSelected"] == "run-zzz"
+    assert out["defaultContinueHref"].endswith("domain=example.com&run_id=run-zzz")
+    assert out["manualContinueHref"].endswith("domain=example.com&run_id=run-aaa")
+    assert any("run_id=run-aaa" in entry for entry in out["historyUrls"])
+
+
+def test_pulls_respects_explicit_run_and_uses_latest_timestamp_when_missing():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function runScenario(search) {
+          function makeElement(id='') {
+            const listeners = {};
+            return {
+              id,
+              value: '',
+              href: '',
+              innerHTML: '',
+              textContent: '',
+              className: '',
+              dataset: {},
+              disabled: false,
+              children: [],
+              classList: { add(){}, remove(){}, toggle(){} },
+              setAttribute(){},
+              appendChild(child){ this.children.push(child); return child; },
+              append(...nodes){ this.children.push(...nodes); },
+              addEventListener(type, cb){ listeners[type] = cb; },
+              querySelector(){ return { innerHTML: '', appendChild(){} }; },
+            };
+          }
+
+          const ids = ['pullsStatus','pullsTable','pullsUrlSearch','pullsElementTypeFilter','pullsLanguageSummary','pullsWorkflowContextSummary','pullsWhitelistInput','pullsWhitelistAdd','pullsWhitelistStatus','pullsWhitelistChips','pullsPrepareCapturedData','pullsPrepareCapturedDataStatus','pullsPreviewModal','pullsPreviewOverlay','pullsPreviewClose','pullsPreviewStatus','pullsPreviewImage','pullsPreviewBbox','pullsPreviewDetails','pullsScreenshotViewport','pullsScreenshotCanvas','pullsZoomIn','pullsZoomOut','pullsCenterElement','pullsImageAssetSection','pullsImageAsset','pullsImageAssetFallback','pullsImageAssetMeta','pullsBackToRunHub','continueCheckLanguages','continueCheckLanguagesBottom','pullsOpenContexts','pullsOpenIssues'];
+          const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
+          const pullCalls = [];
+          const runsCalls = [];
+          const replaced = [];
+
+          const sandbox = {
+            console,
+            URLSearchParams,
+            window: {
+              location: { search },
+              history: { replaceState: (_s, _t, url) => replaced.push(url) },
+              addEventListener() {},
+            },
+            document: { getElementById: (id) => els[id], createElement: () => makeElement('created'), addEventListener(){} },
+            safeReadPayload: async (response) => response.json(),
+            setTimeout: (fn) => { fn(); return 1; },
+            clearTimeout: () => {},
+            ResizeObserver: function(){ this.observe = () => {}; this.disconnect = () => {}; },
+            fetch: async (url) => {
+              if (url.startsWith('/api/pulls?')) {
+                pullCalls.push(url);
+                return { ok: true, status: 200, json: async () => ({ rows: [] }) };
+              }
+              if (url.startsWith('/api/capture/runs?')) {
+                runsCalls.push(url);
+                return { ok: true, status: 200, json: async () => ({
+                  runs: [
+                    { run_id: 'run-aaa', created_at: '2026-03-27T10:00:00Z' },
+                    { run_id: 'run-zzz', created_at: '2026-03-28T10:00:00Z' },
+                  ],
+                }) };
+              }
+              if (url.startsWith('/api/element-type-whitelist?')) return { ok: true, status: 200, json: async () => ({ entries: [] }) };
+              return { ok: true, status: 200, json: async () => ({}) };
+            },
+          };
+
+          vm.createContext(sandbox);
+          vm.runInContext(fs.readFileSync('web/static/pulls.js', 'utf8'), sandbox);
+          return new Promise((resolve) => setTimeout(() => resolve({ pullCalls, runsCalls, replaced }), 0));
+        }
+
+        (async () => {
+          const explicit = await runScenario('?domain=example.com&run_id=run-aaa');
+          const inferred = await runScenario('?domain=example.com');
+          console.log(JSON.stringify({ explicit, inferred }));
+        })().catch((err) => { console.error(err); process.exit(1); });
+        """
+    )
+    out = _run_node_json(script)
+    assert any("run_id=run-aaa" in call for call in out["explicit"]["pullCalls"])
+    assert out["explicit"]["runsCalls"] == []
+    assert any("run_id=run-zzz" in call for call in out["inferred"]["pullCalls"])
+    assert len(out["inferred"]["runsCalls"]) == 1
+    assert any("run_id=run-zzz" in url for url in out["inferred"]["replaced"])
 
 
 def test_urls_saved_domain_menu_filters_malformed_values_and_supports_selection():

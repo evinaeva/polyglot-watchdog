@@ -277,6 +277,8 @@ function renderExistingRuns() {
     wfExistingRuns.value = selected;
   } else if (wfExistingRuns.options.length > 0) {
     wfExistingRuns.value = String(wfExistingRuns.options[0].value || '');
+    activeRunId = wfExistingRuns.value;
+    setQuery(wfDomain.value.trim(), activeRunId);
   }
 
   wfUseExistingRun.disabled = !wfExistingRuns.value;
