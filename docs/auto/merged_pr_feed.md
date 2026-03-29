@@ -3226,3 +3226,35 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c68cdbe80c832cb04822ba7538b06c)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #196 — 2026-03-29T16:02:57Z
+
+- Title: Fix check-languages LLM telemetry read path and add diagnostics/tests
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/196
+- Author: evinaeva
+- Base branch: main
+- Head branch: tdlr53-codex/audit-and-fix-llm-telemetry-production-bug
+- Merge commit: da2f814cea4f514b7f4da5ab92d317ce9ad1fc3f
+- Changed files:
+  - app/check_languages_service.py
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  - The check-languages UI was rendering "LLM telemetry missing" when `llm_review_stats.json` was in fact present because the page relied on listing-based existence checks which can be unreliable; a direct-read should be the source of truth. 
+  - Provide compact diagnostics so operators can see the exact lookup context and why the UI decided telemetry was missing.
+  
+  ### Description
+  - Added a direct-read status helper ` _check_languages_llm_review_telemetry_status(domain, run_id)` in `app/check_languages_service.py` that classifies reads as `valid`, `missing`, `read_error`, `malformed_json`, or `invalid_payload` and returns payload/error metadata. 
+  - Switched the check-languages rendering flow in `app/skeleton_server.py` to use the new helper (direct read) instead of relying solely on listing (`_artifact_exists`) so valid telemetry is displayed even when listing is unreliable. 
+  - Wired telemetry lookup context and decision inputs into the gate diagnostics block in `app/skeleton_server.py` so the UI exposes: latest job status/stage/workflow_state, lookup domain/run_id/filename/bucket/path, telemetry read status and short error, whether payload was considered valid, and the final UI label used. 
+  - Added focused regression tests in `tests/test_check_languages_page.py` that reproduce the listing-missing but readable telemetry failure mode and assert the telemetry rendering and diagnostic output.
+  
+  ### Testing
+  - Installed test dependency `jsonschema` and ran a focused pytest slice: `PYTHONPATH=. pytest -q tests/test_check_languages_page.py -k "reads_llm_telemetry_even_when_listing_reports_missing or gate_diagnostics_include_llm_telemetry_lookup_context or completed_llm_run_shows_provider_model_tokens_and_cost"`.
+  - Result: the three targeted tests passed (3 passed, 98 deselected).
+  - Additional sanity: the changes are limited and unit-tested against the real page-render logic and diagnostics to prevent regressions in UI decision paths.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c94a9b5a38832c94d5a2263c595051)
+- Notes: Auto-generated from merged PR metadata.
