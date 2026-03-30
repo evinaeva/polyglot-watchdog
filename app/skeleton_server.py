@@ -1146,6 +1146,9 @@ class _CheckLanguagesLlmPreflightError(ValueError):
     """Raised when LLM stage launch preflight fails before Phase 6 execution."""
 
 
+# Legacy combined prepare+LLM flow retained intentionally for non-UI and test utility paths.
+# The UI handler path currently runs _prepare_check_languages_async and
+# _run_check_languages_llm_async as separate stages instead of calling this wrapper.
 def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_language: str, target_run_id: str, target_url: str) -> None:
     """Backward-compatible composed flow: prepare payload, then run LLM review."""
     _prepare_check_languages_async(job_id, domain, en_run_id, target_language, target_run_id, target_url)
