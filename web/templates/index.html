@@ -11,30 +11,31 @@
 <body data-i18n-title="index.page_title">
   {{header}}
   <main>
-    <h1>SEE ERRORS</h1>
-    <p>Review and filter captured issues for a selected domain and run.</p>
-    <p><a id="issuesBackToCheckLanguages" href="/check-languages">Back to Check Languages</a></p>
-    <p id="workflowContextSummary" class="muted"></p>
+    <div class="top-unified-block">
+      <h1 class="page-title">SEE ERRORS<span class="page-title-subtitle">Review and filter captured issues for a selected domain and run.</span></h1>
+      <div class="controls step-actions"><a id="issuesBackToCheckLanguages" class="ui-action-button" data-button-fx="on" href="/check-languages">Back to Check Languages</a></div>
+      <p id="workflowContextSummary" class="muted"></p>
 
-    <div class="controls">
-      <input id="domainInput" placeholder="domain" />
-      <input id="languageFilter" placeholder="language" />
-      <input id="issueQuery" placeholder="search" />
-      <button id="applyIssueQuery" type="button">Apply</button>
-    </div>
-
-    <details>
-      <summary>Advanced filters &amp; run override</summary>
       <div class="controls">
-        <input id="runIdInput" placeholder="run id (optional override)" />
-        <input id="severityFilter" placeholder="severity" />
-        <input id="stateFilter" placeholder="state" />
-        <input id="typeFilter" placeholder="issue type" />
-        <input id="urlFilter" placeholder="url contains" />
-        <input id="domainFilter" placeholder="domain substring in URL" />
-        <button id="exportIssuesCsv" type="button">Export CSV</button>
+        <input id="domainInput" placeholder="domain" />
+        <input id="languageFilter" placeholder="language" />
+        <input id="issueQuery" placeholder="search" />
+        <button id="applyIssueQuery" type="button">Apply</button>
       </div>
-    </details>
+
+      <details>
+        <summary>Advanced filters &amp; run override</summary>
+        <div class="controls">
+          <input id="runIdInput" placeholder="run id (optional override)" />
+          <input id="severityFilter" placeholder="severity" />
+          <input id="stateFilter" placeholder="state" />
+          <input id="typeFilter" placeholder="issue type" />
+          <input id="urlFilter" placeholder="url contains" />
+          <input id="domainFilter" placeholder="domain substring in URL" />
+          <button id="exportIssuesCsv" type="button">Export CSV</button>
+        </div>
+      </details>
+    </div>
 
     <div id="issueStatus"></div>
     <p id="issueCount" class="hidden"></p>
