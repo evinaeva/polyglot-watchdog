@@ -2994,6 +2994,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         llm_status_note = ""
         payload_prepared_evidence = False
         llm_review_block = "<p>LLM telemetry is not available for this selection yet.</p>"
+        llm_launch_status_block = "<p>No LLM execution telemetry available yet.</p>"
         payload_preview_block = "<p>Payload not prepared yet.</p>"
         gate_diagnostics_block = "<p>Use “Recompute LLM gate diagnostics” to refresh gate details from storage.</p>"
         page_state = "input_incomplete"
@@ -3017,6 +3018,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         llm_telemetry_final_label = "Telemetry not evaluated yet."
         llm_review_debug_block = ""
         llm_review_debug_relevant = False
+        llm_display: dict[str, str] = {}
         llm_preview = "—"
         failure_payload = None
 
@@ -3444,6 +3446,55 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 )
             else:
                 llm_review_debug_block = "<p>LLM review diagnostics will appear after LLM review starts.</p>"
+        launch_attempted = (
+            bool(latest_job)
+            and (
+                str((latest_job or {}).get("workflow_state", "")).strip().lower() in {"queued_llm_review", "running_llm_review", "failed_during_llm", "completed", "running_llm_review_failed", "llm_preflight_failed"}
+                or str((latest_job or {}).get("stage", "")).strip().lower() in {"queued_llm_review", "running_llm_review", "running_llm_review_failed", "completed", "llm_preflight_failed"}
+            )
+        ) or llm_telemetry_read_status == "valid"
+        llm_stage_value = str((latest_job or {}).get("workflow_state", "")).strip() or str((latest_job or {}).get("stage", "")).strip() or page_state
+        llm_result_summary = str(llm_display.get("state", "")).strip() or "Not started"
+        llm_failure_reason = str((latest_job or {}).get("error", "")).strip() or llm_telemetry_error_summary
+        llm_provider_model = "—"
+        if llm_display:
+            llm_provider_model = f"{str(llm_display.get('effective_provider', '—')).strip() or '—'} / {str(llm_display.get('effective_model', '—')).strip() or '—'}"
+        llm_step_lines: list[str] = []
+        llm_step_lines.append("payload prepared" if payload_prepared_evidence or page_state in {"prepared_for_llm", "running_llm_review", "completed", "failed_during_llm"} else "payload pending")
+        if page_state in {"preparing_target_run", "running_target_capture", "preparing_payload"}:
+            llm_step_lines.append(f"target capture stage: {page_state}")
+        if page_state in {"prepared_for_llm", "running_llm_review", "completed", "failed_during_llm"}:
+            llm_step_lines.append("prepared for llm")
+        if llm_running or page_state in {"running_llm_review"}:
+            llm_step_lines.append("llm started")
+        if llm_display:
+            attempted = _as_int(llm_display.get("batches_attempted"), 0)
+            received = _as_int(llm_display.get("responses_received"), 0)
+            if attempted > 0:
+                llm_step_lines.append(f"batch sent ({attempted})")
+            if received > 0:
+                llm_step_lines.append(f"response received ({received})")
+        if page_state in {"completed", "completed_with_issues", "completed_with_zero_issues"}:
+            llm_step_lines.append("completed")
+        if page_state in {"failed_during_llm", "running_llm_review_failed", "failed_before_llm"}:
+            llm_step_lines.append(f"failed: {llm_failure_reason or 'unknown reason'}")
+        llm_step_lines = llm_step_lines[:10]
+        llm_step_items = "".join(f"<li>{_h(step)}</li>" for step in llm_step_lines)
+        short_result = llm_result_summary
+        if llm_failure_reason and page_state in {"failed_during_llm", "running_llm_review_failed", "failed_before_llm"}:
+            short_result = f"{llm_result_summary} ({llm_failure_reason})"
+        llm_launch_status_block = (
+            "<ul>"
+            f"<li>Launch attempted: <strong>{_h('yes' if launch_attempted else 'no')}</strong></li>"
+            f"<li>Current step: <strong>{_h(llm_stage_value or '—')}</strong></li>"
+            f"<li>LLM request started: <strong>{_h(llm_display.get('llm_requested', 'unknown'))}</strong></li>"
+            f"<li>Provider/model: <strong>{_h(llm_provider_model)}</strong></li>"
+            f"<li>Result: <strong>{_h(short_result or '—')}</strong></li>"
+            f"<li>Failure reason: <strong>{_h(llm_failure_reason or '—')}</strong></li>"
+            "</ul>"
+            + (f"<p>Recent steps</p><ul>{llm_step_items}</ul>" if llm_step_items else "<p>No LLM execution telemetry available yet.</p>")
+        )
+
         llm_disabled_attr = "" if llm_enabled else ' disabled="disabled"'
         llm_review_debug_section = ""
         if show_gate_diagnostics:
@@ -3481,6 +3532,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 "{{issues_summary}}": issue_summary_block,
                 "{{latest_job}}": latest_job_block,
                 "{{llm_review}}": llm_review_block,
+                "{{llm_launch_status}}": llm_launch_status_block,
                 "{{issues_link}}": _h(issues_link),
                 "{{issues_api_link}}": _h(issues_api_link),
                 "{{prepare_disabled}}": prepare_disabled_attr,
