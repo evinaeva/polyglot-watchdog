@@ -281,6 +281,26 @@ def _load_check_language_runs(domain: str) -> list[dict]:
     return _service_load_check_language_runs(domain, load_runs=_load_runs, list_domains=_list_domains)
 
 
+def _default_check_languages_domain() -> str:
+    candidates: list[tuple[str, str]] = []
+    for raw_domain in _list_domains():
+        domain = _normalize_check_languages_domain(raw_domain)
+        if not domain or not _is_supported_check_languages_domain(domain):
+            continue
+        runs = _load_check_language_runs(domain)
+        en_candidates = [row for row in runs if _run_is_en_reference_candidate(row)]
+        selected_en_run_id = _latest_successful_en_standard_run_id(domain, en_candidates) or _default_english_reference_run_id(en_candidates)
+        if not selected_en_run_id:
+            continue
+        run = next((row for row in en_candidates if str(row.get("run_id", "")).strip() == selected_en_run_id), None)
+        created_at = str((run or {}).get("created_at", "")).strip()
+        candidates.append((created_at, domain))
+    if candidates:
+        candidates.sort(reverse=True)
+        return candidates[0][1]
+    return SUPPORTED_CHECK_LANGUAGE_DOMAINS[0]
+
+
 def _generate_target_run_id(domain: str, en_run_id: str, target_language: str) -> str:
     return _service_generate_target_run_id(domain, en_run_id, target_language, load_runs=_load_runs, list_domains=_list_domains)
 
@@ -2941,6 +2961,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
 
     def _serve_check_languages_page(self, query: dict[str, list[str]]) -> None:
         domain = _normalize_check_languages_domain(str(query.get("selected_domain", [""])[0]) or str(query.get("domain", [""])[0]))
+        if not domain:
+            domain = _default_check_languages_domain()
         selected_en_run_id = str(query.get("en_run_id", [""])[0]).strip()
         en_run_id_from_query = bool(selected_en_run_id)
         target_language = _normalize_target_language(str(query.get("target_language", [""])[0]))
@@ -3018,22 +3040,19 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 note = "Artifact JSON parsed, but payload is not an object."
             return next_status, note, payload_ready, next_page_state
 
-        if not domain:
-            errors.append("Domain is required.")
-        else:
-            try:
-                validate_domain(_normalize_testsite_domain_key(domain))
-                if not _is_supported_check_languages_domain(domain):
-                    raise ValueError("Selected domain is unsupported.")
-                runs = _load_check_language_runs(domain)
-            except ValueError as exc:
-                errors.append(str(exc))
+        try:
+            validate_domain(_normalize_testsite_domain_key(domain))
+            if not _is_supported_check_languages_domain(domain):
+                raise ValueError("Selected domain is unsupported.")
+            runs = _load_check_language_runs(domain)
+        except ValueError as exc:
+            errors.append(str(exc))
 
         run_map = {str(row.get("run_id", "")): row for row in runs}
         en_candidates = [row for row in runs if _run_is_en_reference_candidate(row)]
         target_languages = _load_target_languages(runs)
         if not selected_en_run_id:
-            selected_en_run_id = _default_english_reference_run_id(en_candidates)
+            selected_en_run_id = _latest_successful_en_standard_run_id(domain, en_candidates) or _default_english_reference_run_id(en_candidates)
 
         if selected_en_run_id and selected_en_run_id not in run_map:
             errors.append("Selected English reference run is invalid for this domain.")

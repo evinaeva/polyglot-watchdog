@@ -11,26 +11,39 @@
 <body>
   {{header}}
   <main>
-    <h1>CHECK LANGUAGES</h1>
-    <p>Create and run a target-language capture from an English reference run, then compare automatically.</p>
+    <div class="top-unified-block">
+      <h1 class="page-title">CHECK LANGUAGES<span class="page-title-subtitle">Create and run a target-language capture from an English reference run, then compare automatically.</span></h1>
 
-    <section>
-      <h2>Operator messages</h2>
-      {{notices}}
-    </section>
+      <section>
+        <h2>Operator messages</h2>
+        {{notices}}
+      </section>
 
-    <section>
-      <h2>Selection</h2>
-      <form id="checkLanguagesForm" method="post" action="/check-languages">
-        <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
-        <input type="hidden" name="target_run_id" value="{{target_run_id}}" />
-        <input type="hidden" name="generated_target_url" value="{{generated_target_url}}" />
-        <div class="controls">
-          <div>
-            <label for="checkLanguagesDomain">Domain</label>
-            <select id="checkLanguagesDomain" name="selected_domain">
-              {{domain_options}}
-            </select>
+      <section>
+        <h2>Selection</h2>
+        <form id="checkLanguagesForm" method="post" action="/check-languages">
+          <input type="hidden" name="csrf_token" value="{{csrf_token}}" />
+          <input type="hidden" name="target_run_id" value="{{target_run_id}}" />
+          <input type="hidden" name="generated_target_url" value="{{generated_target_url}}" />
+          <div class="controls">
+            <div>
+              <label for="checkLanguagesDomain">Domain</label>
+              <select id="checkLanguagesDomain" name="selected_domain">
+                {{domain_options}}
+              </select>
+            </div>
+            <div>
+              <label for="checkLanguagesEnRunId">English reference run</label>
+              <select id="checkLanguagesEnRunId" name="en_run_id">
+                {{en_options}}
+              </select>
+            </div>
+            <div>
+              <label for="checkLanguagesTargetLanguage">Target language</label>
+              <select id="checkLanguagesTargetLanguage" name="target_language">
+                {{target_language_options}}
+              </select>
+            </div>
           </div>
           <div>
             <label for="checkLanguagesEnRunId">English reference run</label>
