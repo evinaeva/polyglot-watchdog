@@ -253,7 +253,6 @@ def test_get_check_languages_renders_new_inputs(api_env):
 @pytest.mark.parametrize(
     ("path", "expected"),
     [
-        ("/check-languages", "Domain is required."),
         ("/check-languages?selected_domain=https%3A%2F%2Fbongacams.com%2F&target_language=fr", "English reference run is required."),
         ("/check-languages?selected_domain=https%3A%2F%2Fbongacams.com%2F&en_run_id=run-en", "Target language is required."),
     ],
@@ -388,6 +387,63 @@ def test_target_language_options_allow_first_non_english_run(api_env):
     assert status == HTTPStatus.OK
     assert '<option value="fr"' in body
 
+
+
+def test_direct_get_check_languages_defaults_to_latest_valid_en_run_and_keeps_older_options(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    _write("_system", "manual", "domains.json", {"domains": [domain]})
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {"run_id": "run-en-latest", "created_at": "2026-03-13T00:00:00Z", "jobs": []},
+            {"run_id": "run-en-older", "created_at": "2026-03-12T00:00:00Z", "jobs": []},
+            {"run_id": "run-fr", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+    _seed_phase6_prereqs(domain, "run-en-latest", "en")
+    _seed_phase6_prereqs(domain, "run-en-older", "en")
+    _seed_pages(domain, "run-fr", "fr")
+
+    status, body, _ = _request("GET", api_env, "/check-languages")
+    assert status == HTTPStatus.OK
+    assert '<option value="run-en-latest" selected="selected">' in body
+    assert '<option value="run-en-older"' in body
+    assert "Domain is required." not in body
+
+
+
+def test_direct_get_check_languages_keeps_explicit_valid_en_run_selection(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, "run-fr-old", "en")
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-fr-old")
+    assert status == HTTPStatus.OK
+    assert '<option value="run-fr-old" selected="selected">' in body
+
+
+
+def test_direct_get_check_languages_without_valid_en_runs_shows_safe_empty_state(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    _write("_system", "manual", "domains.json", {"domains": [domain]})
+    _write(domain, "manual", "capture_runs.json", {"runs": [{"run_id": "run-fr", "created_at": "2026-03-11T00:00:00Z", "jobs": []}]})
+    _seed_pages(domain, "run-fr", "fr")
+
+    status, body, _ = _request("GET", api_env, "/check-languages")
+    assert status == HTTPStatus.OK
+    assert '<option value="">No English runs found</option>' in body
+
+
+
+def test_direct_get_check_languages_populates_en_dropdown_without_navigation_context(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+
+    status, body, _ = _request("GET", api_env, "/check-languages")
+    assert status == HTTPStatus.OK
+    assert '<option value="run-en" selected="selected">' in body
+    assert "English reference run is required." not in body
 
 
 
