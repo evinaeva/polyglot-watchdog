@@ -4184,3 +4184,34 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cab4319efc832c8bf52d47328913d5)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #226 — 2026-03-30T18:52:42Z
+
+- Title: tests(check_languages): stub async workers and use events instead of faking Thread
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/226
+- Author: evinaeva
+- Base branch: main
+- Head branch: 2gnscv-codex/refactor-prepare-action-tests-to-limit-monkeypatching
+- Merge commit: 2322feef6e531145d11f22e86a5b8122d68713a2
+- Changed files:
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  
+  - Tests were stubbing `threading.Thread` and running fake threads to validate background work which made them brittle and hard to synchronize.
+  - The goal is to assert whether internal async workers are invoked (or not) without actually starting threads and to make assertions deterministic.
+  
+  ### Description
+  
+  - Replaced test-wide fake `threading.Thread` usage with direct monkeypatching of the internal worker callables `app.skeleton_server._prepare_check_languages_async` and `app.skeleton_server._run_check_languages_llm_async`.
+  - Introduced `threading.Event` instances and call-record lists to reliably detect when a fake worker is invoked and to assert the worker arguments (e.g. expected `target_run_id`).
+  - Replaced exception-throwing fake threads with checks that the worker was not called via `Event.wait` and updated one expected redirect message to `Language+check+is+already+in+progress+for+this+selection.`
+  
+  ### Testing
+  
+  - Ran the modified tests in `tests/test_check_languages_page.py` for the updated cases and they passed. 
+  - Specifically exercised `test_prepare_action_without_target_run_id_reuses_existing_run_id`, `test_prepare_action_uses_deterministic_existing_run_selection`, `test_prepare_action_is_blocked_only_for_active_llm_review`, `test_prepare_action_allows_historical_llm_state_and_reuses_existing_run`, `test_run_llm_action_fails_preflight_when_phase6_provider_missing`, `test_run_llm_action_starts_llm_worker_when_phase6_provider_present`, and `test_run_llm_preflight_error_is_immediately_visible_and_not_telemetry_missing`, all of which succeeded.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cac0bcdc9c832c9ebf562021f2515e)
+- Notes: Auto-generated from merged PR metadata.
