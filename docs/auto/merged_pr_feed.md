@@ -3558,3 +3558,39 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca16df1790832cb66d5bf14ae67760)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #204 — 2026-03-30T06:46:33Z
+
+- Title: Refresh LLM review status button + fix latest-job selection and improve diagnostics
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/204
+- Author: evinaeva
+- Base branch: main
+- Head branch: vnwvln-codex/add-refresh-button-for-llm-review-status
+- Merge commit: 3168a8915ab31f579a05be3786cef52a5952e888
+- Changed files:
+  - app/check_languages_presenter.py
+  - app/check_languages_service.py
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+  - web/templates/check-languages.html
+- Description:
+  ### Motivation
+  - Operators need a way to force a fresh server-side recomputation of the LLM review diagnostics from current artifacts/job state without relying on stale page state.
+  - The UI sometimes showed "LLM stage not started" / "Fallback status: N/A" / "Cost: unavailable" because the page could select the wrong latest check-languages job for a run (lexical fallback on `job_id`), causing pre-LLM job state to be used as the source of truth.
+  
+  ### Description
+  - Added a dedicated button on the check-languages form: `Refresh LLM review status` which posts `action=refresh_llm_status` and redirects back with gate diagnostics visible (file: `web/templates/check-languages.html`).
+  - Implemented server handling for `action=refresh_llm_status` that preserves target-run context and redirects to the check-languages page with diagnostics enabled (file: `app/skeleton_server.py`).
+  - Fixed `_latest_check_languages_job` to deterministically choose the latest job using in-run job ordering as a tie-breaker (job index) instead of relying on lexical `job_id` ordering, preventing selection of an older prepare job over a later LLM job (file: `app/check_languages_service.py`).
+  - Extended LLM presenter to return an explicit `state_reason` and surfaced that reason plus `latest_job_id`, `latest_job_type`, `latest_job_used_for_ui`, `latest_job_is_llm_stage_job`, and telemetry-reason details in the diagnostics block so the exact decision path is visible (files: `app/check_languages_presenter.py`, `app/skeleton_server.py`).
+  - Added focused regression tests that cover the new refresh action, recomputation from telemetry, the latest-job selection regression, and diagnostic fields (file: `tests/test_check_languages_page.py`).
+  
+  ### Testing
+  - Ran focused pytest subsets exercising the new refresh action, diagnostics and latest-job selection; the new/updated tests passed: targeted tests for `refresh_llm_status` and related gate diagnostics passed (5 passed for the focused selection).
+  - During iteration, installing test dependency `jsonschema` was required to run the test suite in this environment and was installed before tests were executed.
+  - One legacy test exposed fragile test isolation (monkeypatch of `threading.Thread`) during an intermediate run; this was assessed as a test-environment issue and did not indicate a regression in the production logic.
+  - All newly added regression tests (presence/POST behavior of the refresh button, recompute-from-telemetry, latest-job ordering regression, and diagnostics fields) pass in CI-like local runs performed during the change.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca13418fe4832c9b5ba2dd17bb5796)
+- Notes: Auto-generated from merged PR metadata.
