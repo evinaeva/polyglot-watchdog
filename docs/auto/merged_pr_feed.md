@@ -4094,3 +4094,34 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca9034585c832c8ef103808ee92647)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #223 — 2026-03-30T17:26:07Z
+
+- Title: [BUG-6] Return summary-only preview payload for LLM input diagnostics
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/223
+- Author: evinaeva
+- Base branch: main
+- Head branch: nh13vy-codex/update-llm-input-preview-payload
+- Merge commit: 3a84633f24c8d03009c8725abbc20a097a43eaaf
+- Changed files:
+  - app/check_languages_service.py
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  - Avoid loading/retaining the full heavy `check_languages_llm_input.json` object in page rendering while keeping preview and gate logic intact.
+  - Ensure the diagnostics helper only returns preview-relevant fields so the UI can render a lightweight preview without impacting the actual LLM run flow.
+  
+  ### Description
+  - Change `_check_languages_llm_input_artifact_status(...)` in `app/check_languages_service.py` to return a summary-only `payload` for valid artifacts containing only `target_language`, `review_context_count`, `blocked_pages`, `source_hashes`, and `review_contexts` reduced to the first item (or empty list).
+  - Keep the function's status/existence/error semantics unchanged (`missing`, `read_error`, `malformed_json`, `invalid_payload`, `valid`).
+  - Audited `app/skeleton_server.py` page-render usages of the returned `llm_input_payload` and confirmed they only consume preview fields, so no page-render mismatch was introduced.
+  - Did not change `_run_check_languages_llm_async` behavior; it still reads the full prepared payload artifact directly from storage for actual LLM execution.
+  
+  ### Testing
+  - Added focused regression tests in `tests/test_check_languages_page.py`: `test_llm_input_artifact_status_returns_preview_summary_only`, `test_payload_preview_renders_from_summary_only_diagnostics_payload`, and `test_run_llm_async_reads_full_payload_directly_not_diagnostics_summary`.
+  - Installed missing test dependency `jsonschema` and ran the targeted test selection; the selected tests passed (`4 passed, 0 failed` for the targeted run).
+  - Verified existing preview and gate diagnostic tests exercising artifact URI logic also ran in the selection and passed.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cab074dbb0832ca6d2a44ac1a22a6a)
+- Notes: Auto-generated from merged PR metadata.
