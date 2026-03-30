@@ -159,7 +159,7 @@ def test_workflow_runtime_uses_canonical_screenshot_view_url_and_safe_empty_stat
           return el;
         }
 
-        const ids = ['wfDomain','wfRefreshUrls','wfSavedUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
+        const ids = ['wfDomain','wfRefreshUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         els.wfContextsBody.children = [];
 
@@ -406,7 +406,7 @@ def test_workflow_runtime_formats_utc_timestamps_in_tallinn_with_dst():
           };
         }
 
-        const ids = ['wfDomain','wfRefreshUrls','wfSavedUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
+        const ids = ['wfDomain','wfRefreshUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         const sandbox = {
           console,
@@ -445,7 +445,7 @@ def test_workflow_runtime_sorting_uses_raw_utc_timestamp_not_display_value():
             querySelector(){ return makeElement('qs'); },
           };
         }
-        const ids = ['wfDomain','wfRefreshUrls','wfSavedUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
+        const ids = ['wfDomain','wfRefreshUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         const sandbox = {
           console,
@@ -513,7 +513,7 @@ def test_workflow_existing_runs_default_selection_prefers_newest_and_handles_emp
           return el;
         }
 
-        const ids = ['wfDomain','wfRefreshUrls','wfSavedUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
+        const ids = ['wfDomain','wfRefreshUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         els.wfDomain.value = 'example.com';
 
@@ -641,7 +641,7 @@ def test_workflow_existing_runs_filters_non_first_runs_and_falls_back_from_ineli
           };
         }
 
-        const ids = ['wfDomain','wfRefreshUrls','wfSavedUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
+        const ids = ['wfDomain','wfRefreshUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         els.wfDomain.value = 'example.com';
 
@@ -743,7 +743,7 @@ def test_workflow_existing_runs_option_labels_use_human_first_run_format_only():
           };
         }
 
-        const ids = ['wfDomain','wfRefreshUrls','wfSavedUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
+        const ids = ['wfDomain','wfRefreshUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         els.wfDomain.value = 'example.com';
 
@@ -841,7 +841,7 @@ def test_workflow_existing_runs_preserves_active_selected_run_on_reload():
           return el;
         }
 
-        const ids = ['wfDomain','wfRefreshUrls','wfSavedUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
+        const ids = ['wfDomain','wfRefreshUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
 
         const runPayload = {
@@ -1107,7 +1107,7 @@ def test_workflow_defaults_to_latest_run_by_timestamp_and_preserves_manual_selec
           return el;
         }
 
-        const ids = ['wfDomain','wfRefreshUrls','wfSavedUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
+        const ids = ['wfDomain','wfRefreshUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         els.wfDomain.value = 'example.com';
         els.wfExistingRuns.options = [];
