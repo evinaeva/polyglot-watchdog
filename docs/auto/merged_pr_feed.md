@@ -3910,3 +3910,36 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca62208cc8832ca837798f0af55f82)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #218 — 2026-03-30T12:12:14Z
+
+- Title: Add /pulls page with server handler, template, and client-side interactions
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/218
+- Author: evinaeva
+- Base branch: main
+- Head branch: dq7axp-codex/apply-ui/ux-patch-to-/pulls-page
+- Merge commit: f1fac5e2a8600aa5b436f02c17e651c806139c29
+- Changed files:
+  - app/skeleton_server.py
+  - web/static/pulls.js
+  - web/templates/pulls.html
+- Description:
+  ### Motivation
+  
+  - Add a dedicated Pulls UI to review captured items for a workflow run and allow selecting domain, first run, and English reference run for operator navigation and workflows.
+  - Populate run options server-side and wire navigation so the Pulls page can integrate with the existing `workflow` and `check-languages` flows.
+  
+  ### Description
+  
+  - Implemented a new request handler `def _serve_pulls_page(self, query: dict[str, list[str]])` in `app/skeleton_server.py` to validate domain, load runs via ` _load_runs` and `_load_check_language_runs`, compute default selections, and render `pulls.html` with `{{pulls_domain_options}}`, `{{pulls_first_run_options}}`, and `{{pulls_en_run_options}}` replacements.
+  - Adjusted routing so `/pulls` is handled by the new special-case handler instead of the generic `page_templates` mapping.
+  - Added UI markup in `web/templates/pulls.html` for domain, first-run, and English-run selects and related controls, and connected advanced links (`pullsBackToRunHub`, `continueCheckLanguages`, `pullsOpenContexts`, `pullsOpenIssues`).
+  - Extended client-side logic in `web/static/pulls.js` with new element references, `updateOperatorNavigation(domain, runId)` to keep operator links in sync, listeners for `pullsDomainSelect`, `pullsFirstRunSelect`, and `pullsEnRunSelect`, and changes to `loadPulls` to set select values after resolving `runId`.
+  
+  ### Testing
+  
+  - No automated tests were run for this change.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca64f5b624832c85cac4d230e3716e)
+- Notes: Auto-generated from merged PR metadata.
