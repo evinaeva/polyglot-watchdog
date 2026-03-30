@@ -3694,3 +3694,27 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca26cd3410832c8570211bcfba2925)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #210 — 2026-03-30T09:50:33Z
+
+- Title: Fix duplicated selection controls on /check-languages
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/210
+- Author: evinaeva
+- Base branch: main
+- Head branch: t6clgq-codex/fix-regression-on-/check-languages-page
+- Merge commit: 13045bdd90682d6c34850862a325ba82815732cd
+- Changed files:
+  - web/templates/check-languages.html
+- Description:
+  ### Motivation
+  - The cosmetic container simplification accidentally left duplicated selection markup on the `/check-languages` page causing two sets of `English reference run` and `Target language` controls and preventing the language-check flow from being started.
+  
+  ### Description
+  - Removed the duplicated control blocks and stray closing container in `web/templates/check-languages.html`, preserving the single `checkLanguagesForm`, all existing field IDs/names/hidden inputs/buttons, the form `action`, and client-side JS behavior.
+  
+  ### Testing
+  - Ran `rg -n "checkLanguagesEnRunId|checkLanguagesTargetLanguage|checkLanguagesDomain" web/templates/check-languages.html` to confirm each control appears exactly once and inspected the template with `nl` to verify buttons remain inside the form, then committed the change; these checks succeeded.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca464e866c832ca4b614c054201e3f)
+- Notes: Auto-generated from merged PR metadata.
