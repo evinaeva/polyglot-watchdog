@@ -3485,3 +3485,34 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69c98b3e5424832cab8b24fabe6ded69)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #205 — 2026-03-30T06:41:54Z
+
+- Title: Populate /check-languages EN dropdown on direct load and default to latest valid English run
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/205
+- Author: evinaeva
+- Base branch: main
+- Head branch: mcrynw-codex/fix-dropdown-population-on-/check-languages
+- Merge commit: bc4ff6dd45bd1c155ef84326a6386e4d2f894bc0
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  - The /check-languages page required navigation context to populate the English reference dropdown, forcing operators to visit a previous page before using the selector.
+  - The UI should initialize from persisted runs/state so the page works correctly when opened directly and should pick the latest valid English baseline by default.
+  
+  ### Description
+  - Add a helper `_default_check_languages_domain()` that examines persisted domains and picks a supported domain that has a valid English reference candidate (falling back to the first supported domain).
+  - When serving `/check-languages`, auto-resolve `domain` via `_default_check_languages_domain()` if no `selected_domain`/`domain` query is provided so the page can initialize without prior navigation context.
+  - Change default EN selection to prefer `_latest_successful_en_standard_run_id(domain, en_candidates)` and fall back to `_default_english_reference_run_id(en_candidates)` so the default is the latest valid English baseline.
+  - Update input validation path to validate/load against the resolved domain unconditionally and add focused tests to `tests/test_check_languages_page.py` that cover direct-load defaulting, explicit `en_run_id` preservation, empty-state behavior, and dropdown population without navigation context.
+  
+  ### Testing
+  - Ran `python -m py_compile app/skeleton_server.py tests/test_check_languages_page.py` successfully to validate syntax.
+  - Attempted to run targeted pytest for the new/updated check-languages tests, but test collection failed in this environment due to a missing external dependency (`jsonschema`), so full automated test execution could not complete here.
+  - New tests added: direct-load selects latest valid EN and keeps older options selectable; explicit `en_run_id` remains selected; no valid EN runs shows safe empty-state; direct load populates dropdown without prior navigation.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca16fd322c832c9451dce8714eb83b)
+- Notes: Auto-generated from merged PR metadata.
