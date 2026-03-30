@@ -540,7 +540,16 @@ def _check_languages_llm_input_artifact_status(domain: str, run_id: str) -> dict
         return {"status": status, "exists": status != "missing", "payload": None, "error": str(exc)}
     if not isinstance(payload, dict):
         return {"status": "invalid_payload", "exists": True, "payload": None, "error": "expected object"}
-    return {"status": "valid", "exists": True, "payload": payload, "error": ""}
+    review_contexts = payload.get("review_contexts")
+    first_review_context = review_contexts[0] if isinstance(review_contexts, list) and review_contexts else None
+    preview_payload = {
+        "target_language": payload.get("target_language"),
+        "review_context_count": payload.get("review_context_count"),
+        "blocked_pages": payload.get("blocked_pages") if isinstance(payload.get("blocked_pages"), list) else [],
+        "source_hashes": payload.get("source_hashes") if isinstance(payload.get("source_hashes"), dict) else {},
+        "review_contexts": [first_review_context] if first_review_context is not None else [],
+    }
+    return {"status": "valid", "exists": True, "payload": preview_payload, "error": ""}
 
 
 def _check_languages_llm_review_telemetry_status(domain: str, run_id: str) -> dict:

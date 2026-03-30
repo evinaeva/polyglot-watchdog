@@ -1983,6 +1983,36 @@ def test_run_llm_button_disabled_without_prepared_payload(api_env):
     assert 'id="checkLanguagesRunLlmButton" name="action" value="run_llm_review" type="submit" disabled="disabled"' in body
 
 
+def test_llm_input_artifact_status_returns_preview_summary_only(api_env):
+    from app.check_languages_service import _check_languages_llm_input_artifact_status
+
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    heavy_payload = {
+        "target_language": "fr",
+        "review_context_count": 2,
+        "blocked_pages": [{"page_id": "blocked-1"}],
+        "source_hashes": {"en_collected_items_sha256": "abc"},
+        "review_contexts": [{"id": "ctx-1"}, {"id": "ctx-2"}],
+        "target_eligible": [{"item_id": "heavy-1"}],
+        "target_collected": [{"item_id": "heavy-2"}],
+    }
+    _write(domain, target_run_id, "check_languages_llm_input.json", heavy_payload)
+
+    result = _check_languages_llm_input_artifact_status(domain, target_run_id)
+
+    assert result["status"] == "valid"
+    assert result["exists"] is True
+    assert result["error"] == ""
+    assert result["payload"] == {
+        "target_language": "fr",
+        "review_context_count": 2,
+        "blocked_pages": [{"page_id": "blocked-1"}],
+        "source_hashes": {"en_collected_items_sha256": "abc"},
+        "review_contexts": [{"id": "ctx-1"}],
+    }
+
+
 def test_payload_preview_and_replay_failure_are_visible(api_env):
     domain = SUPPORTED_MAIN_DOMAIN
     target_run_id = "run-en-check-fr"
@@ -2070,6 +2100,36 @@ def test_payload_preview_reports_llm_input_valid_status(api_env):
     status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
     assert status == HTTPStatus.OK
     assert "status: <strong>valid</strong>" in body
+
+
+def test_payload_preview_renders_from_summary_only_diagnostics_payload(api_env, monkeypatch):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    monkeypatch.setattr(
+        "app.skeleton_server._check_languages_llm_input_artifact_status",
+        lambda *_args, **_kwargs: {
+            "status": "valid",
+            "exists": True,
+            "payload": {
+                "target_language": "fr",
+                "review_context_count": 2,
+                "blocked_pages": [{"page_id": "blocked-1"}],
+                "source_hashes": {"hash": "abc"},
+                "review_contexts": [{"id": "ctx-1"}],
+            },
+            "error": "",
+        },
+    )
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert "<summary>Preview</summary>" in body
+    assert "&quot;target_language&quot;: &quot;fr&quot;" in body
+    assert "&quot;blocked_pages_count&quot;: 1" in body
+    assert "&quot;sample_review_context&quot;: {" in body
 
 
 def test_payload_preview_reports_llm_input_read_error_status(api_env, monkeypatch):
@@ -2809,6 +2869,43 @@ def test_run_llm_uses_prepared_payload_as_actual_input(monkeypatch):
     _run_check_languages_llm_async("job-llm", domain, "run-en", "fr", target_run_id, "https://fr.bongacams.com/")
     assert isinstance(captured.get("prepared_llm_payload"), dict)
     assert captured["prepared_llm_payload"]["review_contexts"][0]["language"] == "fr"
+
+
+def test_run_llm_async_reads_full_payload_directly_not_diagnostics_summary(api_env, monkeypatch):
+    domain = "https://bongacams.com/"
+    target_run_id = "run-en-check-fr"
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {"source_hashes": {}, "en_run_id": "run-en", "target_run_id": target_run_id})
+    _write(
+        domain,
+        target_run_id,
+        "check_languages_llm_input.json",
+        {
+            "review_contexts": [{"language": "fr"}, {"language": "fr"}],
+            "target_eligible": [{"item_id": "heavy-1"}],
+        },
+    )
+    _write(domain, "run-en", "eligible_dataset.json", [])
+    _write(domain, target_run_id, "eligible_dataset.json", [])
+    _write(domain, "run-en", "collected_items.json", [])
+    _write(domain, target_run_id, "collected_items.json", [])
+    _write(domain, "run-en", "page_screenshots.json", [])
+    _write(domain, target_run_id, "page_screenshots.json", [])
+
+    captured = {}
+    monkeypatch.setenv("PHASE6_REVIEW_PROVIDER", "test-heuristic")
+    monkeypatch.setattr("pipeline.run_phase6.run", lambda **kwargs: captured.update(kwargs))
+    monkeypatch.setattr("app.skeleton_server._require_artifact_exists", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.skeleton_server._upsert_job_status", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        "app.skeleton_server._check_languages_llm_input_artifact_status",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("diagnostics helper must not be used by run_llm_async")),
+    )
+
+    from app.skeleton_server import _run_check_languages_llm_async
+
+    _run_check_languages_llm_async("job-llm-summary-independence", domain, "run-en", "fr", target_run_id, "https://fr.bongacams.com/")
+    assert len(captured["prepared_llm_payload"]["review_contexts"]) == 2
+    assert captured["prepared_llm_payload"]["target_eligible"][0]["item_id"] == "heavy-1"
 
 
 def test_run_llm_async_fails_preflight_before_running_stage_when_provider_missing(monkeypatch):
