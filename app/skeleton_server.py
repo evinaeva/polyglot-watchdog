@@ -2905,6 +2905,25 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             self._redirect_check_languages(existing_payload, message="Language check is already in progress for this selection.", level="warning")
             return
 
+        selected_run_candidates: list[dict[str, object]] = []
+        for row in runs:
+            if not isinstance(row, dict):
+                continue
+            row_run_id = str(row.get("run_id", "")).strip()
+            if not row_run_id:
+                continue
+            row_latest_job = _latest_check_languages_job(run_domain, row_run_id)
+            if not isinstance(row_latest_job, dict):
+                continue
+            if str(row_latest_job.get("en_run_id", "")).strip() != en_run_id:
+                continue
+            if _normalize_target_language(str(row_latest_job.get("target_language", ""))) != target_language:
+                continue
+            selected_run_candidates.append({
+                "run_id": row_run_id,
+                "created_ts": _parse_utc_timestamp(str(row.get("created_at", "")).strip()),
+            })
+
         requested_target_run_id = str(payload.get("target_run_id", "")).strip()
         if requested_target_run_id:
             try:
@@ -2912,8 +2931,42 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             except ValueError as exc:
                 self._redirect_check_languages(payload, message=str(exc), level="error")
                 return
+        elif selected_run_candidates:
+            canonical_base_run_id = f"{en_run_id}-check-{target_language}"
+            candidate_run_ids = {str(item.get("run_id", "")).strip() for item in selected_run_candidates}
+            if canonical_base_run_id in candidate_run_ids:
+                target_run_id = canonical_base_run_id
+            else:
+                def _selection_sort_key(item: dict[str, object]) -> tuple[int, float, str]:
+                    created_ts = item.get("created_ts")
+                    run_id = str(item.get("run_id", "")).strip()
+                    if isinstance(created_ts, (int, float)):
+                        return (0, -float(created_ts), run_id)
+                    return (1, 0.0, run_id)
+
+                best_candidate = sorted(selected_run_candidates, key=_selection_sort_key)[0]
+                target_run_id = str(best_candidate.get("run_id", "")).strip()
         else:
             target_run_id = _generate_target_run_id(run_domain, en_run_id, target_language)
+        if action == "prepare_payload":
+            latest_selected_job = _latest_check_languages_job(run_domain, target_run_id)
+            latest_status = str((latest_selected_job or {}).get("status", "")).strip().lower()
+            latest_workflow_state = str((latest_selected_job or {}).get("workflow_state", "")).strip().lower()
+            latest_stage = str((latest_selected_job or {}).get("stage", "")).strip().lower()
+            llm_review_active = (
+                latest_status in {"running", "queued"}
+                and (
+                    latest_workflow_state in {"queued_llm_review", "running_llm_review"}
+                    or latest_stage in {"queued_llm_review", "running_llm_review"}
+                )
+            )
+            if llm_review_active:
+                self._redirect_check_languages(
+                    payload,
+                    message=f"LLM review is already in progress for run {target_run_id}.",
+                    level="warning",
+                )
+                return
         if action == "run_llm_review":
             prepared = _read_json_safe(run_domain, target_run_id, "check_languages_prepared_payload.json", None)
             if not isinstance(prepared, dict):
