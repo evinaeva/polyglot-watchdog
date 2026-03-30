@@ -3839,3 +3839,40 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca59b15894832c89c846642ea8855a)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #215 — 2026-03-30T11:36:51Z
+
+- Title: Polish workflow UI: remove saved-URLs preview, merge blocks, update CTAs
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/215
+- Author: evinaeva
+- Base branch: main
+- Head branch: kss9wy-codex/improve-ui-by-removing-and-merging-elements
+- Merge commit: b038dd423c10c72a2c9c60dab1b311bdb8020e9a
+- Changed files:
+  - tests/test_operator_ui_runtime_regressions.py
+  - tests/test_stage_c_operator_workflow.py
+  - web/static/workflow.js
+  - web/templates/index.html
+  - web/templates/pulls.html
+  - web/templates/urls.html
+  - web/templates/workflow.html
+- Description:
+  ### Motivation
+  - Simplify and declutter the FIRST RUN UI by removing an unused read-only saved-URLs preview and grouping related controls to improve visual hierarchy and readability.
+  - Reduce visual noise around workflow steps and make CTA labels directionally clear (use < and > arrows) without changing behavior or logic.
+  
+  ### Description
+  - Removed the `wfSavedUrls` label and textarea from the FIRST RUN page and made the JS writes to that element null-safe by guarding with `if (wfSavedUrls)` so no runtime errors occur when the element is absent; file changes: `web/templates/workflow.html`, `web/static/workflow.js`.
+  - Merged Block A + Block B into a single `First run setup` section and preserved all controls (`wfDomain`, `wfRefreshUrls`, `wfStartCapture`, existing runs controls) while removing duplicated wrappers; file changed: `web/templates/workflow.html`.
+  - Merged Block D + Block E into a single `Capture progress and next step` section, kept status summary, technical details, dataset generation details, and the continue control, and adjusted structure for consistent spacing; file changed: `web/templates/workflow.html`.
+  - Removed the status copy that printed "Existing runs available: N." by clearing the runs status in the populated state (`setRunsStatus('')`) so the UI no longer shows that line while preserving runs logic; file changed: `web/static/workflow.js`.
+  - Updated directional CTA texts exactly as requested across templates to keep consistent UX: `Previous step` → `< Back to First Run`, `Continue to Choose Needed` → `Continue to Choose Needed >`, `Continue to First Run >>>` → `Continue to First Run >`, `Next step: Check Languages` → `Continue to Check Languages >`, `Back to Check Languages` → `< Back to Check Languages`; files changed: `web/templates/pulls.html`, `web/templates/urls.html`, `web/templates/index.html`, `web/templates/workflow.html`.
+  - Adjusted UI-focused runtime test fixtures to remove references to `wfSavedUrls` in mocked element lists and updated expected anchor text in tests; files changed: `tests/test_operator_ui_runtime_regressions.py`, `tests/test_stage_c_operator_workflow.py`.
+  
+  ### Testing
+  - Ran `pytest -q tests/test_stage_c_operator_workflow.py tests/test_operator_ui_runtime_regressions.py` to exercise UI template and runtime expectations, but test collection failed in this environment due to missing external dependencies (`app` import path and `jsonschema` package), so the test run did not complete successfully.
+  - Updated test expectations to match the new CTA labels and removed `wfSavedUrls` from mocked element lists; the test adjustments are included in this PR but full test verification requires the project test environment with required dependencies installed (the failures observed are environment-related, not due to the UI-only changes).
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca5cd79ac0832c8da00e64eaec1399)
+- Notes: Auto-generated from merged PR metadata.
