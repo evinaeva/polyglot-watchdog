@@ -146,6 +146,10 @@ main > #errorBox {
   padding: 12px 14px;
 }
 
+main.workflow-page .workflow-block-inner {
+  padding: 12px 14px;
+}
+
 .top-unified-block {
   display: flex;
   flex-direction: column;

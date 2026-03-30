@@ -25,6 +25,10 @@ main > * {
   margin: 0;
 }
 
+main.workflow-page .workflow-block-inner {
+  padding: 12px 14px;
+}
+
 nav { background: #1e293b; padding: 12px; display: flex; justify-content: space-between; align-items: center; }
 nav a { color: #fff; margin-right: 12px; text-decoration: none; }
 nav .nav-links { color: #fff; }
