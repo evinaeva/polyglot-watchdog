@@ -3090,6 +3090,14 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             else:
                 target_run_id = ""
 
+        source_hashes_by_args: dict[tuple[str, str, str], dict] = {}
+
+        def _source_hashes_for_render(run_domain: str, en_run_id: str, run_id: str) -> dict:
+            cache_key = (run_domain, en_run_id, run_id)
+            if cache_key not in source_hashes_by_args:
+                source_hashes_by_args[cache_key] = _check_languages_source_hashes(run_domain, en_run_id, run_id)
+            return source_hashes_by_args[cache_key]
+
         def _derive_llm_input_status(current_page_state: str) -> tuple[str, str, bool, str]:
             payload_ready = isinstance(prepared_manifest_for_page, dict) and isinstance(llm_input_payload, dict) and hashes_ok_for_page
             next_page_state = current_page_state
@@ -3301,9 +3309,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             llm_input_exists_for_page = llm_input_exists
             source_hashes = prepared_manifest.get("source_hashes") if isinstance(prepared_manifest, dict) and isinstance(prepared_manifest.get("source_hashes"), dict) else {}
             has_hashes = bool(source_hashes)
-            stale = bool(source_hashes and source_hashes != _check_languages_source_hashes(target_run_domain, selected_en_run_id, target_run_id))
+            stale = bool(source_hashes and source_hashes != _source_hashes_for_render(target_run_domain, selected_en_run_id, target_run_id))
             hashes_ok_for_page = has_hashes and not stale
-            llm_input_status, llm_status_note, payload_prepared_evidence, page_state = _derive_llm_input_status(page_state)
             if isinstance(llm_input_payload, dict):
                 manifest_artifact_uri = (
                     prepared_manifest.get("llm_input_artifact")
@@ -3402,7 +3409,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             prepared_manifest_notice = prepared_manifest_for_page if isinstance(prepared_manifest_for_page, dict) else _read_json_safe(target_run_domain_for_page, target_run_id, "check_languages_prepared_payload.json", None)
             if isinstance(prepared_manifest_notice, dict):
                 expected_notice = prepared_manifest_notice.get("source_hashes") if isinstance(prepared_manifest_notice.get("source_hashes"), dict) else {}
-                if expected_notice and selected_en_run_id and expected_notice != _check_languages_source_hashes(target_run_domain_for_page, selected_en_run_id, target_run_id):
+                if expected_notice and selected_en_run_id and expected_notice != _source_hashes_for_render(target_run_domain_for_page, selected_en_run_id, target_run_id):
                     notices.append('<li class="warning">Prepared payload is stale and LLM review is disabled. Re-run preparation.</li>')
         notices.extend([f'<li class="error">{_h(err)}</li>' for err in errors])
         notices_html = f"<ul>{''.join(notices)}</ul>" if notices else "<p>—</p>"
@@ -3438,7 +3445,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 llm_preview = json.dumps(preview_payload, ensure_ascii=False, indent=2)
         if target_run_id and isinstance(prepared_manifest_for_page, dict) and not hashes_ok_for_page:
             expected = prepared_manifest_for_page.get("source_hashes") if isinstance(prepared_manifest_for_page.get("source_hashes"), dict) else {}
-            hashes_ok_for_page = bool(expected) and expected == _check_languages_source_hashes(target_run_domain_for_page, selected_en_run_id, target_run_id)
+            hashes_ok_for_page = bool(expected) and expected == _source_hashes_for_render(target_run_domain_for_page, selected_en_run_id, target_run_id)
             stale = bool(expected) and not hashes_ok_for_page
         if target_run_id:
             llm_input_status, llm_status_note, payload_prepared_evidence, page_state = _derive_llm_input_status(page_state)
