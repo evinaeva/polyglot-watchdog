@@ -3808,3 +3808,34 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca496cadf4832c9e75fad1ab700dc7)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #214 — 2026-03-30T11:29:38Z
+
+- Title: Add LLM launch status display and make diagnostics/state sections collapsible in check-languages UI
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/214
+- Author: evinaeva
+- Base branch: main
+- Head branch: s3uvxa-codex/apply-cosmetic-ui-patch-to-check-languages-page
+- Merge commit: 991dba60a8ff5f1551547e61a9fa402ad012252a
+- Changed files:
+  - app/skeleton_server.py
+  - web/templates/check-languages.html
+- Description:
+  ### Motivation
+  - Surface LLM execution/launch telemetry in the check-languages UI so operators can see whether a launch was attempted, the provider/model, recent execution steps, and failure reasons. 
+  - Reduce visual noise by collapsing verbose diagnostics and state blocks behind disclosure widgets.
+  
+  ### Description
+  - Add `llm_launch_status_block` and supporting state computed from `latest_job`, `llm_telemetry_read_status`, and a new `llm_display` map to summarize launch attempts, current step, provider/model, result, failure reason, and recent steps in `app/skeleton_server.py`.
+  - Introduce helper logic to derive `launch_attempted`, `llm_stage_value`, `llm_result_summary`, `llm_failure_reason`, `llm_provider_model`, and a bounded `llm_step_lines` list used to render the launch status HTML fragment.
+  - Wire the new `{{llm_launch_status}}` replacement into the `check-languages.html` template and add a new "LLM launch status" section to display it.
+  - Wrap the existing "LLM gate diagnostics", "State", and "Reference run readiness" sections in `<details>`/`<summary>` elements to make them collapsible.
+  - Ensure the template rendering call includes the new replacement key so the UI shows the computed launch status.
+  
+  ### Testing
+  - Ran the Python unit test suite with `pytest` against the modified backend, and all tests passed. 
+  - Executed template rendering checks by invoking the server template handler in a test harness, and the `check-languages.html` rendered successfully with the new `{{llm_launch_status}}` content populated.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca59b15894832c89c846642ea8855a)
+- Notes: Auto-generated from merged PR metadata.
