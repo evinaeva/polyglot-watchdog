@@ -3977,3 +3977,28 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca62208cc8832ca837798f0af55f82)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #219 — 2026-03-30T14:29:11Z
+
+- Title: [BUG-3] Log storage errors in _artifact_exists fallback
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/219
+- Author: evinaeva
+- Base branch: main
+- Head branch: u8017s-codex/log-exceptions-in-_artifact_exists-fallback
+- Merge commit: 59ca3701ede67acd4757710efe4a33afff1bf091
+- Changed files:
+  - app/artifact_helpers.py
+  - tests/test_artifact_helpers.py
+- Description:
+  ### Motivation
+  - `_artifact_exists` silently swallowed all exceptions and returned `False`, making transient storage errors indistinguishable from genuine artifact absence, so add the same stderr observability used by `_read_json_safe`.
+  
+  ### Description
+  - Capture the caught exception in `_artifact_exists` and print a fallback message to `sys.stderr` in the form `[storage] exists_check fallback domain=... run_id=... file=...: <exception>`, preserving the existing `False` return semantics and leaving `_artifact_exists_strict` unchanged; no new imports were added because `sys` was already imported.
+  
+  ### Testing
+  - Added `tests/test_artifact_helpers.py` which injects a fake `pipeline.storage` that raises `RuntimeError` and asserts `_artifact_exists` returns `False` and emits the expected stderr line, and ran `PYTHONPATH=. pytest -q tests/test_artifact_helpers.py` which passed.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca86f5a778832cbb798d60b33ed5ba)
+- Notes: Auto-generated from merged PR metadata.
