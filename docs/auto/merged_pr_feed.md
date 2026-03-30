@@ -3779,3 +3779,32 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca47c0ef9c832cbf06c3af02a04f90)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #213 — 2026-03-30T10:38:38Z
+
+- Title: Wrap workflow sections in inner block container and add workflow-page padding styles
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/213
+- Author: evinaeva
+- Base branch: main
+- Head branch: 532yhc-codex/apply-consistent-inner-padding-to-blocks
+- Merge commit: 75dbdb40794ba9749e1b4e01f4d62ec68ae24a5f
+- Changed files:
+  - web/static/styles.css
+  - web/static/theme-graph.css
+  - web/templates/workflow.html
+- Description:
+  ### Motivation
+  - Provide consistent inner padding and visual grouping for workflow page sections by introducing a dedicated container and page class.
+  - Ensure the same padding applies across both the default and graph-themed styles so blocks render consistently in different themes.
+  
+  ### Description
+  - Add `class="workflow-page"` to the workflow `main` element and wrap each section's content in a `div.workflow-block-inner` container in `web/templates/workflow.html` to group and scope block internals.
+  - Move and adjust a few elements inside the new containers for clearer structure, including relocating the `#wfRunsStatus` paragraph, and reorganizing the `wfContinuePulls` link and `wfGenerateDataset` button within their respective blocks/details.
+  - Add a new CSS rule `main.workflow-page .workflow-block-inner { padding: 12px 14px; }` to both `web/static/styles.css` and `web/static/theme-graph.css` so workflow blocks receive consistent padding in both themes.
+  
+  ### Testing
+  - No automated tests were run for this change.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca496cadf4832c9e75fad1ab700dc7)
+- Notes: Auto-generated from merged PR metadata.
