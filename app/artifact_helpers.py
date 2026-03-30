@@ -36,7 +36,11 @@ def _artifact_exists(domain: str, run_id: str, filename: str) -> bool:
 
     try:
         return artifact_path(domain, run_id, filename) in list_run_artifacts(domain, run_id)
-    except Exception:
+    except Exception as exc:
+        print(
+            f"[storage] exists_check fallback domain={domain} run_id={run_id} file={filename}: {exc}",
+            file=sys.stderr,
+        )
         return False
 
 
