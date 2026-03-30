@@ -3516,3 +3516,45 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca16fd322c832c9451dce8714eb83b)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #206 — 2026-03-30T06:43:11Z
+
+- Title: Unify page header/layout, introduce shell CSS variables, and standardize action buttons
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/206
+- Author: evinaeva
+- Base branch: main
+- Head branch: yna41g-codex/polish-ui-for-cleaner-design-consistency
+- Merge commit: 4ce1f98c9d86c6552e50c90aef5bb8300dcab2f3
+- Changed files:
+  - web/static/styles.css
+  - web/static/theme-graph.css
+  - web/templates/check-languages.html
+  - web/templates/contexts.html
+  - web/templates/index.html
+  - web/templates/issues/detail.html
+  - web/templates/pulls.html
+  - web/templates/runs.html
+  - web/templates/workflow.html
+- Description:
+  ### Motivation
+  
+  - Provide a consistent top-of-page block and spacing model across operator pages for improved visual hierarchy and responsiveness.
+  - Centralize shell sizing and gutter values so multiple themes/layouts share the same max-width and margins.
+  - Standardize call-to-action styling and disabled behavior to make interactive controls consistent across templates.
+  
+  ### Description
+  
+  - Added CSS custom properties (`--app-shell-max-width`, `--app-shell-gutter`, `--page-block-gap`) and applied them to `nav` and `main` in `styles.css` and `theme-graph.css` to unify shell sizing and spacing.
+  - Introduced structural helper classes in CSS: `.top-unified-block`, `.step-actions`, and normalized `main > * { margin: 0; }` to harmonize page title / subtitle and control blocks; added `.ui-action-button` disabled handling via `[aria-disabled="true"]`.
+  - Updated multiple HTML templates (`check-languages.html`, `contexts.html`, `index.html`, `issues/detail.html`, `pulls.html`, `runs.html`, `workflow.html`) to wrap page title, subtitle, and top controls in the new `.top-unified-block` and to apply `.ui-action-button` / `.step-actions` where appropriate, and added `theme-graph.css` include where missing.
+  - Minor style adjustments: removed `max-width` on `.about-layout`, tweaked section spacings, and consolidated some selectors (moved `.ui-action-button` out of `.urls-actions`).
+  
+  ### Testing
+  
+  - Ran the project's automated test suite with `pytest` and the run completed successfully without regressions.
+  - Ran static style checks/linting (`stylelint`/template lint) against the changed CSS and HTML and no errors were reported.
+  - Performed a smoke render of updated templates to verify markup changes and CSS inclusion; rendering succeeded for all modified pages.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca16df1790832cb66d5bf14ae67760)
+- Notes: Auto-generated from merged PR metadata.
