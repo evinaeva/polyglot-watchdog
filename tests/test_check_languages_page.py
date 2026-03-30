@@ -1625,6 +1625,229 @@ def test_prepare_action_only_starts_prepare_worker(api_env, monkeypatch):
     assert called == ["prepare"]
 
 
+def test_prepare_action_without_target_run_id_reuses_existing_run_id(api_env, monkeypatch):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {
+                "run_id": target_run_id,
+                "created_at": "2026-03-12T00:00:00Z",
+                "jobs": [
+                    {
+                        "job_id": "check-languages-1",
+                        "status": "failed",
+                        "type": "check_languages",
+                        "stage": "running_target_capture_failed",
+                        "workflow_state": "failed_before_llm",
+                        "en_run_id": "run-en",
+                        "target_language": "fr",
+                    }
+                ],
+            },
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+
+    started = []
+
+    class _FakeThread:
+        def __init__(self, target=None, args=(), daemon=None):
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+
+        def start(self):
+            started.append(self.args)
+            if self.target is not None:
+                self.target(*self.args)
+
+    monkeypatch.setattr("app.skeleton_server.threading.Thread", _FakeThread)
+    monkeypatch.setattr("app.skeleton_server._prepare_check_languages_async", lambda *args, **kwargs: None)
+
+    form = _query({
+        "selected_domain": domain,
+        "en_run_id": "run-en",
+        "target_language": "fr",
+        "action": "prepare_payload",
+    })
+    status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
+    assert status_post == HTTPStatus.FOUND
+    assert "target_run_id=run-en-check-fr" in location
+    assert "Language+check+payload+preparation+started." in location
+    assert len(started) == 1
+    assert started[0][4] == "run-en-check-fr"
+
+
+def test_prepare_action_uses_deterministic_existing_run_selection(api_env, monkeypatch):
+    domain = SUPPORTED_MAIN_DOMAIN
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    for run_id in ["run-en-check-fr", "run-en-check-fr-2", "run-en-check-fr-3"]:
+        _seed_phase6_prereqs(domain, run_id, "fr")
+
+    started = []
+
+    class _FakeThread:
+        def __init__(self, target=None, args=(), daemon=None):
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+
+        def start(self):
+            started.append(self.args)
+
+    monkeypatch.setattr("app.skeleton_server.threading.Thread", _FakeThread)
+
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {
+                "run_id": "run-en-check-fr-2",
+                "created_at": "2026-03-13T00:00:00Z",
+                "jobs": [{"job_id": "job-2", "status": "failed", "type": "check_languages", "stage": "running_target_capture_failed", "workflow_state": "failed_before_llm", "en_run_id": "run-en", "target_language": "fr"}],
+            },
+            {
+                "run_id": "run-en-check-fr",
+                "created_at": "2026-03-11T00:00:00Z",
+                "jobs": [{"job_id": "job-base", "status": "failed", "type": "check_languages", "stage": "running_target_capture_failed", "workflow_state": "failed_before_llm", "en_run_id": "run-en", "target_language": "fr"}],
+            },
+            {"run_id": "run-en", "created_at": "2026-03-10T00:00:00Z", "jobs": []},
+        ]
+    })
+    form = _query({
+        "selected_domain": domain,
+        "en_run_id": "run-en",
+        "target_language": "fr",
+        "action": "prepare_payload",
+    })
+    status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
+    assert status_post == HTTPStatus.FOUND
+    assert "target_run_id=run-en-check-fr" in location
+    assert started[-1][4] == "run-en-check-fr"
+
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {
+                "run_id": "run-en-check-fr-3",
+                "created_at": "2026-03-15T00:00:00Z",
+                "jobs": [{"job_id": "job-3", "status": "failed", "type": "check_languages", "stage": "running_target_capture_failed", "workflow_state": "failed_before_llm", "en_run_id": "run-en", "target_language": "fr"}],
+            },
+            {
+                "run_id": "run-en-check-fr-2",
+                "created_at": "2026-03-15T00:00:00Z",
+                "jobs": [{"job_id": "job-2b", "status": "failed", "type": "check_languages", "stage": "running_target_capture_failed", "workflow_state": "failed_before_llm", "en_run_id": "run-en", "target_language": "fr"}],
+            },
+            {
+                "run_id": "run-en-check-fr-x",
+                "created_at": "not-a-date",
+                "jobs": [{"job_id": "job-invalid", "status": "failed", "type": "check_languages", "stage": "running_target_capture_failed", "workflow_state": "failed_before_llm", "en_run_id": "run-en", "target_language": "fr"}],
+            },
+            {"run_id": "run-en", "created_at": "2026-03-10T00:00:00Z", "jobs": []},
+        ]
+    })
+    status_post_2, _, location_2 = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
+    assert status_post_2 == HTTPStatus.FOUND
+    assert "target_run_id=run-en-check-fr-2" in location_2
+    assert started[-1][4] == "run-en-check-fr-2"
+
+
+def test_prepare_action_is_blocked_only_for_active_llm_review(api_env, monkeypatch):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {
+                "run_id": target_run_id,
+                "created_at": "2026-03-12T00:00:00Z",
+                "jobs": [
+                    {
+                        "job_id": "check-languages-1",
+                        "status": "running",
+                        "type": "check_languages",
+                        "stage": "running_llm_review",
+                        "workflow_state": "running_llm_review",
+                        "en_run_id": "run-en",
+                        "target_language": "fr",
+                    }
+                ],
+            },
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+    monkeypatch.setattr("app.skeleton_server.threading.Thread", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("thread should not start")))
+    monkeypatch.setattr("app.skeleton_server._prepare_check_languages_async", lambda *args, **kwargs: None)
+
+    form = _query({
+        "selected_domain": domain,
+        "en_run_id": "run-en",
+        "target_language": "fr",
+        "action": "prepare_payload",
+    })
+    status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
+    assert status_post == HTTPStatus.FOUND
+    assert "LLM+review+is+already+in+progress+for+run+run-en-check-fr." in location
+
+
+def test_prepare_action_allows_historical_llm_state_and_reuses_existing_run(api_env, monkeypatch):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {
+                "run_id": target_run_id,
+                "created_at": "2026-03-12T00:00:00Z",
+                "jobs": [
+                    {
+                        "job_id": "check-languages-1",
+                        "status": "failed",
+                        "type": "check_languages",
+                        "stage": "running_llm_review_failed",
+                        "workflow_state": "failed_during_llm",
+                        "en_run_id": "run-en",
+                        "target_language": "fr",
+                    }
+                ],
+            },
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+
+    started = []
+
+    class _FakeThread:
+        def __init__(self, target=None, args=(), daemon=None):
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+
+        def start(self):
+            started.append(self.args)
+
+    monkeypatch.setattr("app.skeleton_server.threading.Thread", _FakeThread)
+
+    form = _query({
+        "selected_domain": domain,
+        "en_run_id": "run-en",
+        "target_language": "fr",
+        "action": "prepare_payload",
+    })
+    status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
+    assert status_post == HTTPStatus.FOUND
+    assert "Language+check+payload+preparation+started." in location
+    assert "target_run_id=run-en-check-fr" in location
+    assert len(started) == 1
+    assert started[0][4] == "run-en-check-fr"
+
+
 def test_run_llm_action_fails_preflight_when_phase6_provider_missing(api_env, monkeypatch):
     domain = SUPPORTED_MAIN_DOMAIN
     target_run_id = "run-en-check-fr"
