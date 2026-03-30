@@ -4149,3 +4149,38 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cab2359c8c832c82a133025a8ceacc)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #225 — 2026-03-30T18:28:04Z
+
+- Title: Prefer lightweight LLM input preview artifact with fallback to full payload; write preview during preparation
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/225
+- Author: evinaeva
+- Base branch: main
+- Head branch: zjy16l-codex/audit-completed-bug-fix-prs
+- Merge commit: 7e27108ab351cede9bf772eb833cb0cc40905190
+- Changed files:
+  - app/check_languages_service.py
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  
+  - Reduce expensive reads of the full `check_languages_llm_input.json` by preferring a small preview artifact for UI previews and diagnostics. 
+  - Maintain backward compatibility for older runs that don't have the preview artifact by falling back to the full payload when necessary. 
+  - Surface preview content generated during preparation so the frontend can show a lightweight summary without loading the heavy payload. 
+  
+  ### Description
+  
+  - Update `_check_languages_llm_input_artifact_status` to first read `check_languages_llm_input_preview.json`, normalize its fields (including `sample_review_context`) and return a compact `review_contexts` list, and only fall back to `check_languages_llm_input.json` if the preview is missing; preserve existing error handling for malformed JSON and read errors. 
+  - Add handling for `KeyError` in `_is_missing_artifact_error` so missing-key style errors are treated as missing artifacts. 
+  - When preparing payloads in `_prepare_check_languages_async`, generate and write a lightweight `check_languages_llm_input_preview.json` (containing `sample_review_context` and other summary fields) alongside the full `check_languages_llm_input.json`. 
+  - Add and update unit tests in `tests/test_check_languages_page.py` to cover: preferring the preview artifact without reading the full payload, falling back to the full payload for legacy runs, preferring the preview when both artifacts exist, and asserting the preview is written during preparation. 
+  
+  ### Testing
+  
+  - Ran the modified unit tests in `tests/test_check_languages_page.py` including the new tests `test_llm_input_artifact_status_prefers_preview_artifact_without_reading_full_payload`, `test_llm_input_artifact_status_falls_back_to_full_payload_for_legacy_runs`, and `test_payload_preview_prefers_lightweight_preview_artifact_when_both_artifacts_exist`, and `test_prepare_payload_uses_written_gs_uri_for_llm_input_artifact`; all passed. 
+  - Existing diagnostics and preparation related tests that touch `check_languages` flows were executed and passed under `pytest` after the changes.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cab4319efc832c8bf52d47328913d5)
+- Notes: Auto-generated from merged PR metadata.
