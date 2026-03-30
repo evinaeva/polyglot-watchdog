@@ -4002,3 +4002,34 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca86f5a778832cbb798d60b33ed5ba)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #220 — 2026-03-30T14:32:15Z
+
+- Title: Refine LLM running detection and only show "llm started" when truly running
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/220
+- Author: evinaeva
+- Base branch: main
+- Head branch: oa4xsm-codex/fix-stale-llm-job-handling-in-ui
+- Merge commit: f2a08c2ab9f21ac118e71e5b1a5addb48f309b30
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  
+  - Prevent stale or non-running jobs from being reported as an active LLM review and ensure the UI steps and run-LLM button reflect the true running status.
+  
+  ### Description
+  
+  - Change LLM running detection in `app/skeleton_server.py` so `llm_running` requires `latest_status` to be in `{"running","queued"}` and either `workflow_state` or `stage` to be an LLM review state.
+  - Remove the previous fallback that added the "llm started" recent-step when `page_state` indicated `running_llm_review`, so the "llm started" step is only added when `llm_running` is true.
+  - Add three tests in `tests/test_check_languages_page.py` to validate behavior for stale running LLM jobs, failed LLM states, and active running LLM jobs, and import `_check_languages_source_hashes` where needed.
+  
+  ### Testing
+  
+  - Added and ran the new unit tests in `tests/test_check_languages_page.py` that cover stale running LLM jobs, failed LLM states, and active running LLM jobs.
+  - Ran `pytest tests/test_check_languages_page.py` and confirmed the new and related existing tests pass.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca8692b08c832c965ae5e851b8377e)
+- Notes: Auto-generated from merged PR metadata.
