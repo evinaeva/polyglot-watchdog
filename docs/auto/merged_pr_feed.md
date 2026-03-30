@@ -3660,3 +3660,37 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca246591f8832c9077dc6df2785006)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #209 — 2026-03-30T08:04:46Z
+
+- Title: Filter Existing Runs to First-Run Entries and Use Human "First run" Labels
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/209
+- Author: evinaeva
+- Base branch: main
+- Head branch: r57wcc-codex/update-existing-runs-dropdown-behavior
+- Merge commit: 47fdc76839753334b32f5fe2693e47e7de27823e
+- Changed files:
+  - tests/test_operator_ui_runtime_regressions.py
+  - web/static/workflow.js
+- Description:
+  ### Motivation
+  
+  - Reduce noise in the "Existing runs" dropdown by surfacing only first-run captures and present them with a consistent human-friendly label. 
+  - Use deterministic selection logic that preserves an explicit `run_id` query parameter when possible and falls back to the newest eligible entry otherwise. 
+  
+  ### Description
+  
+  - Added helpers to detect and normalize first-run information: `runDisplayName`, `metadataFirstRunMarker`, `isFirstRunDisplayName`, `isFirstRunCaptureJob`, and `isFirstRunEntry`.
+  - Introduced `formatFirstRunOptionLabel` to render option labels like `First run HH:MM, DD.MM.YYYY` and `resolveDefaultSelectedRunId` to choose the default selection while honoring a requested `run_id`.
+  - Updated `renderExistingRuns` to use the new label function, to select the default via `resolveDefaultSelectedRunId`, and to only call `setQuery` when the active run actually changes.
+  - Updated `loadExistingRuns` to filter backend results with `isFirstRunEntry` and to keep `availableRuns` sorted newest-first via `sortRunsNewestFirst`.
+  - Tests updated and added in `tests/test_operator_ui_runtime_regressions.py` to include `display_name` in sample payloads and to verify filtering, labeling, and query-string fallback behavior.
+  
+  ### Testing
+  
+  - Ran the updated test module `tests/test_operator_ui_runtime_regressions.py` including the new tests `test_workflow_existing_runs_filters_non_first_runs_and_falls_back_from_ineligible_query_selection` and `test_workflow_existing_runs_option_labels_use_human_first_run_format_only`.
+  - All modified and new automated tests in that file completed successfully.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca26cd3410832c8570211bcfba2925)
+- Notes: Auto-generated from merged PR metadata.
