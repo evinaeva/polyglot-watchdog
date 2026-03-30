@@ -218,6 +218,13 @@ input[data-field="URL"] { width: 100%; box-sizing: border-box; }
   max-width: unset;
 }
 
+.about-panel {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  padding: 14px;
+}
+
 .about-layout section {
   margin-bottom: 15px;
 }
@@ -231,6 +238,19 @@ input[data-field="URL"] { width: 100%; box-sizing: border-box; }
 .about-layout ul,
 .about-layout ol {
   margin-top: 0;
+}
+
+.about-toc {
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 10px;
+}
+
+.about-toc h2 {
+  margin-top: 0;
+}
+
+.about-toc ul {
+  margin-bottom: 0;
 }
 
 .doc-note {
