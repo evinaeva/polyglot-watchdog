@@ -519,16 +519,16 @@ def test_workflow_existing_runs_default_selection_prefers_newest_and_handles_emp
 
         const runsPayloads = [
           { runs: [
-            { run_id: 'run-older', created_at: '2026-03-10T10:00:00Z' },
-            { run_id: 'run-newest', created_at: '2026-03-12T10:00:00Z' },
-            { run_id: 'run-middle', created_at: '2026-03-11T10:00:00Z' },
+            { run_id: 'run-older', created_at: '2026-03-10T10:00:00Z', display_name: 'First_run_12:00|10.03.2026' },
+            { run_id: 'run-newest', created_at: '2026-03-12T10:00:00Z', display_name: 'First_run_12:00|12.03.2026' },
+            { run_id: 'run-middle', created_at: '2026-03-11T10:00:00Z', display_name: 'First_run_12:00|11.03.2026' },
           ] },
-          { runs: [{ run_id: 'run-only', created_at: '2026-03-20T10:00:00Z' }] },
+          { runs: [{ run_id: 'run-only', created_at: '2026-03-20T10:00:00Z', display_name: 'First_run_12:00|20.03.2026' }] },
           { runs: [] },
           { runs: [
-            { run_id: 'run-a', created_at: '2026-03-01T10:00:00Z' },
-            { run_id: 'run-z-newest', created_at: '2026-03-30T10:00:00Z' },
-            { run_id: 'run-m', created_at: '2026-03-15T10:00:00Z' },
+            { run_id: 'run-a', created_at: '2026-03-01T10:00:00Z', display_name: 'First_run_12:00|01.03.2026' },
+            { run_id: 'run-z-newest', created_at: '2026-03-30T10:00:00Z', display_name: 'First_run_12:00|30.03.2026' },
+            { run_id: 'run-m', created_at: '2026-03-15T10:00:00Z', display_name: 'First_run_12:00|15.03.2026' },
           ] },
         ];
         let runsCallIndex = 0;
@@ -610,6 +610,195 @@ def test_workflow_existing_runs_default_selection_prefers_newest_and_handles_emp
     assert out["unsortedOptions"] == ["run-z-newest", "run-m", "run-a"]
 
 
+def test_workflow_existing_runs_filters_non_first_runs_and_falls_back_from_ineligible_query_selection():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function makeElement(id='') {
+          const listeners = {};
+          return {
+            id,
+            _value: '',
+            href: '',
+            innerHTML: '',
+            textContent: '',
+            className: '',
+            dataset: {},
+            disabled: false,
+            children: [],
+            options: [],
+            classList: { add(){}, remove(){}, toggle(){} },
+            setAttribute(){},
+            appendChild(child){ this.children.push(child); this.options.push(child); return child; },
+            append(...nodes){ this.children.push(...nodes); },
+            addEventListener(type, cb){ listeners[type] = cb; },
+            dispatch(type){ if (listeners[type]) return listeners[type]({ target: this }); },
+            querySelector(){ return makeElement('qs'); },
+            get value(){ return this._value; },
+            set value(v){ this._value = String(v || ''); },
+          };
+        }
+
+        const ids = ['wfDomain','wfRefreshUrls','wfSavedUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
+        const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
+        els.wfDomain.value = 'example.com';
+
+        const replaced = [];
+
+        const sandbox = {
+          console,
+          URLSearchParams,
+          window: {
+            location: { search: '?domain=example.com&run_id=run-check-languages-latest' },
+            history: { replaceState: (_s, _t, url) => replaced.push(url) },
+          },
+          document: { getElementById: (id) => els[id], createElement: (tag) => makeElement(tag) },
+          fetch: async (url) => {
+            if (url.startsWith('/api/capture/runs?')) {
+              return {
+                ok: true,
+                json: async () => ({
+                  runs: [
+                    {
+                      run_id: 'run-check-languages-latest',
+                      created_at: '2026-03-30T11:00:00Z',
+                      jobs: [{ job_id: 'check-languages-1', type: 'check_languages', status: 'queued' }],
+                    },
+                    {
+                      run_id: 'run-first-old',
+                      created_at: '2026-03-29T11:00:00Z',
+                      jobs: [{ job_id: 'phase1-old', type: 'capture', context: { language: 'en', state: 'baseline' } }],
+                    },
+                    {
+                      run_id: 'run-first-new',
+                      created_at: '2026-03-30T10:00:00Z',
+                      metadata: { flow: 'first_run' },
+                      jobs: [],
+                    },
+                  ],
+                }),
+              };
+            }
+            if (url === '/api/domains') return { ok: true, json: async () => ({ items: ['example.com'] }) };
+            if (url.startsWith('/api/seed-urls?')) return { ok: true, json: async () => ({ urls: [] }) };
+            if (url.startsWith('/api/workflow/status?')) return { ok: true, json: async () => ({ capture: { status: 'not_started' }, run: {} }) };
+            if (url.startsWith('/api/capture/contexts?')) return { ok: true, json: async () => ({ contexts: [] }) };
+            return { ok: true, json: async () => ({}) };
+          },
+          setInterval: () => 1,
+          clearInterval: () => {},
+          safeReadPayload: async (response) => response.json(),
+        };
+
+        vm.createContext(sandbox);
+        const workflowSource = fs
+          .readFileSync('web/static/workflow.js', 'utf8')
+          .replace("initWorkflow().catch((err) => setStatus(err.message, 'error'));", '');
+        vm.runInContext(workflowSource, sandbox);
+
+        (async () => {
+          await sandbox.loadExistingRuns();
+          const optionValues = els.wfExistingRuns.options.map((opt) => opt.value);
+          const selected = els.wfExistingRuns.value;
+          console.log(JSON.stringify({ optionValues, selected, replaced }));
+        })().catch((err) => { console.error(err); process.exit(1); });
+        """
+    )
+    out = _run_node_json(script)
+    assert out["optionValues"] == ["run-first-new", "run-first-old"]
+    assert out["selected"] == "run-first-new"
+    assert any("run_id=run-first-new" in url for url in out["replaced"])
+
+
+def test_workflow_existing_runs_option_labels_use_human_first_run_format_only():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function makeElement(id='') {
+          const listeners = {};
+          return {
+            id,
+            _value: '',
+            href: '',
+            innerHTML: '',
+            textContent: '',
+            className: '',
+            dataset: {},
+            disabled: false,
+            children: [],
+            options: [],
+            classList: { add(){}, remove(){}, toggle(){} },
+            setAttribute(){},
+            appendChild(child){ this.children.push(child); this.options.push(child); return child; },
+            append(...nodes){ this.children.push(...nodes); },
+            addEventListener(type, cb){ listeners[type] = cb; },
+            dispatch(type){ if (listeners[type]) return listeners[type]({ target: this }); },
+            querySelector(){ return makeElement('qs'); },
+            get value(){ return this._value; },
+            set value(v){ this._value = String(v || ''); },
+          };
+        }
+
+        const ids = ['wfDomain','wfRefreshUrls','wfSavedUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
+        const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
+        els.wfDomain.value = 'example.com';
+
+        const sandbox = {
+          console,
+          URLSearchParams,
+          window: { location: { search: '?domain=example.com' }, history: { replaceState(){} } },
+          document: { getElementById: (id) => els[id], createElement: (tag) => makeElement(tag) },
+          fetch: async (url) => {
+            if (url.startsWith('/api/capture/runs?')) {
+              return {
+                ok: true,
+                json: async () => ({
+                  runs: [
+                    {
+                      run_id: 'run-123',
+                      created_at: '2026-03-30T07:24:00Z',
+                      jobs: [{ job_id: 'phase1-123-en-desktop-baseline', type: 'capture', context: { language: 'en', state: 'baseline' } }],
+                    },
+                  ],
+                }),
+              };
+            }
+            if (url === '/api/domains') return { ok: true, json: async () => ({ items: ['example.com'] }) };
+            if (url.startsWith('/api/seed-urls?')) return { ok: true, json: async () => ({ urls: [] }) };
+            if (url.startsWith('/api/workflow/status?')) return { ok: true, json: async () => ({ capture: { status: 'not_started' }, run: {} }) };
+            if (url.startsWith('/api/capture/contexts?')) return { ok: true, json: async () => ({ contexts: [] }) };
+            return { ok: true, json: async () => ({}) };
+          },
+          setInterval: () => 1,
+          clearInterval: () => {},
+          safeReadPayload: async (response) => response.json(),
+        };
+
+        vm.createContext(sandbox);
+        const workflowSource = fs
+          .readFileSync('web/static/workflow.js', 'utf8')
+          .replace("initWorkflow().catch((err) => setStatus(err.message, 'error'));", '');
+        vm.runInContext(workflowSource, sandbox);
+
+        (async () => {
+          await sandbox.loadExistingRuns();
+          const label = String((els.wfExistingRuns.options[0] || {}).textContent || '');
+          console.log(JSON.stringify({ label }));
+        })().catch((err) => { console.error(err); process.exit(1); });
+        """
+    )
+    out = _run_node_json(script)
+    assert re.fullmatch(r"First run \d{2}:\d{2}, \d{2}\.\d{2}\.\d{4}", out["label"])
+    assert "run-123" not in out["label"]
+    assert "jobs:" not in out["label"]
+    assert "idle" not in out["label"]
+    assert "running" not in out["label"]
+
+
 def test_workflow_existing_runs_preserves_active_selected_run_on_reload():
     script = textwrap.dedent(
         r"""
@@ -657,9 +846,9 @@ def test_workflow_existing_runs_preserves_active_selected_run_on_reload():
 
         const runPayload = {
           runs: [
-            { run_id: 'run-older', created_at: '2026-03-10T10:00:00Z' },
-            { run_id: 'run-newest', created_at: '2026-03-12T10:00:00Z' },
-            { run_id: 'run-middle', created_at: '2026-03-11T10:00:00Z' },
+            { run_id: 'run-older', created_at: '2026-03-10T10:00:00Z', display_name: 'First_run_12:00|10.03.2026' },
+            { run_id: 'run-newest', created_at: '2026-03-12T10:00:00Z', display_name: 'First_run_12:00|12.03.2026' },
+            { run_id: 'run-middle', created_at: '2026-03-11T10:00:00Z', display_name: 'First_run_12:00|11.03.2026' },
           ],
         };
 
@@ -948,8 +1137,8 @@ def test_workflow_defaults_to_latest_run_by_timestamp_and_preserves_manual_selec
                 ok: true,
                 json: async () => ({
                   runs: [
-                    { run_id: 'run-aaa', created_at: '2026-03-27T10:00:00Z', jobs: [] },
-                    { run_id: 'run-zzz', created_at: '2026-03-28T10:00:00Z', jobs: [] },
+                    { run_id: 'run-aaa', created_at: '2026-03-27T10:00:00Z', display_name: 'First_run_12:00|27.03.2026', jobs: [] },
+                    { run_id: 'run-zzz', created_at: '2026-03-28T10:00:00Z', display_name: 'First_run_12:00|28.03.2026', jobs: [] },
                   ],
                 }),
               };
