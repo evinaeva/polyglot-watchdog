@@ -2517,6 +2517,72 @@ def test_replay_failure_diagnostics_include_specific_replay_unit(monkeypatch):
     assert ctx["target_url"]
 
 
+def test_check_languages_get_normalizes_slash_suffixed_target_run_id_for_telemetry_lookup(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_check_languages_completed_run(domain, "run-en", "fr", target_run_id)
+    _write(domain, target_run_id, "llm_review_stats.json", _llm_review_stats_completed_payload())
+
+    status, body, _ = _request(
+        "GET",
+        api_env,
+        f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}%2F&show_gate_diagnostics=1",
+    )
+    assert status == HTTPStatus.OK
+    assert f"telemetry_lookup_run_id: <strong>{target_run_id}</strong>" in body
+    assert f"telemetry_actual_lookup_path: <strong>gs://test-bucket/{domain}/{target_run_id}/llm_review_stats.json</strong>" in body
+    assert f"{domain}/{target_run_id}//llm_review_stats.json" not in body
+
+
+def test_check_languages_pre_llm_state_renders_without_llm_telemetry_artifact(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "fr", "review_context_count": 1, "review_contexts": [{"id": "ctx-1"}]})
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {"source_hashes": _check_languages_source_hashes(domain, "run-en", target_run_id)})
+    _write(
+        domain,
+        "manual",
+        "capture_runs.json",
+        {
+            "runs": [
+                {
+                    "run_id": "run-en",
+                    "created_at": "2026-03-12T00:00:00Z",
+                    "jobs": [{"job_id": "phase6-en", "status": "succeeded", "type": "issues", "phase": "6", "en_run_id": "run-en"}],
+                },
+                {
+                    "run_id": target_run_id,
+                    "created_at": "2026-03-13T00:00:00Z",
+                    "jobs": [
+                        {
+                            "job_id": "check-languages-1",
+                            "status": "running",
+                            "type": "check_languages",
+                            "stage": "running_target_capture",
+                            "workflow_state": "running_target_capture",
+                            "en_run_id": "run-en",
+                            "target_language": "fr",
+                        }
+                    ],
+                },
+            ]
+        },
+    )
+
+    status, body, _ = _request(
+        "GET",
+        api_env,
+        f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}",
+    )
+    assert status == HTTPStatus.OK
+    assert 'Current state: <strong id="checkLanguagesState">running_target_capture</strong>' in body
+    assert "<h2>LLM launch status</h2>" in body
+    assert "Launch attempted: <strong>no</strong>" in body
+
+
 def test_about_page_renders_llm_wire_format_dictionary(api_env):
     status, body, _ = _request("GET", api_env, "/about")
     assert status == HTTPStatus.OK

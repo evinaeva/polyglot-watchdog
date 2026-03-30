@@ -3022,6 +3022,17 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         llm_preview = "—"
         failure_payload = None
 
+        if target_run_id:
+            target_run_id = target_run_id.strip().strip("/")
+            if target_run_id:
+                try:
+                    target_run_id = _validate_run_id(target_run_id)
+                except ValueError as exc:
+                    errors.append(str(exc))
+                    target_run_id = ""
+            else:
+                target_run_id = ""
+
         def _derive_llm_input_status(current_page_state: str) -> tuple[str, str, bool, str]:
             payload_ready = isinstance(prepared_manifest_for_page, dict) and isinstance(llm_input_payload, dict) and hashes_ok_for_page
             next_page_state = current_page_state
