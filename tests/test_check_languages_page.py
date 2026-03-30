@@ -1224,6 +1224,125 @@ def test_stale_check_languages_job_is_rendered_as_failed(api_env, monkeypatch):
     assert "capture worker stale: no completion heartbeat" in body
 
 
+def test_stale_running_llm_stage_job_converts_to_failed_without_disabling_run_llm(api_env, monkeypatch):
+    from app.skeleton_server import _check_languages_source_hashes
+
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "fr", "review_context_count": 1, "review_contexts": [{"id": "ctx-1"}]})
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {"source_hashes": _check_languages_source_hashes(domain, "run-en", target_run_id)})
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {
+                "run_id": target_run_id,
+                "created_at": "2026-03-12T00:00:00Z",
+                "jobs": [
+                    {
+                        "job_id": "check-languages-1",
+                        "status": "running",
+                        "type": "check_languages",
+                        "stage": "running_llm_review",
+                        "workflow_state": "running_llm_review",
+                        "en_run_id": "run-en",
+                        "target_language": "fr",
+                        "updated_at": "2000-01-01T00:00:00Z",
+                        "created_at": "2000-01-01T00:00:00Z",
+                    }
+                ],
+            },
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+    monkeypatch.setenv("WORKFLOW_STALE_JOB_SECONDS", "30")
+
+    status, body, _ = _request(
+        "GET",
+        api_env,
+        f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}&show_gate_diagnostics=1",
+    )
+    assert status == HTTPStatus.OK
+    assert "llm_running: <strong>false</strong>" in body
+    assert 'id="checkLanguagesRunLlmButton" name="action" value="run_llm_review" type="submit" disabled="disabled"' not in body
+    assert "<li>llm started</li>" not in body
+
+
+def test_stale_failed_llm_state_does_not_show_llm_started_recent_step(api_env):
+    from app.skeleton_server import _check_languages_source_hashes
+
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "fr", "review_context_count": 1, "review_contexts": [{"id": "ctx-1"}]})
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {"source_hashes": _check_languages_source_hashes(domain, "run-en", target_run_id)})
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {
+                "run_id": target_run_id,
+                "created_at": "2026-03-12T00:00:00Z",
+                "jobs": [
+                    {
+                        "job_id": "check-languages-1",
+                        "status": "failed",
+                        "type": "check_languages",
+                        "stage": "running_llm_review",
+                        "workflow_state": "running_llm_review",
+                        "en_run_id": "run-en",
+                        "target_language": "fr",
+                    }
+                ],
+            },
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert "<p>Recent steps</p>" in body
+    assert "<li>llm started</li>" not in body
+
+
+def test_active_running_llm_job_keeps_run_llm_disabled_and_shows_started_step(api_env):
+    from app.skeleton_server import _check_languages_source_hashes
+
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "fr", "review_context_count": 1, "review_contexts": [{"id": "ctx-1"}]})
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {"source_hashes": _check_languages_source_hashes(domain, "run-en", target_run_id)})
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {
+                "run_id": target_run_id,
+                "created_at": "2026-03-12T00:00:00Z",
+                "jobs": [
+                    {
+                        "job_id": "check-languages-1",
+                        "status": "running",
+                        "type": "check_languages",
+                        "stage": "running_llm_review",
+                        "workflow_state": "running_llm_review",
+                        "en_run_id": "run-en",
+                        "target_language": "fr",
+                    }
+                ],
+            },
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert 'id="checkLanguagesRunLlmButton" name="action" value="run_llm_review" type="submit" disabled="disabled"' in body
+    assert "<li>llm started</li>" in body
+
+
 def test_get_check_languages_completed_llm_run_shows_provider_model_tokens_and_cost(api_env):
     domain = SUPPORTED_MAIN_DOMAIN
     target_run_id = "run-en-check-fr"
