@@ -1465,9 +1465,13 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             "/runs": "runs.html",
             "/workflow": "workflow.html",
             "/contexts": "contexts.html",
-            "/pulls": "pulls.html",
             "/issues/detail": "issues/detail.html",
         }
+        if parsed.path == "/pulls":
+            if not self._require_auth(api=False):
+                return
+            self._serve_pulls_page(parse_qs(parsed.query))
+            return
         if parsed.path in page_templates:
             if not self._require_auth(api=False):
                 return
@@ -3542,6 +3546,65 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 "{{llm_review_diagnostics}}": llm_review_debug_section,
             },
             extra_set_cookies=[self._build_cookie_header(CSRF_COOKIE, csrf_token, max_age=SESSION_MAX_AGE_SECONDS, http_only=False)],
+        )
+
+    def _serve_pulls_page(self, query: dict[str, list[str]]) -> None:
+        domain = _normalize_check_languages_domain(str(query.get("domain", [""])[0]))
+        selected_run_id = str(query.get("run_id", [""])[0]).strip()
+        selected_en_run_id = str(query.get("en_run_id", [""])[0]).strip()
+
+        domain_options_source = SUPPORTED_CHECK_LANGUAGE_DOMAINS
+        if domain and domain not in domain_options_source:
+            domain_options_source = [*SUPPORTED_CHECK_LANGUAGE_DOMAINS, domain]
+        if not domain:
+            domain = _default_check_languages_domain()
+        if domain and domain not in domain_options_source:
+            domain_options_source = [*domain_options_source, domain]
+
+        first_run_options: list[str] = ['<option value="">Select First Run</option>']
+        en_options: list[str] = ['<option value="">Select English reference run</option>']
+        try:
+            validate_domain(_normalize_testsite_domain_key(domain))
+            runs_payload = _load_runs(domain)
+            runs = runs_payload.get("runs", []) if isinstance(runs_payload, dict) else []
+            sorted_runs = _sort_runs_newest_first(runs)
+            if not selected_run_id:
+                selected_run_id = str(((sorted_runs[0] if sorted_runs else {}) or {}).get("run_id", "")).strip()
+            for run in sorted_runs:
+                run_id = str(run.get("run_id", "")).strip()
+                if not run_id:
+                    continue
+                selected_attr = ' selected="selected"' if run_id == selected_run_id else ""
+                first_run_options.append(f'<option value="{_h(run_id)}"{selected_attr}>{_h(_run_display_label(run))}</option>')
+
+            check_runs = _load_check_language_runs(domain)
+            en_candidates = [row for row in check_runs if _run_is_en_reference_candidate(row)]
+            if not selected_en_run_id:
+                selected_en_run_id = _latest_successful_en_standard_run_id(domain, en_candidates) or _default_english_reference_run_id(en_candidates)
+            for run in sorted(en_candidates, key=lambda row: (row.get("created_at", ""), row.get("run_id", "")), reverse=True):
+                run_id = str(run.get("run_id", "")).strip()
+                if not run_id:
+                    continue
+                selected_attr = ' selected="selected"' if run_id == selected_en_run_id else ""
+                en_options.append(f'<option value="{_h(run_id)}"{selected_attr}>{_h(_run_display_label(run))}</option>')
+            if len(en_options) == 1:
+                en_options = ['<option value="">No English runs found</option>']
+        except ValueError:
+            first_run_options = ['<option value="">No First Runs found</option>']
+            en_options = ['<option value="">No English runs found</option>']
+
+        self._serve_template(
+            "pulls.html",
+            replacements={
+                "{{pulls_domain_options}}": "".join(
+                    [
+                        f'<option value="{_h(item)}"{" selected=\"selected\"" if item == domain else ""}>{_h(item)}</option>'
+                        for item in domain_options_source
+                    ]
+                ),
+                "{{pulls_first_run_options}}": "".join(first_run_options),
+                "{{pulls_en_run_options}}": "".join(en_options),
+            },
         )
 
     def _serve_template(

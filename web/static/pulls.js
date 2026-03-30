@@ -11,6 +11,9 @@ const pullsWhitelistStatus = document.getElementById('pullsWhitelistStatus');
 const pullsWhitelistChips = document.getElementById('pullsWhitelistChips');
 const pullsPrepareCapturedData = document.getElementById('pullsPrepareCapturedData');
 const pullsPrepareCapturedDataStatus = document.getElementById('pullsPrepareCapturedDataStatus');
+const pullsFirstRunSelect = document.getElementById('pullsFirstRunSelect');
+const pullsDomainSelect = document.getElementById('pullsDomainSelect');
+const pullsEnRunSelect = document.getElementById('pullsEnRunSelect');
 
 const pullsPreviewModal = document.getElementById('pullsPreviewModal');
 const pullsPreviewOverlay = document.getElementById('pullsPreviewOverlay');
@@ -236,6 +239,31 @@ function updateWorkflowSummary(domain, runId) {
   pullsWorkflowContextSummary.textContent = parts.length
     ? `Workflow context: ${parts.join(' · ')}.`
     : 'Workflow context: none.';
+}
+
+function updateOperatorNavigation(domain, runId) {
+  const selectedEnRunId = String((pullsEnRunSelect || {}).value || '').trim();
+  const query = new URLSearchParams({ domain, run_id: runId }).toString();
+  const checkLanguagesParams = new URLSearchParams({ domain });
+  if (selectedEnRunId) checkLanguagesParams.set('en_run_id', selectedEnRunId);
+  const primaryLinks = {
+    pullsBackToRunHub: `/workflow?${query}`,
+    continueCheckLanguages: `/check-languages?${checkLanguagesParams.toString()}`,
+    continueCheckLanguagesBottom: `/check-languages?${checkLanguagesParams.toString()}`,
+  };
+  Object.entries(primaryLinks).forEach(([id, href]) => {
+    const link = document.getElementById(id);
+    if (link) link.href = href;
+  });
+
+  const technicalLinks = {
+    pullsOpenContexts: `/contexts?${query}`,
+    pullsOpenIssues: `/?${query}`,
+  };
+  Object.entries(technicalLinks).forEach(([id, href]) => {
+    const link = document.getElementById(id);
+    if (link) link.href = href;
+  });
 }
 
 function updateLanguageSummary(rows) {
@@ -815,7 +843,6 @@ async function loadPulls() {
     pullsLanguageSummary.classList.add('hidden');
     setPullsStatus('Missing required query params: domain and run_id.', 'error');
     pullsPrepareCapturedData.disabled = true;
-    setPrepareCapturedDataStatus('Missing required query params: domain and run_id.', 'error');
     return;
   }
 
@@ -827,35 +854,17 @@ async function loadPulls() {
     params.set('run_id', runId);
     window.history.replaceState({}, '', `/pulls?${params.toString()}`);
   }
+  if (pullsDomainSelect) pullsDomainSelect.value = domain;
+  if (pullsFirstRunSelect && runId) pullsFirstRunSelect.value = runId;
 
   updateWorkflowSummary(domain, runId);
-  const query = new URLSearchParams({ domain, run_id: runId }).toString();
-
-  const primaryLinks = {
-    pullsBackToRunHub: `/workflow?${query}`,
-    continueCheckLanguages: `/check-languages?${new URLSearchParams({ domain, en_run_id: runId }).toString()}`,
-    continueCheckLanguagesBottom: `/check-languages?${new URLSearchParams({ domain, en_run_id: runId }).toString()}`,
-  };
-  Object.entries(primaryLinks).forEach(([id, href]) => {
-    const link = document.getElementById(id);
-    if (link) link.href = href;
-  });
-
-  const technicalLinks = {
-    pullsOpenContexts: `/contexts?${query}`,
-    pullsOpenIssues: `/?${query}`,
-  };
-  Object.entries(technicalLinks).forEach(([id, href]) => {
-    const link = document.getElementById(id);
-    if (link) link.href = href;
-  });
+  updateOperatorNavigation(domain, runId);
 
   if (!runId) {
     pullsTable.classList.add('hidden');
     pullsLanguageSummary.classList.add('hidden');
     setPullsStatus('Missing required query params: domain and run_id.', 'error');
     pullsPrepareCapturedData.disabled = true;
-    setPrepareCapturedDataStatus('Missing required query params: domain and run_id.', 'error');
     return;
   }
   pullsPrepareCapturedData.disabled = false;
@@ -881,6 +890,35 @@ pullsElementTypeFilter.addEventListener('change', () => {
   const { domain, runId } = getCurrentPullsContext();
   renderRows(domain, runId);
 });
+
+if (pullsDomainSelect) {
+  pullsDomainSelect.addEventListener('change', () => {
+    const domain = String(pullsDomainSelect.value || '').trim();
+    const params = new URLSearchParams(window.location.search);
+    if (domain) params.set('domain', domain);
+    params.delete('run_id');
+    params.delete('en_run_id');
+    window.location.assign(`/pulls?${params.toString()}`);
+  });
+}
+
+if (pullsFirstRunSelect) {
+  pullsFirstRunSelect.addEventListener('change', () => {
+    const { domain } = pullsQuery();
+    const runId = String(pullsFirstRunSelect.value || '').trim();
+    const params = new URLSearchParams(window.location.search);
+    if (domain) params.set('domain', domain);
+    if (runId) params.set('run_id', runId);
+    window.location.assign(`/pulls?${params.toString()}`);
+  });
+}
+
+if (pullsEnRunSelect) {
+  pullsEnRunSelect.addEventListener('change', () => {
+    const { domain, runId } = getCurrentPullsContext();
+    updateOperatorNavigation(domain, runId);
+  });
+}
 
 
 pullsWhitelistAdd.addEventListener('click', async () => {
