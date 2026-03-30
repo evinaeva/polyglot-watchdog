@@ -3628,3 +3628,35 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca1c4fd2cc832ca0babd4ad5eb366c)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #208 — 2026-03-30T07:31:29Z
+
+- Title: Refine /urls panel grouping and split /workflow blocks A/B
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/208
+- Author: evinaeva
+- Base branch: main
+- Head branch: jbxvxf-codex/modify-repository-ui-for-cosmetic-changes
+- Merge commit: 45218c7a7b64d4141e7b081fd776e49ac3b207af
+- Changed files:
+  - web/templates/urls.html
+  - web/templates/workflow.html
+- Description:
+  ### Motivation
+  - Improve page layout consistency by grouping related controls into unified visual panels on the `/urls` page.
+  - Restore previously merged blocks A and B on the `/workflow` page to match the intended separate panel layout.
+  - Keep changes purely cosmetic so existing UI behavior, IDs, forms, and scripts continue to work unchanged.
+  
+  ### Description
+  - Edited `web/templates/urls.html` to wrap the domain controls, `#urlsMultiline` textarea, status/error boxes, and the `.controls.urls-actions` buttons inside a single parent container `<div class="top-unified-block">` so the three top blocks render as one unified panel.
+  - Edited `web/templates/urls.html` to place the `Domain URL config` heading and its table inside a single `<section>` so the heading and the table visually belong to the same panel while leaving the table structure and IDs untouched.
+  - Edited `web/templates/workflow.html` to remove the single merged `.top-unified-block` wrapper and restore Block A and Block B as two separate top-level `<section>` panels, preserving all labels, selects, textareas, buttons, and element IDs exactly as before.
+  - No JavaScript, route, API, form submission, business logic, or dependency changes were made; only HTML container structure/classes were adjusted.
+  
+  ### Testing
+  - Ran `git diff --check` and observed no whitespace or diff errors, which succeeded.
+  - Attempted to run UI-adjacent tests with `pytest -q tests/test_ui_workflow_adapters.py tests/test_operator_ui_runtime_regressions.py`, but test collection failed due to the environment missing Python dependency `jsonschema` (error surfaced during import), so tests could not fully execute.
+  - Confirmed locally in the repository that only `web/templates/urls.html` and `web/templates/workflow.html` were modified and that no JS or backend files were altered.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca246591f8832c9077dc6df2785006)
+- Notes: Auto-generated from merged PR metadata.
