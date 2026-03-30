@@ -1312,6 +1312,9 @@ def test_get_check_languages_gate_diagnostics_include_llm_telemetry_lookup_conte
     assert f"telemetry_actual_lookup_path: <strong>gs://test-bucket/{domain}/{target_run_id}/llm_review_stats.json</strong>" in body
     assert "telemetry_read_status: <strong>valid</strong>" in body
     assert "telemetry_payload_valid_for_ui: <strong>true</strong>" in body
+    assert "latest_job_id: <strong>check-languages-1</strong>" in body
+    assert "latest_job_used_for_ui: <strong>true</strong>" in body
+    assert "telemetry_state_reason_used_by_ui: <strong>" in body
 
 
 def test_llm_review_state_missing_telemetry_in_progress(api_env):
@@ -1825,6 +1828,131 @@ def test_recompute_form_preserves_target_run_context_inputs(api_env):
     assert status == HTTPStatus.OK
     assert f'<input type="hidden" name="target_run_id" value="{target_run_id}" />' in body
     assert '<input type="hidden" name="generated_target_url" value="https://fr.bongacams.com/" />' in body
+
+
+def test_refresh_llm_status_button_exists_and_preserves_run_context(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+
+    status, body, _ = _request(
+        "GET",
+        api_env,
+        f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}&generated_target_url=https%3A%2F%2Ffr.bongacams.com%2F",
+    )
+    assert status == HTTPStatus.OK
+    assert 'id="checkLanguagesRefreshLlmStatusButton" name="action" value="refresh_llm_status"' in body
+
+    form = _query(
+        {
+            "selected_domain": domain,
+            "en_run_id": "run-en",
+            "target_language": "fr",
+            "target_run_id": target_run_id,
+            "generated_target_url": "https://fr.bongacams.com/",
+            "action": "refresh_llm_status",
+        }
+    )
+    status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
+    assert status_post == HTTPStatus.FOUND
+    assert f"target_run_id={target_run_id}" in location
+    assert "generated_target_url=https%3A%2F%2Ffr.bongacams.com%2F" in location
+    assert "show_gate_diagnostics=True" in location
+
+
+def test_refresh_llm_status_recomputes_from_current_telemetry_artifact(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_check_languages_completed_run(domain, "run-en", "fr", target_run_id)
+
+    status_initial, body_initial, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status_initial == HTTPStatus.OK
+    assert "Cost: unavailable" in body_initial
+
+    _write(
+        domain,
+        target_run_id,
+        "llm_review_stats.json",
+        _llm_review_stats_payload(
+            llm_requested=True,
+            llm_batches_attempted=2,
+            llm_batches_succeeded=2,
+            llm_batches_failed=0,
+            responses_received=2,
+            used_fallback=False,
+            fallback_batches=0,
+            fallback_items=0,
+            actual_prompt_tokens=100,
+            actual_completion_tokens=40,
+            actual_total_tokens=140,
+            actual_cost_usd=0.0025,
+        ),
+    )
+    form = _query(
+        {
+            "selected_domain": domain,
+            "en_run_id": "run-en",
+            "target_language": "fr",
+            "target_run_id": target_run_id,
+            "action": "refresh_llm_status",
+        }
+    )
+    status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
+    assert status_post == HTTPStatus.FOUND
+
+    status_refreshed, body_refreshed, _ = _request("GET", api_env, location)
+    assert status_refreshed == HTTPStatus.OK
+    assert "Fallback status: Fully LLM-backed" in body_refreshed
+    assert "Cost: $0.002500 (actual)" in body_refreshed
+
+
+def test_llm_review_uses_latest_job_by_job_order_not_job_id_lexical_order(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(
+        domain,
+        "manual",
+        "capture_runs.json",
+        {
+            "runs": [
+                {
+                    "run_id": target_run_id,
+                    "created_at": "2026-03-12T00:00:00Z",
+                    "jobs": [
+                        {
+                            "job_id": "check-languages-prepare-run-en-check-fr-2000",
+                            "status": "succeeded",
+                            "type": "check_languages",
+                            "stage": "prepared_for_llm",
+                            "workflow_state": "prepared_for_llm",
+                            "en_run_id": "run-en",
+                            "target_language": "fr",
+                        },
+                        {
+                            "job_id": "check-languages-llm-run-en-check-fr-1000",
+                            "status": "running",
+                            "type": "check_languages",
+                            "stage": "running_llm_review",
+                            "workflow_state": "running_llm_review",
+                            "en_run_id": "run-en",
+                            "target_language": "fr",
+                        },
+                    ],
+                },
+                {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+            ]
+        },
+    )
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert "Latest job: check-languages-llm-run-en-check-fr-1000" in body
+    assert "State: <strong>LLM stage not started</strong>" not in body
 
 
 def test_recomputed_gate_final_enabled_matches_conditions(api_env):
