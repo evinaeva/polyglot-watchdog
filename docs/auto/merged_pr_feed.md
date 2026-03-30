@@ -3943,3 +3943,37 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca64f5b624832c85cac4d230e3716e)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #217 — 2026-03-30T12:17:54Z
+
+- Title: Normalize/validate `target_run_id` and preserve explicit run selection in workflow UI
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/217
+- Author: evinaeva
+- Base branch: main
+- Head branch: hbm8x3-codex/investigate-regression-in-polyglot-watchdog
+- Merge commit: 3bb03b09fd0060e4e48debc1a2f4d06898cb772f
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+  - tests/test_operator_ui_runtime_regressions.py
+  - web/static/workflow.js
+- Description:
+  ### Motivation
+  - Ensure trailing slashes or stray whitespace in `target_run_id` do not break telemetry artifact lookups or produce incorrect paths.  
+  - Prevent the workflow UI from silently rewriting an explicitly selected non-first run and provide clear status when the selection is kept.  
+  - Update tests to assert the normalized behavior and the new UI selection semantics.
+  
+  ### Description
+  - In `app/skeleton_server.py` normalize and validate `target_run_id` by stripping whitespace and trailing slashes and calling `_validate_run_id`, appending validation errors on failure.  
+  - In `web/static/workflow.js` update `renderExistingRuns` to preserve an explicit `activeRunId` when it is not in the First-run list, disable `wfUseExistingRun` in that case, and show a status message; also handle the case of no first-run entries more clearly.  
+  - Add tests in `tests/test_check_languages_page.py` to verify slash-suffixed `target_run_id` normalization for telemetry lookup and rendering of the pre-LLM state without a telemetry artifact.  
+  - Update `tests/test_operator_ui_runtime_regressions.py` to set `activeRunId` in the VM harness and assert the new selection/status behavior for existing runs.
+  
+  ### Testing
+  - Ran `pytest tests/test_check_languages_page.py::test_check_languages_get_normalizes_slash_suffixed_target_run_id_for_telemetry_lookup` and `pytest tests/test_check_languages_page.py::test_check_languages_pre_llm_state_renders_without_llm_telemetry_artifact`, both tests passed.  
+  - Ran `pytest tests/test_operator_ui_runtime_regressions.py::test_workflow_existing_runs_preserves_explicit_non_first_query_selection_without_fallback_rewrite` which executes the embedded Node/VM script, and it passed.  
+  - The related unit/JS regression tests were executed and succeeded.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca62208cc8832ca837798f0af55f82)
+- Notes: Auto-generated from merged PR metadata.
