@@ -54,6 +54,63 @@ function formatRunLabel(runId, displayName) {
   return safeRunId || '—';
 }
 
+function runDisplayName(run) {
+  if (!run || typeof run !== 'object') return '';
+  const direct = normalizeDisplayName(run.display_name);
+  if (direct) return direct;
+  const metadata = run.metadata && typeof run.metadata === 'object' ? run.metadata : {};
+  return normalizeDisplayName(metadata.display_name);
+}
+
+function metadataFirstRunMarker(run) {
+  const metadata = run && typeof run.metadata === 'object' ? run.metadata : {};
+  const candidates = [metadata.kind, metadata.flow, metadata.stage];
+  return candidates.some((value) => {
+    const marker = String(value || '').trim().toLowerCase();
+    return marker === 'first_run' || marker === 'first-run' || marker === 'firstrun';
+  });
+}
+
+function isFirstRunDisplayName(displayName) {
+  return /^first[_\s-]?run_/i.test(String(displayName || '').trim());
+}
+
+function isFirstRunCaptureJob(job) {
+  const type = String((job || {}).type || '').trim().toLowerCase();
+  const phase = String((job || {}).phase || '').trim();
+  const jobId = String((job || {}).job_id || '').trim().toLowerCase();
+  const isCaptureLike = type === 'capture' || phase === '1' || jobId.startsWith('phase1-');
+  if (!isCaptureLike) return false;
+  const context = job && typeof job.context === 'object' ? job.context : {};
+  const language = String(context.language || '').trim().toLowerCase();
+  const state = String(context.state || '').trim().toLowerCase();
+  return language === 'en' && state === 'baseline';
+}
+
+function isFirstRunEntry(run) {
+  if (metadataFirstRunMarker(run)) return true;
+  const jobs = Array.isArray((run || {}).jobs) ? run.jobs : [];
+  if (jobs.some(isFirstRunCaptureJob)) return true;
+  const displayName = runDisplayName(run);
+  // Fallback for legacy/manual runs where machine markers are absent in `/api/capture/runs`.
+  return isFirstRunDisplayName(displayName);
+}
+
+function formatFirstRunOptionLabel(run) {
+  const raw = String((run || {}).created_at || '').trim();
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return 'First run';
+  const parts = tallinnDateTimeFormatter.formatToParts(parsed);
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `First run ${map.hour}:${map.minute}, ${map.day}.${map.month}.${map.year}`;
+}
+
+function resolveDefaultSelectedRunId(runs, requestedRunId) {
+  const requested = String(requestedRunId || '').trim();
+  if (requested && runs.some((run) => String((run || {}).run_id || '').trim() === requested)) return requested;
+  return String(((runs[0] || {}).run_id) || '').trim();
+}
+
 function q() {
   const p = new URLSearchParams(window.location.search);
   return { domain: (p.get('domain') || '').trim(), runId: (p.get('run_id') || '').trim() };
@@ -258,10 +315,7 @@ function renderExistingRuns() {
     if (!runId) continue;
     const option = document.createElement('option');
     option.value = runId;
-    const runLabel = formatRunLabel(runId, (run || {}).display_name);
-    const createdAt = formatUtcTimestampForUi((run || {}).created_at) || 'created time unknown';
-    const jobsCount = Array.isArray((run || {}).jobs) ? run.jobs.length : 0;
-    option.textContent = `${runLabel} (${deriveRunState(run)} · jobs: ${jobsCount} · ${createdAt})`;
+    option.textContent = formatFirstRunOptionLabel(run);
     wfExistingRuns.appendChild(option);
   }
 
@@ -272,12 +326,15 @@ function renderExistingRuns() {
     return;
   }
 
-  const hasSelected = selected && availableRuns.some((run) => String(run.run_id || '') === selected);
-  if (hasSelected) {
-    wfExistingRuns.value = selected;
-  } else if (wfExistingRuns.options.length > 0) {
-    wfExistingRuns.value = String(wfExistingRuns.options[0].value || '');
-    activeRunId = wfExistingRuns.value;
+  const nextSelectedRunId = resolveDefaultSelectedRunId(availableRuns, selected);
+  if (nextSelectedRunId) {
+    wfExistingRuns.value = nextSelectedRunId;
+    if (activeRunId !== nextSelectedRunId) {
+      activeRunId = nextSelectedRunId;
+      setQuery(wfDomain.value.trim(), activeRunId);
+    }
+  } else {
+    activeRunId = '';
     setQuery(wfDomain.value.trim(), activeRunId);
   }
 
@@ -296,7 +353,7 @@ async function loadExistingRuns() {
   if (!response.ok) throw new Error(payload.error || 'failed to load runs');
 
   const runs = Array.isArray(payload.runs) ? payload.runs : [];
-  availableRuns = sortRunsNewestFirst(runs);
+  availableRuns = sortRunsNewestFirst(runs).filter(isFirstRunEntry);
   renderExistingRuns();
 }
 
