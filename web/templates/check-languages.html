@@ -55,30 +55,36 @@
     </section>
 
     <section>
-      <h2>LLM gate diagnostics</h2>
-      {{gate_diagnostics}}
+      <details>
+        <summary>LLM gate diagnostics</summary>
+        {{gate_diagnostics}}
+      </details>
     </section>
     {{llm_review_diagnostics}}
 
     <section>
-      <h2>State</h2>
-      <p>Current state: <strong id="checkLanguagesState">{{page_state}}</strong></p>
-      <p>English run: <code>{{selected_en_run_id}}</code></p>
-      <p>Target language: <code>{{target_language}}</code></p>
-      <p>Generated target URL: <code>{{generated_target_url}}</code></p>
-      <p>Generated target run: <code>{{target_run_id}}</code></p>
-      <p>issues.json artifact: <strong>{{issues_exists}}</strong></p>
+      <details>
+        <summary>State</summary>
+        <p>Current state: <strong id="checkLanguagesState">{{page_state}}</strong></p>
+        <p>English run: <code>{{selected_en_run_id}}</code></p>
+        <p>Target language: <code>{{target_language}}</code></p>
+        <p>Generated target URL: <code>{{generated_target_url}}</code></p>
+        <p>Generated target run: <code>{{target_run_id}}</code></p>
+        <p>issues.json artifact: <strong>{{issues_exists}}</strong></p>
+      </details>
     </section>
 
 
     <section>
-      <h2>Reference run readiness</h2>
-      <ul>
-        <li>Required artifacts: {{en_required}}</li>
-        <li>Missing artifacts: {{en_missing}}</li>
-        <li>Read error: {{en_read_error}}</li>
-        <li>Status: <strong>{{en_ready}}</strong></li>
-      </ul>
+      <details>
+        <summary>Reference run readiness</summary>
+        <ul>
+          <li>Required artifacts: {{en_required}}</li>
+          <li>Missing artifacts: {{en_missing}}</li>
+          <li>Read error: {{en_read_error}}</li>
+          <li>Status: <strong>{{en_ready}}</strong></li>
+        </ul>
+      </details>
     </section>
 
     <section>
@@ -88,6 +94,11 @@
         <summary>Prepared payload preview</summary>
         {{payload_preview}}
       </details>
+    </section>
+
+    <section>
+      <h2>LLM launch status</h2>
+      {{llm_launch_status}}
     </section>
 
     <section>
