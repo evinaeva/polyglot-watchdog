@@ -3718,3 +3718,34 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca464e866c832ca4b614c054201e3f)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #211 — 2026-03-30T09:53:30Z
+
+- Title: about: unify /about into a single panel with TOC anchors
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/211
+- Author: evinaeva
+- Base branch: main
+- Head branch: mrkgiy-codex/apply-ui-patch-to-/about-page
+- Merge commit: f45d7ba8e8d167043e17a2c64114288802f71115
+- Changed files:
+  - web/static/styles.css
+  - web/templates/about.html
+- Description:
+  ### Motivation
+  - The /about page rendered as several separate stacked blocks with narrow inner spacing, which is inconsistent with the app's unified panel style. 
+  - Provide an in-page, clickable table of contents so operators can quickly jump to existing sections without changing routing or JS behavior. 
+  
+  ### Description
+  - Edited `web/templates/about.html` to wrap the existing title and all sections inside a single container `<div class="top-unified-block about-panel">...</div>` and added stable section ids (e.g. `#what-this-tool-does`, `#how-to-use-it-6-tabs`, etc.) for anchor navigation. 
+  - Added a lightweight TOC near the top of the unified panel as a simple semantic list that links to the existing headings and preserved all original headings, paragraphs, lists, and ordering. 
+  - Edited `web/static/styles.css` to add `.about-panel` with `border`, `border-radius`, `background`, and `padding: 14px` to match other main content panels and added minimal `.about-toc` rules for a simple divider and spacing. 
+  - No routes, API behavior, business logic, external dependencies, or non-anchor JS behavior were changed; navigation uses native in-page anchors only. 
+  
+  ### Testing
+  - Attempted targeted test run `PYTHONPATH=. pytest -q tests/test_check_languages_page.py -k about_page_renders_llm_wire_format_dictionary`, which failed during collection due to a missing environment dependency (`jsonschema`). 
+  - A plain `pytest -q tests/test_check_languages_page.py -k about_page_renders_llm_wire_format_dictionary` without `PYTHONPATH` initially failed with import errors related to test collection environment. 
+  - No automated test assertions were executed because test collection was blocked by the missing dependency, but the change is restricted to template and CSS only and should not affect backend logic or routes.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca470bab00832c923dd1a461bda99e)
+- Notes: Auto-generated from merged PR metadata.
