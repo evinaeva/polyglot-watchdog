@@ -3015,6 +3015,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         llm_telemetry_state_for_ui = "not_evaluated"
         llm_telemetry_state_reason_for_ui = "not_evaluated"
         llm_telemetry_final_label = "Telemetry not evaluated yet."
+        llm_review_debug_block = ""
+        llm_review_debug_relevant = False
         llm_preview = "—"
         failure_payload = None
 
@@ -3129,6 +3131,21 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             llm_telemetry_state_for_ui = str(llm_display.get("state", "")).strip() or "unknown"
             llm_telemetry_state_reason_for_ui = str(llm_display.get("state_reason", "")).strip() or "unknown"
             llm_telemetry_final_label = llm_telemetry_state_for_ui
+            llm_stage_set = {"queued_llm_review", "running_llm_review", "running_llm_review_failed", "completed", "llm_preflight_failed"}
+            llm_workflow_state_set = {
+                "queued_llm_review",
+                "running_llm_review",
+                "failed_during_llm",
+                "completed",
+                "running_llm_review_failed",
+                "llm_preflight_failed",
+            }
+            llm_review_debug_relevant = (
+                llm_stats_exists
+                or bool(llm_telemetry_valid_for_ui)
+                or stage in llm_stage_set
+                or workflow_state in llm_workflow_state_set
+            )
             warning_html = f'<p class="warning">{_h(llm_display["warning"])}</p>' if llm_display["warning"] else ""
             llm_review_block = (
                 f"<p>{_h(llm_display['process_summary'])}</p>"
@@ -3406,21 +3423,36 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 f"<li>latest_job_used_for_ui: <strong>{_h(str(bool(latest_job)).lower())}</strong></li>"
                 f"<li>latest_job_selection_source: <strong>_latest_check_languages_job(domain, target_run_id)</strong></li>"
                 f"<li>latest_job_is_llm_stage_job: <strong>{_h(str(str((latest_job or {}).get('stage', '')).strip().lower() in {'queued_llm_review', 'running_llm_review', 'running_llm_review_failed', 'completed'}).lower())}</strong></li>"
-                f"<li>telemetry_state_used_by_ui: <strong>{_h(llm_telemetry_state_for_ui or '—')}</strong></li>"
-                f"<li>telemetry_state_reason_used_by_ui: <strong>{_h(llm_telemetry_state_reason_for_ui or '—')}</strong></li>"
-                f"<li>final_ui_label_for_llm_review: <strong>{_h(llm_telemetry_final_label or '—')}</strong></li>"
-                f"<li>telemetry_lookup_domain: <strong>{_h(llm_telemetry_lookup_domain or '—')}</strong></li>"
-                f"<li>telemetry_lookup_run_id: <strong>{_h(llm_telemetry_lookup_run_id or '—')}</strong></li>"
-                f"<li>telemetry_lookup_filename: <strong>{_h(llm_telemetry_lookup_filename or '—')}</strong></li>"
-                f"<li>telemetry_lookup_bucket: <strong>{_h(llm_lookup_bucket or '—')}</strong></li>"
-                f"<li>telemetry_actual_lookup_path: <strong>{_h(llm_telemetry_lookup_path or '—')}</strong></li>"
-                f"<li>telemetry_read_status: <strong>{_h(llm_telemetry_read_status or '—')}</strong></li>"
-                f"<li>telemetry_short_error_summary: <strong>{_h(llm_telemetry_error_summary or '—')}</strong></li>"
-                f"<li>telemetry_payload_valid_for_ui: <strong>{_h(str(bool(llm_telemetry_valid_for_ui)).lower())}</strong></li>"
                 f"<li>final llm_enabled: <strong>{_h(str(llm_enabled).lower())}</strong></li>"
                 "</ul>"
             )
+            if llm_review_debug_relevant:
+                llm_review_debug_block = (
+                    "<ul>"
+                    f"<li>telemetry_state_used_by_ui: <strong>{_h(llm_telemetry_state_for_ui or '—')}</strong></li>"
+                    f"<li>telemetry_state_reason_used_by_ui: <strong>{_h(llm_telemetry_state_reason_for_ui or '—')}</strong></li>"
+                    f"<li>final_ui_label_for_llm_review: <strong>{_h(llm_telemetry_final_label or '—')}</strong></li>"
+                    f"<li>telemetry_lookup_domain: <strong>{_h(llm_telemetry_lookup_domain or '—')}</strong></li>"
+                    f"<li>telemetry_lookup_run_id: <strong>{_h(llm_telemetry_lookup_run_id or '—')}</strong></li>"
+                    f"<li>telemetry_lookup_filename: <strong>{_h(llm_telemetry_lookup_filename or '—')}</strong></li>"
+                    f"<li>telemetry_lookup_bucket: <strong>{_h(llm_lookup_bucket or '—')}</strong></li>"
+                    f"<li>telemetry_actual_lookup_path: <strong>{_h(llm_telemetry_lookup_path or '—')}</strong></li>"
+                    f"<li>telemetry_read_status: <strong>{_h(llm_telemetry_read_status or '—')}</strong></li>"
+                    f"<li>telemetry_short_error_summary: <strong>{_h(llm_telemetry_error_summary or '—')}</strong></li>"
+                    f"<li>telemetry_payload_valid_for_ui: <strong>{_h(str(bool(llm_telemetry_valid_for_ui)).lower())}</strong></li>"
+                    "</ul>"
+                )
+            else:
+                llm_review_debug_block = "<p>LLM review diagnostics will appear after LLM review starts.</p>"
         llm_disabled_attr = "" if llm_enabled else ' disabled="disabled"'
+        llm_review_debug_section = ""
+        if show_gate_diagnostics:
+            llm_review_debug_section = (
+                "<section>"
+                "<h2>LLM review diagnostics</h2>"
+                f"{llm_review_debug_block}"
+                "</section>"
+            )
 
         self._serve_template(
             "check-languages.html",
@@ -3455,6 +3487,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 "{{run_llm_disabled}}": llm_disabled_attr,
                 "{{payload_preview}}": payload_preview_block,
                 "{{gate_diagnostics}}": gate_diagnostics_block,
+                "{{llm_review_diagnostics}}": llm_review_debug_section,
             },
             extra_set_cookies=[self._build_cookie_header(CSRF_COOKIE, csrf_token, max_age=SESSION_MAX_AGE_SECONDS, http_only=False)],
         )

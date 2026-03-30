@@ -1288,7 +1288,7 @@ def test_get_check_languages_reads_llm_telemetry_even_when_listing_reports_missi
     assert "Responses received: 1" in body
 
 
-def test_get_check_languages_gate_diagnostics_include_llm_telemetry_lookup_context(api_env):
+def test_get_check_languages_gate_diagnostics_keep_telemetry_rows_outside_gate_block(api_env):
     domain = SUPPORTED_MAIN_DOMAIN
     target_run_id = "run-en-check-fr"
     _seed_check_languages_completed_run(domain, "run-en", "fr", target_run_id)
@@ -1303,18 +1303,75 @@ def test_get_check_languages_gate_diagnostics_include_llm_telemetry_lookup_conte
     assert "latest_job_status: <strong>succeeded</strong>" in body
     assert "latest_job_stage: <strong>completed</strong>" in body
     assert "latest_job_workflow_state: <strong>completed</strong>" in body
-    assert "telemetry_state_used_by_ui: <strong>" in body
-    assert "final_ui_label_for_llm_review: <strong>" in body
-    assert f"telemetry_lookup_domain: <strong>{domain}</strong>" in body
-    assert f"telemetry_lookup_run_id: <strong>{target_run_id}</strong>" in body
-    assert "telemetry_lookup_filename: <strong>llm_review_stats.json</strong>" in body
-    assert "telemetry_lookup_bucket: <strong>test-bucket</strong>" in body
-    assert f"telemetry_actual_lookup_path: <strong>gs://test-bucket/{domain}/{target_run_id}/llm_review_stats.json</strong>" in body
-    assert "telemetry_read_status: <strong>valid</strong>" in body
-    assert "telemetry_payload_valid_for_ui: <strong>true</strong>" in body
     assert "latest_job_id: <strong>check-languages-1</strong>" in body
     assert "latest_job_used_for_ui: <strong>true</strong>" in body
-    assert "telemetry_state_reason_used_by_ui: <strong>" in body
+    gate_start = body.index("<h2>LLM gate diagnostics</h2>")
+    gate_end = body.index("<h2>LLM review diagnostics</h2>")
+    gate_block = body[gate_start:gate_end]
+    review_debug_start = gate_end
+    review_debug_end = body.index("<h2>State</h2>")
+    review_debug_block = body[review_debug_start:review_debug_end]
+    assert "telemetry_state_used_by_ui: <strong>" not in gate_block
+    assert "telemetry_state_reason_used_by_ui: <strong>" not in gate_block
+    assert "final_ui_label_for_llm_review: <strong>" not in gate_block
+    assert "telemetry_state_used_by_ui: <strong>" in review_debug_block
+    assert "final_ui_label_for_llm_review: <strong>" in review_debug_block
+    assert f"telemetry_lookup_domain: <strong>{domain}</strong>" in review_debug_block
+    assert f"telemetry_lookup_run_id: <strong>{target_run_id}</strong>" in review_debug_block
+    assert "telemetry_lookup_filename: <strong>llm_review_stats.json</strong>" in review_debug_block
+    assert "telemetry_lookup_bucket: <strong>test-bucket</strong>" in review_debug_block
+    assert f"telemetry_actual_lookup_path: <strong>gs://test-bucket/{domain}/{target_run_id}/llm_review_stats.json</strong>" in review_debug_block
+    assert "telemetry_read_status: <strong>valid</strong>" in review_debug_block
+    assert "telemetry_payload_valid_for_ui: <strong>true</strong>" in review_debug_block
+
+
+def test_check_languages_pre_llm_gate_diagnostics_hide_llm_review_debug_rows(api_env):
+    from app.skeleton_server import _check_languages_source_hashes
+
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "fr", "review_context_count": 1, "review_contexts": [{"id": "ctx-1"}]})
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {"source_hashes": _check_languages_source_hashes(domain, "run-en", target_run_id)})
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {
+                "run_id": target_run_id,
+                "created_at": "2026-03-12T00:00:00Z",
+                "jobs": [
+                    {
+                        "job_id": "check-languages-1",
+                        "status": "succeeded",
+                        "type": "check_languages",
+                        "stage": "prepared_for_llm",
+                        "workflow_state": "prepared_for_llm",
+                        "en_run_id": "run-en",
+                        "target_language": "fr",
+                    }
+                ],
+            },
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+
+    status, body, _ = _request(
+        "GET",
+        api_env,
+        f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}&show_gate_diagnostics=1",
+    )
+    assert status == HTTPStatus.OK
+    gate_start = body.index("<h2>LLM gate diagnostics</h2>")
+    gate_end = body.index("<h2>LLM review diagnostics</h2>")
+    gate_block = body[gate_start:gate_end]
+    review_debug_start = gate_end
+    review_debug_end = body.index("<h2>State</h2>")
+    review_debug_block = body[review_debug_start:review_debug_end]
+    assert "final llm_enabled: <strong>true</strong>" in gate_block
+    assert "check_languages_llm_input.json read status: <strong>valid</strong>" in gate_block
+    assert "telemetry_state_used_by_ui: <strong>" not in gate_block
+    assert "LLM review diagnostics will appear after LLM review starts." in review_debug_block
 
 
 def test_llm_review_state_missing_telemetry_in_progress(api_env):
