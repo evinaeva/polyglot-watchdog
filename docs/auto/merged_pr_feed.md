@@ -4125,3 +4125,27 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cab074dbb0832ca6d2a44ac1a22a6a)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #224 — 2026-03-30T17:34:31Z
+
+- Title: [BUG-7] Clarify legacy combined check-languages flow as non-UI path
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/224
+- Author: evinaeva
+- Base branch: main
+- Head branch: eudo52-codex/add-comment-for-legacy-combined-check-languages-flow
+- Merge commit: 9c2017ca726965883ade875fb35f833cf74aa9ca
+- Changed files:
+  - app/skeleton_server.py
+- Description:
+  ### Motivation
+  - Make it explicit in the code that `_run_check_languages_async` is a backward-compatible, legacy combined prepare+LLM wrapper that is not the path used by the UI handler and is intentionally kept for non-UI/legacy/test utility purposes.
+  
+  ### Description
+  - Add a short explanatory comment block immediately above `def _run_check_languages_async(...)` in `app/skeleton_server.py` stating that it is a legacy combined prepare+LLM flow, that the UI currently invokes `_prepare_check_languages_async` and `_run_check_languages_llm_async` separately, and that the wrapper is retained intentionally for non-UI/legacy/test utility usage, while leaving the function implementation unchanged and verifying it is referenced by tests.
+  
+  ### Testing
+  - Attempted targeted test runs with `pytest -q tests/test_check_languages_page.py -k run_check_languages_async` (and with `PYTHONPATH=.`) and both failed to collect/run in this environment: the first run failed with `ModuleNotFoundError: No module named 'app'` due to import path setup, and the second run failed during collection due to a missing dependency (`ModuleNotFoundError: No module named 'jsonschema'`).
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cab2359c8c832c82a133025a8ceacc)
+- Notes: Auto-generated from merged PR metadata.
