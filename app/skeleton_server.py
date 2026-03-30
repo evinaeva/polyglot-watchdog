@@ -1028,8 +1028,18 @@ def _prepare_check_languages_async(job_id: str, domain: str, en_run_id: str, tar
         from pipeline.run_phase6 import build_prepared_llm_payload
 
         llm_input_payload = build_prepared_llm_payload(domain, en_run_id, target_run_id)
+        review_contexts = llm_input_payload.get("review_contexts")
+        first_review_context = review_contexts[0] if isinstance(review_contexts, list) and review_contexts else None
+        llm_input_preview_payload = {
+            "target_language": llm_input_payload.get("target_language"),
+            "review_context_count": llm_input_payload.get("review_context_count"),
+            "blocked_pages": llm_input_payload.get("blocked_pages") if isinstance(llm_input_payload.get("blocked_pages"), list) else [],
+            "source_hashes": llm_input_payload.get("source_hashes") if isinstance(llm_input_payload.get("source_hashes"), dict) else {},
+            "sample_review_context": first_review_context,
+        }
         source_hashes = _check_languages_source_hashes(domain, en_run_id, target_run_id)
         llm_input_artifact_uri = write_json_artifact(domain, target_run_id, "check_languages_llm_input.json", llm_input_payload)
+        write_json_artifact(domain, target_run_id, "check_languages_llm_input_preview.json", llm_input_preview_payload)
         write_json_artifact(domain, target_run_id, "check_languages_prepared_payload.json", {
             "en_run_id": en_run_id,
             "target_run_id": target_run_id,

@@ -2013,6 +2013,51 @@ def test_llm_input_artifact_status_returns_preview_summary_only(api_env):
     }
 
 
+def test_llm_input_artifact_status_prefers_preview_artifact_without_reading_full_payload(api_env, monkeypatch):
+    from app.check_languages_service import _check_languages_llm_input_artifact_status
+
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _write(domain, target_run_id, "check_languages_llm_input_preview.json", {
+        "target_language": "fr",
+        "review_context_count": 2,
+        "blocked_pages": [{"page_id": "blocked-1"}],
+        "source_hashes": {"en_collected_items_sha256": "abc"},
+        "sample_review_context": {"id": "ctx-1"},
+    })
+
+    original_read = storage.read_json_artifact
+
+    def _guarded_read(domain_arg: str, run_id_arg: str, filename: str):
+        if filename == "check_languages_llm_input.json":
+            raise AssertionError("full payload should not be read when preview artifact exists")
+        return original_read(domain_arg, run_id_arg, filename)
+
+    monkeypatch.setattr("app.check_languages_service.storage.read_json_artifact", _guarded_read)
+    result = _check_languages_llm_input_artifact_status(domain, target_run_id)
+
+    assert result["status"] == "valid"
+    assert result["payload"]["review_contexts"] == [{"id": "ctx-1"}]
+
+
+def test_llm_input_artifact_status_falls_back_to_full_payload_for_legacy_runs(api_env):
+    from app.check_languages_service import _check_languages_llm_input_artifact_status
+
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _write(domain, target_run_id, "check_languages_llm_input.json", {
+        "target_language": "fr",
+        "review_context_count": 1,
+        "blocked_pages": [],
+        "source_hashes": {"hash": "abc"},
+        "review_contexts": [{"id": "legacy-ctx"}, {"id": "legacy-ctx-2"}],
+    })
+
+    result = _check_languages_llm_input_artifact_status(domain, target_run_id)
+    assert result["status"] == "valid"
+    assert result["payload"]["review_contexts"] == [{"id": "legacy-ctx"}]
+
+
 def test_payload_preview_and_replay_failure_are_visible(api_env):
     domain = SUPPORTED_MAIN_DOMAIN
     target_run_id = "run-en-check-fr"
@@ -2130,6 +2175,34 @@ def test_payload_preview_renders_from_summary_only_diagnostics_payload(api_env, 
     assert "&quot;target_language&quot;: &quot;fr&quot;" in body
     assert "&quot;blocked_pages_count&quot;: 1" in body
     assert "&quot;sample_review_context&quot;: {" in body
+
+
+def test_payload_preview_prefers_lightweight_preview_artifact_when_both_artifacts_exist(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "check_languages_llm_input_preview.json", {
+        "target_language": "fr",
+        "review_context_count": 1,
+        "blocked_pages": [],
+        "source_hashes": {"hash": "preview-hash"},
+        "sample_review_context": {"id": "preview-ctx"},
+    })
+    _write(domain, target_run_id, "check_languages_llm_input.json", {
+        "target_language": "fr",
+        "review_context_count": 100,
+        "blocked_pages": [{"page_id": "heavy"}],
+        "source_hashes": {"hash": "heavy-hash"},
+        "review_contexts": [{"id": "heavy-ctx"}],
+    })
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert "&quot;preview-hash&quot;" in body
+    assert "&quot;preview-ctx&quot;" in body
+    assert "&quot;heavy-hash&quot;" not in body
 
 
 def test_payload_preview_reports_llm_input_read_error_status(api_env, monkeypatch):
@@ -2989,10 +3062,14 @@ def test_prepare_payload_uses_written_gs_uri_for_llm_input_artifact(monkeypatch)
     target_language = "fr"
     llm_input_uri = f"gs://test-bucket/{domain}/{target_run_id}/check_languages_llm_input.json"
     prepared_payload_record = {}
+    preview_payload_record = {}
 
     def _fake_write_json_artifact(_domain, _run_id, filename, payload):
         if filename == "check_languages_llm_input.json":
             return llm_input_uri
+        if filename == "check_languages_llm_input_preview.json":
+            preview_payload_record["payload"] = payload
+            return f"gs://test-bucket/{domain}/{target_run_id}/check_languages_llm_input_preview.json"
         if filename == "check_languages_prepared_payload.json":
             prepared_payload_record["payload"] = payload
             return f"gs://test-bucket/{domain}/{target_run_id}/check_languages_prepared_payload.json"
@@ -3004,7 +3081,16 @@ def test_prepare_payload_uses_written_gs_uri_for_llm_input_artifact(monkeypatch)
     monkeypatch.setattr("pipeline.run_phase3.run", lambda *args, **kwargs: None)
     monkeypatch.setattr("app.skeleton_server._require_artifact_exists", lambda *args, **kwargs: None)
     monkeypatch.setattr("app.skeleton_server._check_languages_payload_status", lambda *args, **kwargs: {"ready": True, "files": []})
-    monkeypatch.setattr("pipeline.run_phase6.build_prepared_llm_payload", lambda *args, **kwargs: {"review_context_count": 2})
+    monkeypatch.setattr(
+        "pipeline.run_phase6.build_prepared_llm_payload",
+        lambda *args, **kwargs: {
+            "target_language": "fr",
+            "review_context_count": 2,
+            "blocked_pages": [{"page_id": "blocked-1"}],
+            "source_hashes": {"hash": "abc"},
+            "review_contexts": [{"id": "ctx-1"}, {"id": "ctx-2"}],
+        },
+    )
     monkeypatch.setattr("app.skeleton_server._check_languages_source_hashes", lambda *args, **kwargs: {})
     monkeypatch.setattr("app.skeleton_server._upsert_job_status", lambda *args, **kwargs: None)
     monkeypatch.setattr("pipeline.storage.write_json_artifact", _fake_write_json_artifact)
@@ -3013,6 +3099,13 @@ def test_prepare_payload_uses_written_gs_uri_for_llm_input_artifact(monkeypatch)
 
     _prepare_check_languages_async("job-prep", domain, en_run_id, target_language, target_run_id, "https://fr.bongacams.com/")
     assert prepared_payload_record["payload"]["llm_input_artifact"] == llm_input_uri
+    assert preview_payload_record["payload"] == {
+        "target_language": "fr",
+        "review_context_count": 2,
+        "blocked_pages": [{"page_id": "blocked-1"}],
+        "source_hashes": {"hash": "abc"},
+        "sample_review_context": {"id": "ctx-1"},
+    }
 
 
 def test_run_llm_is_blocked_when_prepared_payload_is_stale(api_env):

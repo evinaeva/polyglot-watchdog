@@ -521,6 +521,8 @@ def _check_languages_payload_status(domain: str, run_id: str) -> dict:
 def _is_missing_artifact_error(exc: Exception) -> bool:
     if isinstance(exc, FileNotFoundError):
         return True
+    if isinstance(exc, KeyError):
+        return True
     class_name = exc.__class__.__name__.strip().lower()
     if class_name == "notfound":
         return True
@@ -529,27 +531,41 @@ def _is_missing_artifact_error(exc: Exception) -> bool:
 
 
 def _check_languages_llm_input_artifact_status(domain: str, run_id: str) -> dict:
+    preview_filename = "check_languages_llm_input_preview.json"
     try:
-        payload = storage.read_json_artifact(domain, run_id, "check_languages_llm_input.json")
+        preview_payload = storage.read_json_artifact(domain, run_id, preview_filename)
     except json.JSONDecodeError as exc:
-        print(f"[storage] read malformed_json domain={domain} run_id={run_id} file=check_languages_llm_input.json: {exc}", file=sys.stderr)
+        print(f"[storage] read malformed_json domain={domain} run_id={run_id} file={preview_filename}: {exc}", file=sys.stderr)
         return {"status": "malformed_json", "exists": True, "payload": None, "error": str(exc)}
     except Exception as exc:
-        status = "missing" if _is_missing_artifact_error(exc) else "read_error"
-        print(f"[storage] read {status} domain={domain} run_id={run_id} file=check_languages_llm_input.json: {exc}", file=sys.stderr)
-        return {"status": status, "exists": status != "missing", "payload": None, "error": str(exc)}
-    if not isinstance(payload, dict):
+        preview_status = "missing" if _is_missing_artifact_error(exc) else "read_error"
+        print(f"[storage] read {preview_status} domain={domain} run_id={run_id} file={preview_filename}: {exc}", file=sys.stderr)
+        if preview_status != "missing":
+            return {"status": preview_status, "exists": True, "payload": None, "error": str(exc)}
+        # Backward compatibility for older runs that do not have the lightweight preview artifact yet.
+        try:
+            preview_payload = storage.read_json_artifact(domain, run_id, "check_languages_llm_input.json")
+        except json.JSONDecodeError as fallback_exc:
+            print(f"[storage] read malformed_json domain={domain} run_id={run_id} file=check_languages_llm_input.json: {fallback_exc}", file=sys.stderr)
+            return {"status": "malformed_json", "exists": True, "payload": None, "error": str(fallback_exc)}
+        except Exception as fallback_exc:
+            status = "missing" if _is_missing_artifact_error(fallback_exc) else "read_error"
+            print(f"[storage] read {status} domain={domain} run_id={run_id} file=check_languages_llm_input.json: {fallback_exc}", file=sys.stderr)
+            return {"status": status, "exists": status != "missing", "payload": None, "error": str(fallback_exc)}
+    if not isinstance(preview_payload, dict):
         return {"status": "invalid_payload", "exists": True, "payload": None, "error": "expected object"}
-    review_contexts = payload.get("review_contexts")
-    first_review_context = review_contexts[0] if isinstance(review_contexts, list) and review_contexts else None
-    preview_payload = {
-        "target_language": payload.get("target_language"),
-        "review_context_count": payload.get("review_context_count"),
-        "blocked_pages": payload.get("blocked_pages") if isinstance(payload.get("blocked_pages"), list) else [],
-        "source_hashes": payload.get("source_hashes") if isinstance(payload.get("source_hashes"), dict) else {},
-        "review_contexts": [first_review_context] if first_review_context is not None else [],
+    sample_review_context = preview_payload.get("sample_review_context")
+    review_contexts = preview_payload.get("review_contexts")
+    if sample_review_context is None and isinstance(review_contexts, list) and review_contexts:
+        sample_review_context = review_contexts[0]
+    normalized_preview_payload = {
+        "target_language": preview_payload.get("target_language"),
+        "review_context_count": preview_payload.get("review_context_count"),
+        "blocked_pages": preview_payload.get("blocked_pages") if isinstance(preview_payload.get("blocked_pages"), list) else [],
+        "source_hashes": preview_payload.get("source_hashes") if isinstance(preview_payload.get("source_hashes"), dict) else {},
+        "review_contexts": [sample_review_context] if sample_review_context is not None else [],
     }
-    return {"status": "valid", "exists": True, "payload": preview_payload, "error": ""}
+    return {"status": "valid", "exists": True, "payload": normalized_preview_payload, "error": ""}
 
 
 def _check_languages_llm_review_telemetry_status(domain: str, run_id: str) -> dict:
