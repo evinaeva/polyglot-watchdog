@@ -4064,3 +4064,33 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca8974cd68832c938a67f0452c8d38)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #222 — 2026-03-30T17:18:34Z
+
+- Title: [BUG-4][BUG-5] Reduce duplicate source-hash reads and stabilize LLM input status derivation
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/222
+- Author: evinaeva
+- Base branch: main
+- Head branch: 5hl2r8-codex/fix-duplicate-source-hash-reads-and-llm-input-status
+- Merge commit: 403a183719c22e4363cc5568d2c9d7e3a79d48c4
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  - Avoid repeated expensive reads of source-hash artifacts during a single `/check-languages` page render by caching only when call-site arguments are identical. 
+  - Ensure the LLM input status and page-state are derived deterministically from the final settled render state rather than from a partially-updated intermediate state.
+  
+  ### Description
+  - Add a render-local cache `source_hashes_by_args` and helper `_source_hashes_for_render(run_domain, en_run_id, run_id)` that memoizes `_check_languages_source_hashes(...)` keyed by the exact `(run_domain, en_run_id, run_id)` tuple and use it only at the audited call sites. 
+  - Replace direct `_check_languages_source_hashes(...)` calls at the affected locations with `_source_hashes_for_render(...)` to avoid duplicate reads while preserving conservative semantics (no cross-run reuse). 
+  - Remove the earlier intermediate call to `_derive_llm_input_status(...)` and keep a single derivation after fallback/rehydration and other state adjustments so final page state and LLM input status are computed from the settled state. 
+  - Add focused regression tests in `tests/test_check_languages_page.py` that cover caching behavior, deterministic fallback recomputation, and preserved prepared-for-LLM happy-path behavior.
+  
+  ### Testing
+  - Ran the targeted subset of tests with `PYTHONPATH=. pytest -q tests/test_check_languages_page.py -k "caches_source_hash_reads or fallback_recompute_derives_final_llm_input_status_from_settled_state or prepared_for_llm_happy_path_still_shows_valid_input_status or fallback_success_recomputes_page_state_and_llm_input_status"`. 
+  - The four exercised tests passed: `test_check_languages_render_caches_source_hash_reads_for_identical_arguments`, `test_fallback_recompute_derives_final_llm_input_status_from_settled_state`, `test_prepared_for_llm_happy_path_still_shows_valid_input_status`, and `test_fallback_success_recomputes_page_state_and_llm_input_status` (4 passed, 120 deselected).
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca9034585c832c8ef103808ee92647)
+- Notes: Auto-generated from merged PR metadata.
