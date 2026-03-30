@@ -610,7 +610,7 @@ def test_workflow_existing_runs_default_selection_prefers_newest_and_handles_emp
     assert out["unsortedOptions"] == ["run-z-newest", "run-m", "run-a"]
 
 
-def test_workflow_existing_runs_filters_non_first_runs_and_falls_back_from_ineligible_query_selection():
+def test_workflow_existing_runs_preserves_explicit_non_first_query_selection_without_fallback_rewrite():
     script = textwrap.dedent(
         r"""
         const fs = require('fs');
@@ -697,19 +697,21 @@ def test_workflow_existing_runs_filters_non_first_runs_and_falls_back_from_ineli
           .readFileSync('web/static/workflow.js', 'utf8')
           .replace("initWorkflow().catch((err) => setStatus(err.message, 'error'));", '');
         vm.runInContext(workflowSource, sandbox);
+        vm.runInContext("activeRunId = 'run-check-languages-latest';", sandbox);
 
         (async () => {
           await sandbox.loadExistingRuns();
           const optionValues = els.wfExistingRuns.options.map((opt) => opt.value);
           const selected = els.wfExistingRuns.value;
-          console.log(JSON.stringify({ optionValues, selected, replaced }));
+          console.log(JSON.stringify({ optionValues, selected, replaced, status: els.wfRunsStatus.textContent }));
         })().catch((err) => { console.error(err); process.exit(1); });
         """
     )
     out = _run_node_json(script)
     assert out["optionValues"] == ["run-first-new", "run-first-old"]
-    assert out["selected"] == "run-first-new"
-    assert any("run_id=run-first-new" in url for url in out["replaced"])
+    assert out["selected"] == ""
+    assert out["replaced"] == []
+    assert out["status"] == "Current run is not in the First run list. Keeping current run context."
 
 
 def test_workflow_existing_runs_option_labels_use_human_first_run_format_only():
