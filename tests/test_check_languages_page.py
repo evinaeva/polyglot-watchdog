@@ -1652,21 +1652,14 @@ def test_prepare_action_without_target_run_id_reuses_existing_run_id(api_env, mo
         ]
     })
 
-    started = []
+    prepare_calls = []
+    prepare_called = threading.Event()
 
-    class _FakeThread:
-        def __init__(self, target=None, args=(), daemon=None):
-            self.target = target
-            self.args = args
-            self.daemon = daemon
+    def _fake_prepare(*args, **kwargs):
+        prepare_calls.append(args)
+        prepare_called.set()
 
-        def start(self):
-            started.append(self.args)
-            if self.target is not None:
-                self.target(*self.args)
-
-    monkeypatch.setattr("app.skeleton_server.threading.Thread", _FakeThread)
-    monkeypatch.setattr("app.skeleton_server._prepare_check_languages_async", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.skeleton_server._prepare_check_languages_async", _fake_prepare)
 
     form = _query({
         "selected_domain": domain,
@@ -1678,8 +1671,9 @@ def test_prepare_action_without_target_run_id_reuses_existing_run_id(api_env, mo
     assert status_post == HTTPStatus.FOUND
     assert "target_run_id=run-en-check-fr" in location
     assert "Language+check+payload+preparation+started." in location
-    assert len(started) == 1
-    assert started[0][4] == "run-en-check-fr"
+    assert prepare_called.wait(1), "prepare worker was not called"
+    assert len(prepare_calls) == 1
+    assert prepare_calls[0][4] == "run-en-check-fr"
 
 
 def test_prepare_action_uses_deterministic_existing_run_selection(api_env, monkeypatch):
@@ -1689,18 +1683,14 @@ def test_prepare_action_uses_deterministic_existing_run_selection(api_env, monke
     for run_id in ["run-en-check-fr", "run-en-check-fr-2", "run-en-check-fr-3"]:
         _seed_phase6_prereqs(domain, run_id, "fr")
 
-    started = []
+    prepare_calls = []
+    prepare_called = threading.Event()
 
-    class _FakeThread:
-        def __init__(self, target=None, args=(), daemon=None):
-            self.target = target
-            self.args = args
-            self.daemon = daemon
+    def _fake_prepare(*args, **kwargs):
+        prepare_calls.append(args)
+        prepare_called.set()
 
-        def start(self):
-            started.append(self.args)
-
-    monkeypatch.setattr("app.skeleton_server.threading.Thread", _FakeThread)
+    monkeypatch.setattr("app.skeleton_server._prepare_check_languages_async", _fake_prepare)
 
     _write(domain, "manual", "capture_runs.json", {
         "runs": [
@@ -1726,7 +1716,9 @@ def test_prepare_action_uses_deterministic_existing_run_selection(api_env, monke
     status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
     assert status_post == HTTPStatus.FOUND
     assert "target_run_id=run-en-check-fr" in location
-    assert started[-1][4] == "run-en-check-fr"
+    assert prepare_called.wait(1), "prepare worker was not called for first request"
+    assert prepare_calls[-1][4] == "run-en-check-fr"
+    prepare_called.clear()
 
     _write(domain, "manual", "capture_runs.json", {
         "runs": [
@@ -1751,7 +1743,8 @@ def test_prepare_action_uses_deterministic_existing_run_selection(api_env, monke
     status_post_2, _, location_2 = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
     assert status_post_2 == HTTPStatus.FOUND
     assert "target_run_id=run-en-check-fr-2" in location_2
-    assert started[-1][4] == "run-en-check-fr-2"
+    assert prepare_called.wait(1), "prepare worker was not called for second request"
+    assert prepare_calls[-1][4] == "run-en-check-fr-2"
 
 
 def test_prepare_action_is_blocked_only_for_active_llm_review(api_env, monkeypatch):
@@ -1780,8 +1773,12 @@ def test_prepare_action_is_blocked_only_for_active_llm_review(api_env, monkeypat
             {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
         ]
     })
-    monkeypatch.setattr("app.skeleton_server.threading.Thread", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("thread should not start")))
-    monkeypatch.setattr("app.skeleton_server._prepare_check_languages_async", lambda *args, **kwargs: None)
+    prepare_called = threading.Event()
+
+    def _fake_prepare(*args, **kwargs):
+        prepare_called.set()
+
+    monkeypatch.setattr("app.skeleton_server._prepare_check_languages_async", _fake_prepare)
 
     form = _query({
         "selected_domain": domain,
@@ -1791,7 +1788,8 @@ def test_prepare_action_is_blocked_only_for_active_llm_review(api_env, monkeypat
     })
     status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
     assert status_post == HTTPStatus.FOUND
-    assert "LLM+review+is+already+in+progress+for+run+run-en-check-fr." in location
+    assert "Language+check+is+already+in+progress+for+this+selection." in location
+    assert not prepare_called.wait(0.2), "prepare worker unexpectedly started"
 
 
 def test_prepare_action_allows_historical_llm_state_and_reuses_existing_run(api_env, monkeypatch):
@@ -1821,18 +1819,14 @@ def test_prepare_action_allows_historical_llm_state_and_reuses_existing_run(api_
         ]
     })
 
-    started = []
+    prepare_calls = []
+    prepare_called = threading.Event()
 
-    class _FakeThread:
-        def __init__(self, target=None, args=(), daemon=None):
-            self.target = target
-            self.args = args
-            self.daemon = daemon
+    def _fake_prepare(*args, **kwargs):
+        prepare_calls.append(args)
+        prepare_called.set()
 
-        def start(self):
-            started.append(self.args)
-
-    monkeypatch.setattr("app.skeleton_server.threading.Thread", _FakeThread)
+    monkeypatch.setattr("app.skeleton_server._prepare_check_languages_async", _fake_prepare)
 
     form = _query({
         "selected_domain": domain,
@@ -1844,8 +1838,9 @@ def test_prepare_action_allows_historical_llm_state_and_reuses_existing_run(api_
     assert status_post == HTTPStatus.FOUND
     assert "Language+check+payload+preparation+started." in location
     assert "target_run_id=run-en-check-fr" in location
-    assert len(started) == 1
-    assert started[0][4] == "run-en-check-fr"
+    assert prepare_called.wait(1), "prepare worker was not called"
+    assert len(prepare_calls) == 1
+    assert prepare_calls[0][4] == "run-en-check-fr"
 
 
 def test_run_llm_action_fails_preflight_when_phase6_provider_missing(api_env, monkeypatch):
@@ -1857,18 +1852,14 @@ def test_run_llm_action_fails_preflight_when_phase6_provider_missing(api_env, mo
     _write(domain, target_run_id, "check_languages_prepared_payload.json", {"source_hashes": {}})
     monkeypatch.delenv("PHASE6_REVIEW_PROVIDER", raising=False)
 
-    started_threads = []
+    llm_calls = []
+    llm_called = threading.Event()
 
-    class _FakeThread:
-        def __init__(self, target=None, args=(), daemon=None):
-            self.target = target
-            self.args = args
-            self.daemon = daemon
+    def _fake_llm_worker(*args, **kwargs):
+        llm_calls.append(args)
+        llm_called.set()
 
-        def start(self):
-            started_threads.append((self.target, self.args))
-
-    monkeypatch.setattr("app.skeleton_server.threading.Thread", _FakeThread)
+    monkeypatch.setattr("app.skeleton_server._run_check_languages_llm_async", _fake_llm_worker)
 
     form = _query({
         "selected_domain": domain,
@@ -1880,7 +1871,8 @@ def test_run_llm_action_fails_preflight_when_phase6_provider_missing(api_env, mo
     status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
     assert status_post == HTTPStatus.FOUND
     assert "LLM+review+cannot+start%3A+PHASE6_REVIEW_PROVIDER+is+not+configured." in location
-    assert started_threads == []
+    assert not llm_called.wait(0.2), "llm worker unexpectedly started"
+    assert llm_calls == []
 
     jobs = storage.read_json_artifact(domain, "manual", "capture_runs.json").get("runs", [])
     target_run = next((row for row in jobs if str(row.get("run_id", "")) == target_run_id), {})
@@ -1898,18 +1890,14 @@ def test_run_llm_action_starts_llm_worker_when_phase6_provider_present(api_env, 
     _write(domain, target_run_id, "check_languages_prepared_payload.json", {"source_hashes": {}})
     monkeypatch.setenv("PHASE6_REVIEW_PROVIDER", "test-heuristic")
 
-    started_threads = []
+    llm_calls = []
+    llm_called = threading.Event()
 
-    class _FakeThread:
-        def __init__(self, target=None, args=(), daemon=None):
-            self.target = target
-            self.args = args
-            self.daemon = daemon
+    def _fake_llm_worker(*args, **kwargs):
+        llm_calls.append(args)
+        llm_called.set()
 
-        def start(self):
-            started_threads.append((self.target, self.args))
-
-    monkeypatch.setattr("app.skeleton_server.threading.Thread", _FakeThread)
+    monkeypatch.setattr("app.skeleton_server._run_check_languages_llm_async", _fake_llm_worker)
 
     form = _query({
         "selected_domain": domain,
@@ -1921,7 +1909,8 @@ def test_run_llm_action_starts_llm_worker_when_phase6_provider_present(api_env, 
     status_post, _, location = _request("POST", api_env, "/check-languages", form, {"Content-Type": "application/x-www-form-urlencoded"})
     assert status_post == HTTPStatus.FOUND
     assert "LLM+review+started+from+prepared+payload." in location
-    assert len(started_threads) == 1
+    assert llm_called.wait(1), "llm worker was not called"
+    assert len(llm_calls) == 1
 
 
 def test_run_llm_preflight_error_is_immediately_visible_and_not_telemetry_missing(api_env, monkeypatch):
@@ -1953,7 +1942,12 @@ def test_run_llm_preflight_error_is_immediately_visible_and_not_telemetry_missin
         ]
     })
     monkeypatch.delenv("PHASE6_REVIEW_PROVIDER", raising=False)
-    monkeypatch.setattr("app.skeleton_server.threading.Thread", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("thread should not start")))
+    llm_called = threading.Event()
+
+    def _fake_llm_worker(*args, **kwargs):
+        llm_called.set()
+
+    monkeypatch.setattr("app.skeleton_server._run_check_languages_llm_async", _fake_llm_worker)
 
     form = _query({
         "selected_domain": domain,
@@ -1969,6 +1963,7 @@ def test_run_llm_preflight_error_is_immediately_visible_and_not_telemetry_missin
     assert "LLM review cannot start: PHASE6_REVIEW_PROVIDER is not configured." in body
     assert "State: <strong>LLM stage not started</strong>" in body
     assert "State: <strong>LLM telemetry missing</strong>" not in body
+    assert not llm_called.wait(0.2), "llm worker unexpectedly started"
 
 
 def test_run_llm_button_disabled_without_prepared_payload(api_env):
