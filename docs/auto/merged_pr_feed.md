@@ -3749,3 +3749,33 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca470bab00832c923dd1a461bda99e)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #212 — 2026-03-30T09:55:27Z
+
+- Title: Restyle standalone action links as UI buttons
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/212
+- Author: evinaeva
+- Base branch: main
+- Head branch: y59zt4-codex/apply-ui-patch-for-action-links-styling
+- Merge commit: ba61e1b578c31c79ddc532a4eb1130ea5834dc32
+- Changed files:
+  - web/templates/check-languages.html
+  - web/templates/issues/detail.html
+  - web/templates/pulls.html
+  - web/templates/runs.html
+- Description:
+  ### Motivation
+  - Replace standalone blue, link-styled action anchors with the project's standard button treatment so action controls have consistent visual affordance while preserving all behavior and destinations.
+  
+  ### Description
+  - Converted selected standalone action/navigation anchors to use the existing button style by adding `class="ui-action-button"` and `data-button-fx="on"` in templates. 
+  - Edited templates: `web/templates/check-languages.html`, `web/templates/runs.html`, `web/templates/issues/detail.html`, and `web/templates/pulls.html` to restyle the action links without changing `href`, `id`, `aria-*` attributes, labels, routes, or any JS/business logic.
+  - Kept inline/documentation links and header/navigation (top nav and language toggle) as plain anchors per the scope rules.
+  
+  ### Testing
+  - Ran `pytest -q tests/test_operator_ui_runtime_regressions.py` and it passed: `16 passed`.
+  - No automated tests failed and the change is limited to template-class additions only, so no API/route/logic tests were required.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca47c0ef9c832cbf06c3af02a04f90)
+- Notes: Auto-generated from merged PR metadata.
