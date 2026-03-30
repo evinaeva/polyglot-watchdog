@@ -11,38 +11,39 @@
 <body>
   {{header}}
   <main>
-    <h1>CHOOSE NEEDED</h1>
-    <p>Review captured items for this workflow run, then keep or ignore each item.</p>
-    <p>
-      <a id="pullsBackToRunHub" href="/workflow">Previous step</a> |
-      <a id="continueCheckLanguages" href="#">Next step: Check Languages</a>
-    </p>
-    <p id="pullsWorkflowContextSummary" class="muted"></p>
+    <div class="top-unified-block">
+      <h1 class="page-title">CHOOSE NEEDED<span class="page-title-subtitle">Review captured items for this workflow run, then keep or ignore each item.</span></h1>
+      <div class="controls step-actions">
+        <a id="pullsBackToRunHub" class="ui-action-button" data-button-fx="on" href="/workflow">Previous step</a>
+        <a id="continueCheckLanguages" class="ui-action-button" data-button-fx="on" href="#">Next step: Check Languages</a>
+      </div>
+      <p id="pullsWorkflowContextSummary" class="muted"></p>
 
-    <div class="controls">
-      <label for="pullsUrlSearch">Search by URL</label>
-      <input id="pullsUrlSearch" type="search" placeholder="Type part of a URL" />
-      <label for="pullsElementTypeFilter">Element Type</label>
-      <select id="pullsElementTypeFilter">
-        <option value="">All types</option>
-      </select>
+      <div class="controls">
+        <label for="pullsUrlSearch">Search by URL</label>
+        <input id="pullsUrlSearch" type="search" placeholder="Type part of a URL" />
+        <label for="pullsElementTypeFilter">Element Type</label>
+        <select id="pullsElementTypeFilter">
+          <option value="">All types</option>
+        </select>
+      </div>
+
+      <section class="controls" aria-label="Element whitelist">
+        <label for="pullsWhitelistInput">Element signature whitelist (domain)</label>
+        <input id="pullsWhitelistInput" type="text" placeholder="Use row-level Add to whitelist" disabled />
+        <button id="pullsWhitelistAdd" type="button">Add signature</button>
+        <span id="pullsWhitelistStatus" class="muted"></span>
+        <div id="pullsWhitelistChips" class="inline-help">No whitelisted element signatures.</div>
+      </section>
+
+      <details>
+        <summary>Advanced links and metadata</summary>
+        <p>
+          <a id="pullsOpenContexts" href="#">Open Contexts</a> |
+          <a id="pullsOpenIssues" href="#">Open Issues</a>
+        </p>
+      </details>
     </div>
-
-    <section class="controls" aria-label="Element whitelist">
-      <label for="pullsWhitelistInput">Element signature whitelist (domain)</label>
-      <input id="pullsWhitelistInput" type="text" placeholder="Use row-level Add to whitelist" disabled />
-      <button id="pullsWhitelistAdd" type="button">Add signature</button>
-      <span id="pullsWhitelistStatus" class="muted"></span>
-      <div id="pullsWhitelistChips" class="inline-help">No whitelisted element signatures.</div>
-    </section>
-
-    <details>
-      <summary>Advanced links and metadata</summary>
-      <p>
-        <a id="pullsOpenContexts" href="#">Open Contexts</a> |
-        <a id="pullsOpenIssues" href="#">Open Issues</a>
-      </p>
-    </details>
 
     <div id="pullsStatus"></div>
     <p id="pullsLanguageSummary" class="hidden"></p>
@@ -52,9 +53,9 @@
     </table>
     <button id="pullsPrepareCapturedData" type="button">Prepare captured data</button>
     <p id="pullsPrepareCapturedDataStatus" class="muted"></p>
-    <p>
-      <a id="continueCheckLanguagesBottom" href="#">Next step: Check Languages</a>
-    </p>
+    <div class="controls step-actions">
+      <a id="continueCheckLanguagesBottom" class="ui-action-button" data-button-fx="on" href="#">Next step: Check Languages</a>
+    </div>
   </main>
   <div id="pullsPreviewModal" class="pulls-preview-modal hidden" role="dialog" aria-modal="true" aria-labelledby="pullsPreviewTitle">
     <div id="pullsPreviewOverlay" class="pulls-preview-overlay"></div>

@@ -11,20 +11,21 @@
 <body>
   {{header}}
   <main>
-    <h1>Run Hub</h1>
-    <p>Select a domain and run, then open operator views for that run.</p>
-    <div class="controls">
-      <label for="runDomainSelect">Domain</label>
-      <select id="runDomainSelect"></select>
-      <button id="refreshRuns" type="button">Refresh runs</button>
-    </div>
-    <div class="controls">
-      <label for="selectedRunId">Selected run</label>
-      <input id="selectedRunId" readonly placeholder="Pick a run from the table" />
-      <a id="selectedOpenContexts" href="#">Open Contexts</a>
-      <a id="selectedOpenPulls" href="#">Open Items/Pulls</a>
-      <a id="selectedOpenIssues" href="#">Open Issues</a>
-      <a id="selectedExportCsv" href="#">Export Issues CSV</a>
+    <div class="top-unified-block">
+      <h1 class="page-title">Run Hub<span class="page-title-subtitle">Select a domain and run, then open operator views for that run.</span></h1>
+      <div class="controls">
+        <label for="runDomainSelect">Domain</label>
+        <select id="runDomainSelect"></select>
+        <button id="refreshRuns" type="button">Refresh runs</button>
+      </div>
+      <div class="controls">
+        <label for="selectedRunId">Selected run</label>
+        <input id="selectedRunId" readonly placeholder="Pick a run from the table" />
+        <a id="selectedOpenContexts" href="#">Open Contexts</a>
+        <a id="selectedOpenPulls" href="#">Open Items/Pulls</a>
+        <a id="selectedOpenIssues" href="#">Open Issues</a>
+        <a id="selectedExportCsv" href="#">Export Issues CSV</a>
+      </div>
     </div>
     <div id="runHubError" class="hidden" style="color:#b00020; margin:8px 0;"></div>
     <table id="runsTable" class="hidden">

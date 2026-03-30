@@ -6,16 +6,17 @@
   <title>Polyglot Watchdog - Contexts</title>
   <link rel="stylesheet" href="/static/styles.css" />
   <link rel="stylesheet" href="/static/button-fx.css" />
+  <link rel="stylesheet" href="/static/theme-graph.css" />
 </head>
 <body>
   {{header}}
   <main>
     <h1>Capture Contexts</h1>
-    <p>
-      <a id="backToRunHub" href="/workflow">Back to Workflow Hub</a> |
-      <a id="openIssuesLink" href="#">Open Issues for this Run</a> |
-      <a id="openPullsLink" href="#">Open Items/Pulls for this Run</a>
-    </p>
+    <div class="controls step-actions">
+      <a id="backToRunHub" class="ui-action-button" data-button-fx="on" href="/workflow">Back to Workflow Hub</a>
+      <a id="openIssuesLink" class="ui-action-button" data-button-fx="on" href="#">Open Issues for this Run</a>
+      <a id="openPullsLink" class="ui-action-button" data-button-fx="on" href="#">Open Items/Pulls for this Run</a>
+    </div>
     <div id="contextsStatus"></div>
     <table id="contextsTable" class="hidden">
       <thead><tr><th>URL</th><th>Language</th><th>State</th><th>Viewport</th><th>User tier</th><th>Elements</th><th>Screenshot</th><th>Review</th></tr></thead>

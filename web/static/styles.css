@@ -1,4 +1,30 @@
 body { font-family: Arial, sans-serif; margin: 0; background: #f8f9fb; }
+
+:root {
+  --app-shell-max-width: 1200px;
+  --app-shell-gutter: 18px;
+  --page-block-gap: 15px;
+}
+
+nav,
+main {
+  box-sizing: border-box;
+  width: min(var(--app-shell-max-width), calc(100% - (var(--app-shell-gutter) * 2)));
+  margin-left: auto;
+  margin-right: auto;
+}
+
+main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--page-block-gap);
+  margin-top: var(--page-block-gap);
+}
+
+main > * {
+  margin: 0;
+}
+
 nav { background: #1e293b; padding: 12px; display: flex; justify-content: space-between; align-items: center; }
 nav a { color: #fff; margin-right: 12px; text-decoration: none; }
 nav .nav-links { color: #fff; }
@@ -14,7 +40,6 @@ nav button {
   cursor: pointer;
 }
 nav button:hover { background: #475569; }
-main { padding: 18px; }
 .controls, .filters { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .urls-actions { margin-top: 8px; }
 .page-subtitle {
@@ -190,11 +215,11 @@ input[data-field="URL"] { width: 100%; box-sizing: border-box; }
 }
 
 .about-layout {
-  max-width: 960px;
+  max-width: unset;
 }
 
 .about-layout section {
-  margin-bottom: 18px;
+  margin-bottom: 15px;
 }
 
 .about-layout h2,
@@ -239,7 +264,7 @@ input[data-field="URL"] { width: 100%; box-sizing: border-box; }
   white-space: nowrap;
   margin-left: auto;
 }
-.urls-actions .ui-action-button {
+.ui-action-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -372,4 +397,27 @@ pre { background: #0f172a; color: #e2e8f0; padding: 10px; border-radius: 4px; ov
 
 @media (max-width: 900px) {
   .pulls-preview-grid { grid-template-columns: 1fr; }
+}
+
+
+.ui-action-button[aria-disabled="true"] {
+  pointer-events: none;
+  opacity: 0.55;
+}
+
+.step-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.top-unified-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--page-block-gap);
+}
+
+.top-unified-block > * {
+  margin: 0;
 }
