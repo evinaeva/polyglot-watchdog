@@ -4033,3 +4033,34 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca8692b08c832c965ae5e851b8377e)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #221 — 2026-03-30T15:01:04Z
+
+- Title: Reuse existing target-run for language checks and block duplicate LLM reviews
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/221
+- Author: evinaeva
+- Base branch: main
+- Head branch: 7y9x04-codex/fix-accidental-re-prepare-bug-in-llm-stage
+- Merge commit: 564d682f8dcdb91374d02c716363c0cc1cd520dc
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+- Description:
+  ### Motivation
+  - Reuse existing target runs when preparing language-check payloads to avoid creating duplicate runs and to pick the most appropriate historical run for a given `en_run_id` and `target_language`.
+  - Prevent starting a new prepare/LLM-review when an LLM review is already actively running for the selected target run.
+  - Make candidate selection deterministic and robust to missing or invalid `created_at` timestamps.
+  
+  ### Description
+  - Collect matching candidate runs from `runs` into `selected_run_candidates` by filtering jobs where `en_run_id` and normalized `target_language` match the requested selection.
+  - When no `target_run_id` is provided, reuse the canonical run id `"<en_run_id>-check-<lang>"` if present, otherwise deterministically select the best candidate by preferring valid timestamps (newest) and falling back to lexicographic `run_id` ordering.
+  - For `action == "prepare_payload"` detect active LLM reviews by inspecting the latest job's `status`, `workflow_state`, and `stage`, and block prepare if an LLM review is currently queued or running by redirecting with a warning.
+  - Add unit tests in `tests/test_check_languages_page.py` to validate reuse of existing runs, deterministic selection among candidates, blocking only for active LLM review states, and allowing reuse when previous LLM runs are historical/failed.
+  
+  ### Testing
+  - Executed the updated `tests/test_check_languages_page.py` which includes `test_prepare_action_without_target_run_id_reuses_existing_run_id`, `test_prepare_action_uses_deterministic_existing_run_selection`, `test_prepare_action_is_blocked_only_for_active_llm_review`, and `test_prepare_action_allows_historical_llm_state_and_reuses_existing_run`; all tests passed.
+  - Existing prepare/LLM flow tests such as `test_prepare_action_only_starts_prepare_worker` and related checks were run and remained passing.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69ca8974cd68832c938a67f0452c8d38)
+- Notes: Auto-generated from merged PR metadata.
