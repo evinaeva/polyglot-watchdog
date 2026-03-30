@@ -3125,8 +3125,11 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             latest_status = str((latest_job or {}).get("status", "")).strip().lower()
             stage = str((latest_job or {}).get("stage", "")).strip().lower()
             llm_running = (
-                workflow_state == "running_llm_review"
-                or (stage in {"queued_llm_review", "running_llm_review"} and latest_status in {"running", "queued"})
+                latest_status in {"running", "queued"}
+                and (
+                    workflow_state in {"queued_llm_review", "running_llm_review"}
+                    or stage in {"queued_llm_review", "running_llm_review"}
+                )
             )
             if not workflow_state:
                 stage_state_map = {
@@ -3480,7 +3483,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             llm_step_lines.append(f"target capture stage: {page_state}")
         if page_state in {"prepared_for_llm", "running_llm_review", "completed", "failed_during_llm"}:
             llm_step_lines.append("prepared for llm")
-        if llm_running or page_state in {"running_llm_review"}:
+        if llm_running:
             llm_step_lines.append("llm started")
         if llm_display:
             attempted = _as_int(llm_display.get("batches_attempted"), 0)
