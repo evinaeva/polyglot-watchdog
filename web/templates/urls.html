@@ -12,31 +12,34 @@
   {{header}}
   <main>
     <h1 class="page-title">Add Domain. Add URL list.<span class="page-title-subtitle">Choose a domain, load existing URLs, and update your working URL list.</span></h1>
-    <div class="controls">
-      <p id="domainInputHelp" class="inline-help controls-help">Type a new domain/URL or pick one from Saved Domains.</p>
-      <label for="domainInput">Domain or URL</label>
-      <div class="domain-combobox">
-        <input id="domainInput" value="" autocomplete="off" aria-describedby="domainInputHelp" />
-        <button id="domainSavedToggle" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="domainSavedMenu">Saved Domains</button>
-        <div id="domainSavedMenu" class="domain-saved-menu hidden" role="listbox" aria-label="Saved domains"></div>
+    <div class="top-unified-block">
+      <div class="controls">
+        <p id="domainInputHelp" class="inline-help controls-help">Type a new domain/URL or pick one from Saved Domains.</p>
+        <label for="domainInput">Domain or URL</label>
+        <div class="domain-combobox">
+          <input id="domainInput" value="" autocomplete="off" aria-describedby="domainInputHelp" />
+          <button id="domainSavedToggle" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="domainSavedMenu">Saved Domains</button>
+          <div id="domainSavedMenu" class="domain-saved-menu hidden" role="listbox" aria-label="Saved domains"></div>
+        </div>
+        <button id="loadButton">Load existing</button>
       </div>
-      <button id="loadButton">Load existing</button>
+      <div id="errorBox" class="hidden" role="alert" aria-live="assertive" style="color:#b00020; margin-bottom: 8px;"></div>
+      <div id="statusBox" class="hidden" role="status" aria-live="polite" style="margin-bottom: 8px;"></div>
+      <textarea id="urlsMultiline" rows="7" placeholder="One URL per line"></textarea>
+      <div class="controls urls-actions">
+        <button id="replaceButton">Replace list</button>
+        <button id="addButton">Add to list</button>
+        <button id="clearButton">Clear list</button>
+        <a id="continueFirstRun" class="ui-action-button" href="#" data-button-fx="on">Continue to First Run &gt;&gt;&gt;</a>
+      </div>
     </div>
-    <div id="errorBox" class="hidden" role="alert" aria-live="assertive" style="color:#b00020; margin-bottom: 8px;"></div>
-    <div id="statusBox" class="hidden" role="status" aria-live="polite" style="margin-bottom: 8px;"></div>
-    <textarea id="urlsMultiline" rows="7" placeholder="One URL per line"></textarea>
-    <div class="controls urls-actions">
-      <button id="replaceButton">Replace list</button>
-      <button id="addButton">Add to list</button>
-      <button id="clearButton">Clear list</button>
-      <a id="continueFirstRun" class="ui-action-button" href="#" data-button-fx="on">Continue to First Run &gt;&gt;&gt;</a>
-    </div>
-
-    <h2>Domain URL config</h2>
-    <table>
-      <thead><tr><th><div class="urls-header-main"><span>URL</span><span class="updated-at-inline">Updated at: <span id="updatedAt">-</span></span></div></th><th>Active</th><th>Recipes</th><th>Manage</th><th>Save</th><th>Delete</th></tr></thead>
-      <tbody id="savedUrlsBody"></tbody>
-    </table>
+    <section>
+      <h2>Domain URL config</h2>
+      <table>
+        <thead><tr><th><div class="urls-header-main"><span>URL</span><span class="updated-at-inline">Updated at: <span id="updatedAt">-</span></span></div></th><th>Active</th><th>Recipes</th><th>Manage</th><th>Save</th><th>Delete</th></tr></thead>
+        <tbody id="savedUrlsBody"></tbody>
+      </table>
+    </section>
   </main>
   <aside id="recipeDrawer" class="recipe-drawer hidden" aria-hidden="true">
     <div class="recipe-drawer-panel">

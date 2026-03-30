@@ -11,36 +11,34 @@
 <body>
   {{header}}
   <main>
-    <div class="top-unified-block">
-      <h1 class="page-title">FIRST RUN<span class="page-title-subtitle">Launch your first capture, monitor progress, or continue from an existing run.</span></h1>
+    <h1 class="page-title">FIRST RUN<span class="page-title-subtitle">Launch your first capture, monitor progress, or continue from an existing run.</span></h1>
 
-      <section>
-        <h2>Block A · Domain and saved URLs</h2>
-        <div class="controls">
-          <label for="wfDomain">Domain</label>
-          <select id="wfDomain"></select>
-          <button id="wfRefreshUrls" type="button">Refresh URL list</button>
-        </div>
-        <label for="wfSavedUrls">Saved URLs (read-only preview)</label>
-        <textarea id="wfSavedUrls" rows="8" readonly placeholder="Saved URLs will appear here"></textarea>
-      </section>
+    <section>
+      <h2>Block A · Domain and saved URLs</h2>
+      <div class="controls">
+        <label for="wfDomain">Domain</label>
+        <select id="wfDomain"></select>
+        <button id="wfRefreshUrls" type="button">Refresh URL list</button>
+      </div>
+      <label for="wfSavedUrls">Saved URLs (read-only preview)</label>
+      <textarea id="wfSavedUrls" rows="8" readonly placeholder="Saved URLs will appear here"></textarea>
+    </section>
 
-      <section>
-        <h2>Block B · Start capture or choose an existing run</h2>
-        <div class="controls">
-          <button id="wfStartCapture" type="button">Start first run</button>
-        </div>
-        <div class="controls">
-          <label for="wfExistingRuns">Existing runs</label>
-          <select id="wfExistingRuns">
-            <option value="">No runs found</option>
-          </select>
-          <button id="wfUseExistingRun" type="button" disabled>Use selected run</button>
-          <button id="wfRefreshRuns" type="button">Refresh runs</button>
-        </div>
-        <p id="wfRunsStatus" class="muted"></p>
-      </section>
-    </div>
+    <section>
+      <h2>Block B · Start capture or choose an existing run</h2>
+      <div class="controls">
+        <button id="wfStartCapture" type="button">Start first run</button>
+      </div>
+      <div class="controls">
+        <label for="wfExistingRuns">Existing runs</label>
+        <select id="wfExistingRuns">
+          <option value="">No runs found</option>
+        </select>
+        <button id="wfUseExistingRun" type="button" disabled>Use selected run</button>
+        <button id="wfRefreshRuns" type="button">Refresh runs</button>
+      </div>
+      <p id="wfRunsStatus" class="muted"></p>
+    </section>
 
     <section>
       <h2>Block C · Review contexts</h2>
