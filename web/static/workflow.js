@@ -339,7 +339,7 @@ function renderExistingRuns() {
   }
 
   wfUseExistingRun.disabled = !wfExistingRuns.value;
-  setRunsStatus(`Existing runs available: ${availableRuns.length}.`);
+  setRunsStatus('');
 }
 
 async function loadExistingRuns() {
@@ -397,7 +397,7 @@ async function loadDomains() {
 async function loadSavedUrls() {
   const domain = wfDomain.value.trim();
   if (!domain) {
-    wfSavedUrls.value = '';
+    if (wfSavedUrls) wfSavedUrls.value = '';
     return;
   }
 
@@ -409,7 +409,7 @@ async function loadSavedUrls() {
   const activeUrls = urls
     .filter((row) => row && row.active !== false && row.url)
     .map((row) => row.url);
-  wfSavedUrls.value = activeUrls.join('\n');
+  if (wfSavedUrls) wfSavedUrls.value = activeUrls.join('\n');
 }
 
 async function loadWorkflowStatus() {
