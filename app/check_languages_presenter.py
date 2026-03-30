@@ -23,20 +23,26 @@ def _llm_review_display(latest_job: dict | None, telemetry_payload: object, tele
     }
 
     state = "Telemetry not evaluated yet."
+    state_reason = "telemetry_not_evaluated"
     warning = ""
     payload = telemetry_payload if isinstance(telemetry_payload, dict) else None
     malformed = telemetry_exists and payload is None
     if not telemetry_exists:
         if workflow_state in {"preparing_payload", "failed_before_llm", "prepared_for_llm"}:
             state = "LLM stage not started"
+            state_reason = f"telemetry_missing_and_workflow_state={workflow_state}"
         elif in_progress:
             state = "LLM review not reached yet"
+            state_reason = "telemetry_missing_and_job_in_progress"
         elif completed:
             state = "LLM telemetry missing"
+            state_reason = "telemetry_missing_after_job_completion"
         else:
             state = "LLM telemetry unavailable"
+            state_reason = "telemetry_unavailable_no_matching_job_state"
     elif malformed:
         state = "LLM telemetry malformed"
+        state_reason = "telemetry_file_exists_but_payload_not_object"
         warning = "Telemetry file exists but is malformed; showing unavailable placeholders."
         payload = {}
 
@@ -123,6 +129,7 @@ def _llm_review_display(latest_job: dict | None, telemetry_payload: object, tele
 
     return {
         "state": state,
+        "state_reason": state_reason,
         "warning": warning,
         "review_mode": review_mode,
         "provider_type": provider_type,

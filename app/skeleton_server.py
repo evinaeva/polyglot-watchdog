@@ -2817,6 +2817,16 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 level="ok",
             )
             return
+        if action == "refresh_llm_status":
+            redirect_payload = dict(payload)
+            redirect_payload["selected_domain"] = domain
+            redirect_payload["show_gate_diagnostics"] = "1"
+            self._redirect_check_languages(
+                redirect_payload,
+                message="LLM review status refreshed from current job and telemetry artifacts.",
+                level="ok",
+            )
+            return
 
         if not domain:
             self._redirect_check_languages(payload, message="Domain is required.", level="error")
@@ -2981,6 +2991,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         llm_telemetry_error_summary = ""
         llm_telemetry_valid_for_ui = False
         llm_telemetry_state_for_ui = "not_evaluated"
+        llm_telemetry_state_reason_for_ui = "not_evaluated"
         llm_telemetry_final_label = "Telemetry not evaluated yet."
         llm_preview = "—"
         failure_payload = None
@@ -3097,6 +3108,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             llm_display = _llm_review_display(latest_job, llm_stats_payload, llm_stats_exists, workflow_state or page_state)
             llm_telemetry_valid_for_ui = isinstance(llm_stats_payload, dict)
             llm_telemetry_state_for_ui = str(llm_display.get("state", "")).strip() or "unknown"
+            llm_telemetry_state_reason_for_ui = str(llm_display.get("state_reason", "")).strip() or "unknown"
             llm_telemetry_final_label = llm_telemetry_state_for_ui
             warning_html = f'<p class="warning">{_h(llm_display["warning"])}</p>' if llm_display["warning"] else ""
             llm_review_block = (
@@ -3104,6 +3116,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 f"{warning_html}"
                 f"<ul>"
                 f"<li>State: <strong>{_h(llm_display['state'])}</strong></li>"
+                f"<li>State reason: <code>{_h(llm_display['state_reason'])}</code></li>"
                 f"<li>Review mode: {_h(llm_display['review_mode'])}</li>"
                 f"<li>Provider type: {_h(llm_display['provider_type'])}</li>"
                 f"<li>Configured provider/model: {_h(llm_display['configured_provider'])} / {_h(llm_display['configured_model'])}</li>"
@@ -3367,9 +3380,15 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 f"<li>lookup_filename: <strong>{_h(llm_lookup_filename or '—')}</strong></li>"
                 f"<li>actual_llm_input_lookup_path: <strong>{_h(llm_lookup_path or '—')}</strong></li>"
                 f"<li>latest_job_status: <strong>{_h(str((latest_job or {}).get('status', '') or '—'))}</strong></li>"
+                f"<li>latest_job_id: <strong>{_h(str((latest_job or {}).get('job_id', '') or '—'))}</strong></li>"
+                f"<li>latest_job_type: <strong>{_h(str((latest_job or {}).get('type', '') or '—'))}</strong></li>"
                 f"<li>latest_job_stage: <strong>{_h(str((latest_job or {}).get('stage', '') or '—'))}</strong></li>"
                 f"<li>latest_job_workflow_state: <strong>{_h(str((latest_job or {}).get('workflow_state', page_state) or '—'))}</strong></li>"
+                f"<li>latest_job_used_for_ui: <strong>{_h(str(bool(latest_job)).lower())}</strong></li>"
+                f"<li>latest_job_selection_source: <strong>_latest_check_languages_job(domain, target_run_id)</strong></li>"
+                f"<li>latest_job_is_llm_stage_job: <strong>{_h(str(str((latest_job or {}).get('stage', '')).strip().lower() in {'queued_llm_review', 'running_llm_review', 'running_llm_review_failed', 'completed'}).lower())}</strong></li>"
                 f"<li>telemetry_state_used_by_ui: <strong>{_h(llm_telemetry_state_for_ui or '—')}</strong></li>"
+                f"<li>telemetry_state_reason_used_by_ui: <strong>{_h(llm_telemetry_state_reason_for_ui or '—')}</strong></li>"
                 f"<li>final_ui_label_for_llm_review: <strong>{_h(llm_telemetry_final_label or '—')}</strong></li>"
                 f"<li>telemetry_lookup_domain: <strong>{_h(llm_telemetry_lookup_domain or '—')}</strong></li>"
                 f"<li>telemetry_lookup_run_id: <strong>{_h(llm_telemetry_lookup_run_id or '—')}</strong></li>"

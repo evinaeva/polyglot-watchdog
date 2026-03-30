@@ -469,16 +469,20 @@ def _latest_check_languages_job(domain: str, run_id: str, *, load_runs, list_dom
         run = next((row for row in runs if isinstance(row, dict) and str(row.get("run_id", "")).strip() == run_id), None)
         if not isinstance(run, dict):
             continue
-        for job in run.get("jobs", []):
+        jobs = run.get("jobs", []) if isinstance(run.get("jobs", []), list) else []
+        for index, job in enumerate(jobs):
             if not isinstance(job, dict) or str(job.get("type", "")).strip() != "check_languages":
                 continue
             item = as_stale_failed_job(job) if is_stale_running_job(job) else dict(job)
             item["domain"] = run_domain
+            item["_job_index"] = index
             candidates.append(item)
     if not candidates:
         return None
-    candidates.sort(key=lambda row: (str(row.get("updated_at", "")), str(row.get("created_at", "")), str(row.get("job_id", ""))))
-    return candidates[-1]
+    candidates.sort(key=lambda row: (str(row.get("updated_at", "")), str(row.get("created_at", "")), int(row.get("_job_index", -1))))
+    latest = dict(candidates[-1])
+    latest.pop("_job_index", None)
+    return latest
 
 
 def _check_languages_source_hashes(domain: str, en_run_id: str, target_run_id: str) -> dict[str, str]:
