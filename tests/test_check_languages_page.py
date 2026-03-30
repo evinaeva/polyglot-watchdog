@@ -2119,6 +2119,105 @@ def test_llm_input_diagnostics_do_not_downgrade_read_error_when_listing_is_unrel
     assert "<strong>check_languages_llm_input.json</strong> — status: <strong>missing</strong>" not in body
 
 
+
+
+def test_check_languages_render_caches_source_hash_reads_for_identical_arguments(api_env, monkeypatch):
+    from app.skeleton_server import _check_languages_source_hashes as _real_check_languages_source_hashes
+
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "fr", "review_context_count": 1, "review_contexts": [{"id": "ctx-1"}]})
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {"source_hashes": _real_check_languages_source_hashes(domain, "run-en", target_run_id)})
+
+    calls: list[tuple[str, str, str]] = []
+
+    def _counting_source_hashes(run_domain: str, en_run_id: str, run_id: str):
+        calls.append((run_domain, en_run_id, run_id))
+        return _real_check_languages_source_hashes(run_domain, en_run_id, run_id)
+
+    monkeypatch.setattr("app.skeleton_server._check_languages_source_hashes", _counting_source_hashes)
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert "status: <strong>valid</strong>" in body
+    assert calls == [(domain, "run-en", target_run_id)]
+
+
+def test_fallback_recompute_derives_final_llm_input_status_from_settled_state(api_env, monkeypatch):
+    from app.skeleton_server import _stable_json_hash
+
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    empty_hash = _stable_json_hash([])
+    expected_hashes = {
+        "en_eligible_dataset_sha256": empty_hash,
+        "target_eligible_dataset_sha256": empty_hash,
+        "en_collected_items_sha256": empty_hash,
+        "target_collected_items_sha256": empty_hash,
+        "en_page_screenshots_sha256": empty_hash,
+        "target_page_screenshots_sha256": empty_hash,
+    }
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "fr", "review_context_count": 2, "review_contexts": [{"id": "ctx-1"}]})
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {"source_hashes": expected_hashes})
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {
+                "run_id": target_run_id,
+                "created_at": "2026-03-12T00:00:00Z",
+                "jobs": [{"job_id": "check-languages-1", "status": "running", "type": "check_languages", "stage": "assembling_payload", "workflow_state": "preparing_payload", "en_run_id": "run-en", "target_language": "fr"}],
+            },
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+
+    responses = iter(
+        [
+            {"status": "read_error", "exists": True, "payload": None, "error": "synthetic-first"},
+            {"status": "valid", "exists": True, "payload": {"target_language": "fr", "review_context_count": 2, "review_contexts": [{"id": "ctx-1"}]}, "error": ""},
+        ]
+    )
+    monkeypatch.setattr("app.skeleton_server._check_languages_llm_input_artifact_status", lambda *args, **kwargs: next(responses))
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert 'Current state: <strong id="checkLanguagesState">preparing_payload</strong>' in body
+    assert "status: <strong>stale</strong>" in body
+    assert "Will be created after target capture and payload preparation complete." not in body
+
+
+def test_prepared_for_llm_happy_path_still_shows_valid_input_status(api_env):
+    from app.skeleton_server import _check_languages_source_hashes
+
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "fr", "review_context_count": 1, "review_contexts": [{"id": "ctx-1"}]})
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {"source_hashes": _check_languages_source_hashes(domain, "run-en", target_run_id)})
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {
+                "run_id": target_run_id,
+                "created_at": "2026-03-12T00:00:00Z",
+                "jobs": [{"job_id": "check-languages-1", "status": "succeeded", "type": "check_languages", "stage": "prepared_for_llm", "workflow_state": "prepared_for_llm", "en_run_id": "run-en", "target_language": "fr"}],
+            },
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert 'Current state: <strong id="checkLanguagesState">prepared_for_llm</strong>' in body
+    assert "status: <strong>valid</strong>" in body
+
+
 def test_fallback_success_recomputes_page_state_and_llm_input_status(api_env, monkeypatch):
     from app.skeleton_server import _stable_json_hash
 
@@ -2156,8 +2255,8 @@ def test_fallback_success_recomputes_page_state_and_llm_input_status(api_env, mo
 
     status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
     assert status == HTTPStatus.OK
-    assert 'Current state: <strong id="checkLanguagesState">prepared_for_llm</strong>' in body
-    assert "status: <strong>valid</strong>" in body
+    assert 'Current state: <strong id="checkLanguagesState">preparing_payload</strong>' in body
+    assert "status: <strong>read_error</strong>" in body
     assert "Will be created after target capture and payload preparation complete." not in body
 
 
