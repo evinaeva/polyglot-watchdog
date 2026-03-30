@@ -306,6 +306,10 @@ function renderExistingRuns() {
   if (!availableRuns.length) {
     wfExistingRuns.innerHTML = '<option value="">No runs found</option>';
     wfUseExistingRun.disabled = true;
+    if (selected) {
+      setRunsStatus('No first-run entries found. Keeping current run context.');
+      return;
+    }
     setRunsStatus('No existing runs found for this domain yet.');
     return;
   }
@@ -326,16 +330,26 @@ function renderExistingRuns() {
     return;
   }
 
-  const nextSelectedRunId = resolveDefaultSelectedRunId(availableRuns, selected);
-  if (nextSelectedRunId) {
-    wfExistingRuns.value = nextSelectedRunId;
-    if (activeRunId !== nextSelectedRunId) {
-      activeRunId = nextSelectedRunId;
+  const hasSelected = selected && availableRuns.some((run) => String((run || {}).run_id || '').trim() === selected);
+  if (hasSelected) {
+    wfExistingRuns.value = selected;
+  } else if (selected) {
+    wfExistingRuns.value = '';
+    wfUseExistingRun.disabled = true;
+    setRunsStatus('Current run is not in the First run list. Keeping current run context.');
+    return;
+  } else {
+    const nextSelectedRunId = resolveDefaultSelectedRunId(availableRuns, selected);
+    if (nextSelectedRunId) {
+      wfExistingRuns.value = nextSelectedRunId;
+      if (activeRunId !== nextSelectedRunId) {
+        activeRunId = nextSelectedRunId;
+        setQuery(wfDomain.value.trim(), activeRunId);
+      }
+    } else {
+      activeRunId = '';
       setQuery(wfDomain.value.trim(), activeRunId);
     }
-  } else {
-    activeRunId = '';
-    setQuery(wfDomain.value.trim(), activeRunId);
   }
 
   wfUseExistingRun.disabled = !wfExistingRuns.value;
