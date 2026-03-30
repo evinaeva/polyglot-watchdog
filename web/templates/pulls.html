@@ -17,6 +17,28 @@
         <a id="pullsBackToRunHub" class="ui-action-button" data-button-fx="on" href="/workflow">&lt; Back to First Run</a>
         <a id="continueCheckLanguages" class="ui-action-button" data-button-fx="on" href="#">Continue to Check Languages &gt;</a>
       </div>
+      <div class="controls">
+        <div>
+          <label for="pullsFirstRunSelect">Previously created First Run</label>
+          <select id="pullsFirstRunSelect" name="run_id">
+            {{pulls_first_run_options}}
+          </select>
+        </div>
+      </div>
+      <div class="controls">
+        <div>
+          <label for="pullsDomainSelect">Domain</label>
+          <select id="pullsDomainSelect" name="domain">
+            {{pulls_domain_options}}
+          </select>
+        </div>
+        <div>
+          <label for="pullsEnRunSelect">English reference run</label>
+          <select id="pullsEnRunSelect" name="en_run_id">
+            {{pulls_en_run_options}}
+          </select>
+        </div>
+      </div>
       <p id="pullsWorkflowContextSummary" class="muted"></p>
 
       <div class="controls">
