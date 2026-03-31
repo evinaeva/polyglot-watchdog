@@ -20,6 +20,26 @@ function safeJson(value) {
   return JSON.stringify(value || null, null, 2);
 }
 
+function readField(obj, keys = []) {
+  for (const key of keys) {
+    const value = obj?.[key];
+    if (value !== undefined && value !== null && String(value).trim()) return String(value).trim();
+  }
+  return '';
+}
+
+function deriveSeverity(issue) {
+  const explicit = readField(issue, ['severity', 'issue_severity', 'level']).toLowerCase();
+  if (explicit) return explicit;
+  const confidence = Number(issue?.confidence || issue?.score || 0);
+  if (!Number.isNaN(confidence)) {
+    if (confidence >= 0.9) return 'high';
+    if (confidence >= 0.7) return 'medium';
+    if (confidence > 0) return 'low';
+  }
+  return '—';
+}
+
 async function loadIssueDetailPage() {
   const { domain, runId, id } = detailQuery();
   document.getElementById('detailBackToIssues').href = `/?${new URLSearchParams({ domain, run_id: runId }).toString()}`;
@@ -50,7 +70,7 @@ async function loadIssueDetailPage() {
     <p>${issue.language || 'Unknown'}</p>
 
     <h2>Severity</h2>
-    <p>${issue.severity || 'Unknown'}</p>
+    <p>${deriveSeverity(issue)}</p>
 
     <h2>Issue metadata</h2>
     <ul>
@@ -63,8 +83,9 @@ async function loadIssueDetailPage() {
   const warning = dd.partial
     ? `<p class="warning">Partial evidence: missing ${missing.join(', ') || 'some related references'}.</p>`
     : '';
-  const screenshot = dd.screenshot_uri
-    ? `<p>Screenshot: <a href="${dd.screenshot_uri}" target="_blank" rel="noopener">${dd.screenshot_uri}</a></p>`
+  const screenshotHref = dd.screenshot_view_url || dd.screenshot_uri || '';
+  const screenshot = screenshotHref
+    ? `<p>Screenshot: <a href="${screenshotHref}" target="_blank" rel="noopener">${screenshotHref}</a></p>`
     : '<p>Screenshot: unavailable</p>';
 
   issueEvidence.innerHTML = `

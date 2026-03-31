@@ -77,6 +77,7 @@ def test_urls_runtime_uses_live_typed_domain_for_continue_and_api_mutations():
 
         const sandbox = {
           console,
+          URL,
           URLSearchParams,
           setTimeout: (fn) => { fn(); return 1; },
           clearTimeout: () => {},
@@ -182,6 +183,7 @@ def test_workflow_runtime_uses_canonical_screenshot_view_url_and_safe_empty_stat
 
         const sandbox = {
           console,
+          URL,
           URLSearchParams,
           window: { location: { search: '' }, history: { replaceState(){} } },
           document,
@@ -322,6 +324,7 @@ def test_urls_drawer_keeps_url_domain_for_row_mutations_when_recipe_domain_chang
 
         const sandbox = {
           console,
+          URL,
           URLSearchParams,
           FormData: class { constructor(){ this.map = new Map(); } append(k,v){ this.map.set(k,v); } },
           window: { i18n: { t: (_k, fb) => fb }, confirm: () => true },
@@ -410,6 +413,7 @@ def test_workflow_runtime_formats_utc_timestamps_in_tallinn_with_dst():
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         const sandbox = {
           console,
+          URL,
           URLSearchParams,
           window: { location: { search: '' }, history: { replaceState(){} } },
           document: { getElementById: (id) => els[id], createElement: () => makeElement('created') },
@@ -449,6 +453,7 @@ def test_workflow_runtime_sorting_uses_raw_utc_timestamp_not_display_value():
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         const sandbox = {
           console,
+          URL,
           URLSearchParams,
           window: { location: { search: '' }, history: { replaceState(){} } },
           document: { getElementById: (id) => els[id], createElement: () => makeElement('created') },
@@ -535,6 +540,7 @@ def test_workflow_existing_runs_default_selection_prefers_newest_and_handles_emp
 
         const sandbox = {
           console,
+          URL,
           URLSearchParams,
           window: { location: { search: '' }, history: { replaceState(){} } },
           document: {
@@ -649,6 +655,7 @@ def test_workflow_existing_runs_preserves_explicit_non_first_query_selection_wit
 
         const sandbox = {
           console,
+          URL,
           URLSearchParams,
           window: {
             location: { search: '?domain=example.com&run_id=run-check-languages-latest' },
@@ -751,6 +758,7 @@ def test_workflow_existing_runs_option_labels_use_human_first_run_format_only():
 
         const sandbox = {
           console,
+          URL,
           URLSearchParams,
           window: { location: { search: '?domain=example.com' }, history: { replaceState(){} } },
           document: { getElementById: (id) => els[id], createElement: (tag) => makeElement(tag) },
@@ -856,6 +864,7 @@ def test_workflow_existing_runs_preserves_active_selected_run_on_reload():
 
         const sandbox = {
           console,
+          URL,
           URLSearchParams,
           window: { location: { search: '?domain=example.com&run_id=run-middle' }, history: { replaceState(){} } },
           document: {
@@ -974,6 +983,7 @@ def test_en_standard_helper_and_pulls_success_message_runtime_flow():
 
         const sandbox = {
           console,
+          URL,
           URLSearchParams,
           window: { location: { search: '?domain=example.com&run_id=run-1' }, addEventListener(){} },
           document: {
@@ -1049,6 +1059,7 @@ def test_pulls_top_and_bottom_next_step_links_receive_same_runtime_href():
 
         const sandbox = {
           console,
+          URL,
           URLSearchParams,
           window: { location: { search: '?domain=example.com&run_id=run-77' }, history: { replaceState(){} }, addEventListener(){} },
           document: { getElementById: (id) => els[id], createElement: () => makeElement('created'), addEventListener(){} },
@@ -1122,6 +1133,7 @@ def test_workflow_defaults_to_latest_run_by_timestamp_and_preserves_manual_selec
 
         const sandbox = {
           console,
+          URL,
           URLSearchParams,
           window: {
             location: { search: '?domain=example.com' },
@@ -1362,6 +1374,7 @@ def test_urls_saved_domain_menu_filters_malformed_values_and_supports_selection(
         const documentListeners = {};
         const sandbox = {
           console,
+          URL,
           URLSearchParams,
           URL,
           setTimeout: (fn) => { fn(); return 1; },
@@ -1440,6 +1453,7 @@ def test_pulls_advanced_primary_labels_are_readable_and_user_tier_defaults_to_fr
 
         const sandbox = {
           console,
+          URL,
           URLSearchParams,
           window: { location: { search: '?domain=example.com&run_id=run-1' }, addEventListener(){} },
           document: {
@@ -1520,7 +1534,7 @@ def test_index_runtime_uses_newest_persisted_result_and_allows_selection_change(
           return el;
         }
 
-        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','issuesBackToCheckLanguages','workflowContextSummary'];
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         const tbody = makeElement('tbody');
         els.issuesTable.querySelector = () => tbody;
@@ -1528,6 +1542,7 @@ def test_index_runtime_uses_newest_persisted_result_and_allows_selection_change(
         const calls = [];
         const sandbox = {
           console,
+          URL,
           URLSearchParams,
           Intl,
           document: {
@@ -1612,12 +1627,13 @@ def test_index_runtime_handles_empty_persisted_results_state():
           return el;
         }
 
-        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','issuesBackToCheckLanguages','workflowContextSummary'];
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         els.issuesTable.querySelector = () => makeElement('tbody');
 
         const sandbox = {
           console,
+          URL,
           URLSearchParams,
           Intl,
           document: {
@@ -1684,7 +1700,7 @@ def test_index_domain_change_auto_loads_newest_result_for_new_domain():
           return el;
         }
 
-        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','issuesBackToCheckLanguages','workflowContextSummary'];
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         const tbody = makeElement('tbody');
         els.issuesTable.querySelector = () => tbody;
@@ -1692,6 +1708,7 @@ def test_index_domain_change_auto_loads_newest_result_for_new_domain():
         const calls = [];
         const sandbox = {
           console,
+          URL,
           URLSearchParams,
           Intl,
           document: {
@@ -1778,13 +1795,14 @@ def test_index_domain_change_to_empty_results_clears_stale_issue_table():
           return el;
         }
 
-        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','issuesBackToCheckLanguages','workflowContextSummary'];
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         const tbody = makeElement('tbody');
         els.issuesTable.querySelector = () => tbody;
 
         const sandbox = {
           console,
+          URL,
           URLSearchParams,
           Intl,
           document: {
@@ -1836,6 +1854,163 @@ def test_index_domain_change_to_empty_results_clears_stale_issue_table():
     assert "No persisted issue results found" in out["statusText"]
 
 
+def test_index_runtime_renders_source_target_severity_and_links():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function makeElement(id='') {
+          const listeners = {};
+          const classes = new Set();
+          const el = {
+            id,
+            value: '',
+            href: '',
+            textContent: '',
+            _innerHTML: '',
+            disabled: false,
+            children: [],
+            className: '',
+            classList: {
+              add(name){ classes.add(name); },
+              remove(name){ classes.delete(name); },
+              toggle(name, force){ if (force === true) classes.add(name); else if (force === false) classes.delete(name); },
+              contains(name){ return classes.has(name); },
+            },
+            appendChild(child){ this.children.push(child); return child; },
+            addEventListener(type, cb){ listeners[type] = cb; },
+            dispatch(type){ if (listeners[type]) return listeners[type]({ target: this }); },
+            click(){ if (listeners.click) return listeners.click({ target: this }); },
+            querySelector(){ return makeElement('qs'); },
+          };
+          Object.defineProperty(el, 'innerHTML', {
+            get(){ return this._innerHTML; },
+            set(value){ this._innerHTML = value; },
+          });
+          Object.defineProperty(el, 'options', { get(){ return this.children; } });
+          return el;
+        }
+
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
+        const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
+        const tbody = makeElement('tbody');
+        els.issuesTable.querySelector = () => tbody;
+
+        const sandbox = {
+          console,
+          URL,
+          URLSearchParams,
+          Intl,
+          document: {
+            getElementById: (id) => els[id],
+            createElement: () => makeElement('created'),
+          },
+          window: { location: { search: '?domain=example.com' }, history: { replaceState(){} } },
+          safeReadPayload: async (response) => response.json(),
+          fetch: async (url) => {
+            if (url.startsWith('/api/issues/results?')) {
+              return { ok: true, status: 200, json: async () => ({ results: [{ run_id: 'run-1', created_at: '2026-03-02T10:00:00Z', display_label: 'R1' }] }) };
+            }
+            if (url.startsWith('/api/issues?')) {
+              return { ok: true, status: 200, json: async () => ({ issues: [{
+                id: '1',
+                message: 'Mismatch',
+                language: 'ru',
+                confidence: 0.93,
+                evidence: { url: 'https://example.com/a', source_text: 'Hello', target_text: 'Привет' },
+              }], count: 1 }) };
+            }
+            throw new Error('Unexpected URL: ' + url);
+          },
+        };
+
+        vm.createContext(sandbox);
+        vm.runInContext(fs.readFileSync('web/static/index.js', 'utf8'), sandbox);
+
+        setTimeout(() => {
+          const row = tbody.children[0];
+          const cellTexts = row ? row.children.map((cell) => cell.textContent || '') : [];
+          const linksCell = row && row.children[4] ? row.children[4] : null;
+          const linkHrefs = linksCell ? linksCell.children.map((child) => child.href || '').filter(Boolean) : [];
+          console.log(JSON.stringify({
+            cellTexts,
+            linkHrefs,
+            targetHeader: els.targetLanguageHeader.textContent,
+            targetSummary: els.targetLanguageSummary.textContent,
+          }));
+        }, 0);
+        """
+    )
+    out = _run_node_json(script)
+    assert out["cellTexts"][:4] == ["Hello", "Привет", "Mismatch", "high"]
+    assert len(out["linkHrefs"]) == 2
+    assert out["linkHrefs"][1] == "https://example.com/a"
+    assert out["targetHeader"] == "ru"
+    assert out["targetSummary"] == "Target language: RU"
+
+
+def test_index_runtime_blocks_non_http_external_url_links():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function makeElement(id='') {
+          const listeners = {};
+          const el = {
+            id,
+            value: '',
+            href: '',
+            textContent: '',
+            children: [],
+            className: '',
+            classList: { add(){}, remove(){}, toggle(){}, contains(){ return false; } },
+            appendChild(child){ this.children.push(child); return child; },
+            addEventListener(type, cb){ listeners[type] = cb; },
+            dispatch(type){ if (listeners[type]) return listeners[type]({ target: this }); },
+            querySelector(){ return makeElement('qs'); },
+          };
+          Object.defineProperty(el, 'options', { get(){ return this.children; } });
+          return el;
+        }
+
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
+        const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
+        const tbody = makeElement('tbody');
+        els.issuesTable.querySelector = () => tbody;
+
+        const sandbox = {
+          console,
+          URL,
+          URLSearchParams,
+          Intl,
+          document: { getElementById: (id) => els[id], createElement: () => makeElement('created') },
+          window: { location: { search: '?domain=example.com' }, history: { replaceState(){} } },
+          safeReadPayload: async (response) => response.json(),
+          fetch: async (url) => {
+            if (url.startsWith('/api/issues/results?')) return { ok: true, status: 200, json: async () => ({ results: [{ run_id: 'run-1' }] }) };
+            if (url.startsWith('/api/issues?')) return { ok: true, status: 200, json: async () => ({ issues: [{ id: '1', message: 'X', language: 'ru', evidence: { url: 'javascript:alert(1)' } }], count: 1 }) };
+            throw new Error('Unexpected URL: ' + url);
+          },
+        };
+
+        vm.createContext(sandbox);
+        vm.runInContext(fs.readFileSync('web/static/index.js', 'utf8'), sandbox);
+        setTimeout(() => {
+          const row = tbody.children[0];
+          const linksCell = row && row.children[4] ? row.children[4] : null;
+          const linksCount = linksCell ? linksCell.children.length : 0;
+          const hrefs = linksCell ? linksCell.children.map((node) => node.href || '') : [];
+          console.log(JSON.stringify({ linksCount, hrefs }));
+        }, 0);
+        """
+    )
+    out = _run_node_json(script)
+    assert out["linksCount"] == 1
+    assert "/issues/detail?" in out["hrefs"][0]
+
+
 def test_index_refresh_empty_results_clears_stale_issue_table():
     script = textwrap.dedent(
         r"""
@@ -1873,7 +2048,7 @@ def test_index_refresh_empty_results_clears_stale_issue_table():
           return el;
         }
 
-        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','issuesBackToCheckLanguages','workflowContextSummary'];
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         const tbody = makeElement('tbody');
         els.issuesTable.querySelector = () => tbody;
@@ -1881,6 +2056,7 @@ def test_index_refresh_empty_results_clears_stale_issue_table():
         let resultsCallCount = 0;
         const sandbox = {
           console,
+          URL,
           URLSearchParams,
           Intl,
           document: {

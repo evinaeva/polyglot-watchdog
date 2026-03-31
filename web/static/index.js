@@ -15,6 +15,8 @@ const table = document.getElementById('issuesTable');
 const tbody = table.querySelector('tbody');
 const issueStatus = document.getElementById('issueStatus');
 const issueCount = document.getElementById('issueCount');
+const targetLanguageSummary = document.getElementById('targetLanguageSummary');
+const targetLanguageHeader = document.getElementById('targetLanguageHeader');
 const issuesBackToCheckLanguages = document.getElementById('issuesBackToCheckLanguages');
 const workflowContextSummary = document.getElementById('workflowContextSummary');
 
@@ -51,6 +53,7 @@ function clearIssuesView() {
   table.classList.add('hidden');
   issueCount.textContent = '';
   issueCount.classList.add('hidden');
+  updateTargetLanguage([]);
 }
 
 function formatUtcTimestampForUi(value) {
@@ -180,6 +183,56 @@ function issueLabel(issue) {
   return issue.message || issue.category || issue.id || '';
 }
 
+function readField(obj, keys = []) {
+  for (const key of keys) {
+    const value = obj?.[key];
+    if (value !== undefined && value !== null && String(value).trim()) return String(value).trim();
+  }
+  return '';
+}
+
+function deriveSeverity(issue) {
+  const explicit = readField(issue, ['severity', 'issue_severity', 'level']).toLowerCase();
+  if (explicit) return explicit;
+  const confidence = Number(issue?.confidence || issue?.score || 0);
+  if (!Number.isNaN(confidence)) {
+    if (confidence >= 0.9) return 'high';
+    if (confidence >= 0.7) return 'medium';
+    if (confidence > 0) return 'low';
+  }
+  return '—';
+}
+
+function isSafeExternalHttpUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  try {
+    const parsed = new URL(raw);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch (_) {
+    return false;
+  }
+}
+
+function deriveSourceText(issue) {
+  const evidence = issue?.evidence || {};
+  return readField(issue, ['source_text', 'en_text', 'source']) || readField(evidence, ['source_text', 'en_text', 'source', 'source_value']) || '—';
+}
+
+function deriveTargetText(issue) {
+  const evidence = issue?.evidence || {};
+  return readField(issue, ['target_text', 'translated_text', 'target']) || readField(evidence, ['target_text', 'translated_text', 'target', 'target_value']) || '—';
+}
+
+function updateTargetLanguage(issues = [], explicitTargetLanguage = '') {
+  const explicit = String(explicitTargetLanguage || '').trim().toLowerCase();
+  const preferred = (languageFilter?.value || '').trim().toLowerCase();
+  const candidates = explicit ? [explicit] : (preferred ? [preferred] : issues.map((row) => String(row?.language || '').trim().toLowerCase()).filter(Boolean));
+  const selected = candidates[0] || 'target';
+  if (targetLanguageHeader) targetLanguageHeader.textContent = selected;
+  if (targetLanguageSummary) targetLanguageSummary.textContent = selected === 'target' ? 'Target language: —' : `Target language: ${selected.toUpperCase()}`;
+}
+
 async function loadIssues() {
   updateWorkflowSummary();
   setStatus('Loading…');
@@ -198,6 +251,7 @@ async function loadIssues() {
     return;
   }
   const issues = payload.issues || [];
+  updateTargetLanguage(issues, payload.target_language || '');
   issueCount.textContent = `Count: ${payload.count || 0}`;
   issueCount.classList.remove('hidden');
   if (!issues.length) {
@@ -208,12 +262,47 @@ async function loadIssues() {
   setStatus('Issues loaded.', 'ok');
   for (const issue of issues) {
     const tr = document.createElement('tr');
+    const evidenceUrl = readField(issue?.evidence || {}, ['url', 'page_url', 'source_url']);
     const detailHref = `/issues/detail?${new URLSearchParams({
       domain: activeDomain(),
       run_id: activeRunId(),
       id: String(issue.id || ''),
     }).toString()}`;
-    tr.innerHTML = `<td>${issueLabel(issue)}</td><td>${issue.evidence?.url || ''}</td><td>${issue.language || ''}</td><td>${issue.severity || ''}</td><td><a href="${detailHref}">Open details</a></td>`;
+
+    const sourceTd = document.createElement('td');
+    sourceTd.textContent = deriveSourceText(issue);
+    tr.appendChild(sourceTd);
+
+    const targetTd = document.createElement('td');
+    targetTd.textContent = deriveTargetText(issue);
+    tr.appendChild(targetTd);
+
+    const issueTd = document.createElement('td');
+    issueTd.textContent = issueLabel(issue);
+    tr.appendChild(issueTd);
+
+    const severityTd = document.createElement('td');
+    severityTd.textContent = deriveSeverity(issue);
+    tr.appendChild(severityTd);
+
+    const linksTd = document.createElement('td');
+    const detailLink = document.createElement('a');
+    detailLink.href = detailHref;
+    detailLink.textContent = 'Open details';
+    linksTd.appendChild(detailLink);
+    if (isSafeExternalHttpUrl(evidenceUrl)) {
+      const separator = document.createElement('span');
+      separator.textContent = ' · ';
+      linksTd.appendChild(separator);
+      const urlLink = document.createElement('a');
+      urlLink.href = evidenceUrl;
+      urlLink.target = '_blank';
+      urlLink.rel = 'noopener';
+      urlLink.textContent = 'url';
+      linksTd.appendChild(urlLink);
+    }
+    tr.appendChild(linksTd);
+
     tbody.appendChild(tr);
   }
   table.classList.remove('hidden');

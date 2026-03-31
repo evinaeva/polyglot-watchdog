@@ -362,6 +362,40 @@ def test_issues_results_lists_persisted_runs_newest_first(api_env):
     assert "domain" in json.loads(body_bad)["error"]
 
 
+def test_issues_results_lists_runs_even_without_capture_runs_manifest(api_env):
+    domain = "example.com"
+    _write(domain, "run-only-artifact", "issues.json", [{"id": "1", "evidence": {"url": "https://example.com"}}])
+
+    status, _, body = _request(api_env, f"/api/issues/results?domain={domain}")
+    assert status == HTTPStatus.OK
+    payload = json.loads(body)
+    row = next(row for row in payload["results"] if row["run_id"] == "run-only-artifact")
+    assert "Artifact run" in row["display_label"]
+
+
+def test_issues_response_includes_target_language_from_query_or_run_metadata(api_env):
+    domain = "example.com"
+    run_id = "run-target-lang"
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {
+                "run_id": run_id,
+                "created_at": "2026-03-02T10:00:00Z",
+                "jobs": [{"job_id": "check-languages-1", "type": "check_languages", "target_language": "fr"}],
+            }
+        ]
+    })
+    _write(domain, run_id, "issues.json", [{"id": "1", "evidence": {"url": "https://example.com"}}])
+
+    status_meta, _, body_meta = _request(api_env, f"/api/issues?domain={domain}&run_id={run_id}")
+    assert status_meta == HTTPStatus.OK
+    assert json.loads(body_meta)["target_language"] == "fr"
+
+    status_query, _, body_query = _request(api_env, f"/api/issues?domain={domain}&run_id={run_id}&language=de")
+    assert status_query == HTTPStatus.OK
+    assert json.loads(body_query)["target_language"] == "de"
+
+
 
 
 
@@ -441,6 +475,7 @@ def test_issue_detail_full_partial_and_optional_artifact_corruption(api_env):
     assert payload_ok["drilldown"]["element"] is not None
     assert payload_ok["drilldown"]["page"] is not None
     assert payload_ok["drilldown"]["screenshot_uri"] == "gs://page-shot"
+    assert payload_ok["drilldown"]["screenshot_view_url"] == f"/api/page-screenshot?domain={domain}&run_id=run-full&page_id=p1"
 
     _write(domain, "run-partial", "issues.json", [{"id": "partial", "evidence": {"storage_uri": "gs://only-evidence", "url": "https://b"}}])
     status_partial, _, body_partial = _request(api_env, f"/api/issues/detail?domain={domain}&run_id=run-partial&id=partial")
@@ -449,6 +484,7 @@ def test_issue_detail_full_partial_and_optional_artifact_corruption(api_env):
     assert payload_partial["drilldown"]["element"] is None
     assert payload_partial["drilldown"]["page"] is None
     assert payload_partial["drilldown"]["screenshot_uri"] == "gs://only-evidence"
+    assert payload_partial["drilldown"]["screenshot_view_url"] == ""
 
     from pipeline.storage import _gcs_client, artifact_path
 
