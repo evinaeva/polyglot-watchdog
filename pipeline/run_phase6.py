@@ -499,7 +499,15 @@ def run(
         pairing_meta_by_target_item_id = {
             str(k): dict(v) for k, v in dict(prepared_llm_payload.get("pairing_meta_by_target_item_id", {})).items()
         }
-    provider = build_provider(mode=resolved_review_mode)
+    llm_request_artifact_uri = ""
+
+    def _phase6_artifact_writer(filename: str, payload: Any) -> None:
+        nonlocal llm_request_artifact_uri
+        artifact_uri = write_json_artifact(domain, target_run_id, filename, payload)
+        if filename == "check_languages_llm_request.json":
+            llm_request_artifact_uri = str(artifact_uri or "").strip()
+
+    provider = build_provider(mode=resolved_review_mode, artifact_writer=_phase6_artifact_writer)
     if hasattr(provider, "prefetch_reviews"):
         prefetch_pairs: list[tuple[str, str]] = []
         prefetch_rows: list[dict[str, Any]] = []
@@ -579,16 +587,19 @@ def run(
         llm_review_stats = {}
     llm_review_stats["review_mode"] = str(llm_review_stats.get("review_mode") or resolved_review_mode)
     write_json_artifact(domain, target_run_id, "llm_review_stats.json", llm_review_stats)
+    artifact_uris = [
+        f"gs://{BUCKET_NAME}/{domain}/{target_run_id}/coverage_gaps.json",
+        f"gs://{BUCKET_NAME}/{domain}/{target_run_id}/issues.json",
+        f"gs://{BUCKET_NAME}/{domain}/{target_run_id}/llm_review_stats.json",
+    ]
+    if llm_request_artifact_uri:
+        artifact_uris.append(llm_request_artifact_uri)
     manifest = {
         "schema_version": "v1.0",
         "phase": "phase6",
         "run_id": target_run_id,
         "domain": domain,
-        "artifact_uris": sorted([
-            f"gs://{BUCKET_NAME}/{domain}/{target_run_id}/coverage_gaps.json",
-            f"gs://{BUCKET_NAME}/{domain}/{target_run_id}/issues.json",
-            f"gs://{BUCKET_NAME}/{domain}/{target_run_id}/llm_review_stats.json",
-        ]),
+        "artifact_uris": sorted(artifact_uris),
         "summary_counters": {
             "issues": len(issues),
             **coverage_counters,

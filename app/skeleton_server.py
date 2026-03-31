@@ -102,6 +102,7 @@ from app.check_languages_service import (
     _build_exception_diagnostics,
     _check_languages_payload_status,
     _check_languages_llm_review_telemetry_status,
+    _check_languages_llm_request_artifact_status,
     _check_languages_source_hashes,
     _check_languages_site_family_key,
     _check_languages_llm_input_artifact_status,
@@ -3061,6 +3062,10 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         llm_input_artifact_status_for_page = "missing"
         llm_input_payload = None
         llm_input_status = "missing"
+        llm_request_artifact_status_for_page = "missing"
+        llm_request_payload = None
+        llm_request_preview = "—"
+        llm_request_path = ""
         llm_status_note = ""
         payload_prepared_evidence = False
         llm_review_block = "<p>LLM telemetry is not available for this selection yet.</p>"
@@ -3320,6 +3325,19 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             llm_input_payload = llm_input_diagnostics.get("payload") if llm_input_artifact_status_for_page == "valid" else None
             llm_input_exists = llm_input_artifact_status_for_page == "valid"
             llm_input_exists_for_page = llm_input_exists
+            llm_request_diagnostics = _check_languages_llm_request_artifact_status(target_run_domain, target_run_id)
+            llm_request_artifact_status_for_page = str(llm_request_diagnostics.get("status", "missing"))
+            llm_request_payload = (
+                llm_request_diagnostics.get("payload")
+                if llm_request_artifact_status_for_page == "valid"
+                else None
+            )
+            try:
+                llm_request_path = f"gs://{llm_lookup_bucket}/{storage.artifact_path(target_run_domain, target_run_id, 'check_languages_llm_request.json')}"
+            except Exception:
+                llm_request_path = ""
+            if isinstance(llm_request_payload, dict):
+                llm_request_preview = json.dumps(llm_request_payload, ensure_ascii=False, indent=2)
             source_hashes = prepared_manifest.get("source_hashes") if isinstance(prepared_manifest, dict) and isinstance(prepared_manifest.get("source_hashes"), dict) else {}
             has_hashes = bool(source_hashes)
             stale = bool(source_hashes and source_hashes != _source_hashes_for_render(target_run_domain, selected_en_run_id, target_run_id))
@@ -3465,12 +3483,20 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             llm_path_block = f"path: <code>{_h(llm_input_path)}</code>" if llm_input_path else ""
             llm_note_block = f"<br/><em>{_h(llm_status_note)}</em>" if llm_status_note else ""
             llm_preview_block = f"<details><summary>Preview</summary><pre>{_h(llm_preview)}</pre></details>" if isinstance(llm_input_payload, dict) else ""
+            llm_request_preview_block = (
+                f"<details><summary>Preview</summary><pre>{_h(llm_request_preview)}</pre></details>"
+                if isinstance(llm_request_payload, dict)
+                else ""
+            )
             payload_preview_block = (
                 "<ul>"
                 f"<li><strong>check_languages_llm_input.json</strong> — status: <strong>{_h(llm_input_status)}</strong><br/>"
                 f"{llm_path_block}"
                 f"{llm_note_block}"
                 f"{llm_preview_block}</li>"
+                f"<li><strong>check_languages_llm_request.json</strong> — status: <strong>{_h(llm_request_artifact_status_for_page)}</strong><br/>"
+                f"path: <code>{_h(llm_request_path)}</code>"
+                f"{llm_request_preview_block}</li>"
                 "</ul>"
             )
             if isinstance(failure_payload, dict):
