@@ -480,6 +480,8 @@ class LLMReviewProvider:
             response = self._request_fn(self._endpoint, self._api_key, self._timeout_s, payload)
             batch_stats["response_received"] = True
             content = response["choices"][0]["message"]["content"]
+            if self._artifact_writer is not None and batch_index == 1:
+                self._artifact_writer("check_languages_llm_raw_response.json", {"content": content})
             usage = response.get("usage", {}) if isinstance(response, dict) else {}
             prompt_tokens = self._safe_int((usage or {}).get("prompt_tokens"))
             completion_tokens = self._safe_int((usage or {}).get("completion_tokens"))

@@ -3257,3 +3257,61 @@ def test_check_languages_llm_dictionary_link_is_before_status_block(api_env):
     link_pos = body.index('href="/about#llm-wire-format-dictionary"')
     state_pos = body.index("State:")
     assert link_pos < state_pos
+
+
+def test_result_files_page_renders_newest_run_by_default_with_collapsed_sections(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    _write("_system", "manual", "domains.json", {"domains": [domain]})
+    _write(
+        domain,
+        "manual",
+        "capture_runs.json",
+        {
+            "runs": [
+                {"run_id": "run-older", "created_at": "2026-03-10T00:00:00Z", "jobs": []},
+                {"run_id": "run-newest", "created_at": "2026-03-12T00:00:00Z", "jobs": []},
+            ]
+        },
+    )
+    _seed_pages(domain, "run-older", "fr")
+    _seed_pages(domain, "run-newest", "fr")
+    _write(domain, "run-newest", "check_languages_llm_request.json", {"messages": [{"role": "user", "content": "x"}]})
+    _write(domain, "run-newest", "check_languages_llm_raw_response.json", {"content": "{\"r\":[]}"})
+    _write(domain, "run-newest", "issues.json", [])
+
+    status, body, _ = _request("GET", api_env, f"/result-files?domain={domain}")
+    assert status == HTTPStatus.OK
+    assert "<h1 class=\"page-title\">Result Files" in body
+    assert "Selected run: <code>run-newest</code>" in body
+    assert "Request sent to LLM (check_languages_llm_request.json)" in body
+    assert "Raw LLM response (check_languages_llm_raw_response.json)" in body
+    assert "Parsed result (issues.json)" in body
+    assert "<details open" not in body
+    assert "Status: <strong>valid</strong>" in body
+
+
+def test_result_files_page_shows_missing_artifacts(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    _write("_system", "manual", "domains.json", {"domains": [domain]})
+    _write(
+        domain,
+        "manual",
+        "capture_runs.json",
+        {"runs": [{"run_id": "run-newest", "created_at": "2026-03-12T00:00:00Z", "jobs": []}]},
+    )
+    _seed_pages(domain, "run-newest", "fr")
+    _write(domain, "run-newest", "issues.json", [])
+
+    status, body, _ = _request("GET", api_env, f"/result-files?domain={domain}&run_id=run-newest")
+    assert status == HTTPStatus.OK
+    assert "Request sent to LLM (check_languages_llm_request.json)" in body
+    assert "Raw LLM response (check_languages_llm_raw_response.json)" in body
+    assert body.count("Status: <strong>missing</strong>") >= 2
+    assert "Parsed result (issues.json)" in body
+    assert "Status: <strong>valid</strong>" in body
+
+
+def test_navigation_includes_result_files_immediately_before_about(api_env):
+    status, body, _ = _request("GET", api_env, "/about")
+    assert status == HTTPStatus.OK
+    assert '<a href="/result-files">RESULT FILES</a> | <a href="/about">ABOUT</a>' in body

@@ -268,7 +268,7 @@ def test_llm_stats_parse_failure_records_fallback():
     assert stats["used_fallback"] is True
 
 
-def test_llm_request_artifact_writer_called_once_for_first_batch_only():
+def test_llm_request_and_raw_response_artifacts_written_for_first_batch_only():
     captured: list[tuple[str, dict]] = []
 
     def artifact_writer(filename, payload):
@@ -295,12 +295,17 @@ def test_llm_request_artifact_writer_called_once_for_first_batch_only():
     rows = [(f"Hello {i}", f"Bonjour {i}") for i in range(24)]
     provider.prefetch_reviews(rows, "fr")
 
-    assert len(captured) == 1
-    filename, payload = captured[0]
-    assert filename == "check_languages_llm_request.json"
-    assert isinstance(payload.get("messages"), list)
-    assert payload["messages"][0]["role"] == "system"
-    assert payload["messages"][1]["role"] == "user"
+    captured_by_filename = {}
+    for filename, payload in captured:
+        captured_by_filename.setdefault(filename, []).append(payload)
+
+    assert len(captured_by_filename["check_languages_llm_request.json"]) == 1
+    request_payload = captured_by_filename["check_languages_llm_request.json"][0]
+    assert isinstance(request_payload.get("messages"), list)
+    assert request_payload["messages"][0]["role"] == "system"
+    assert request_payload["messages"][1]["role"] == "user"
+    assert len(captured_by_filename["check_languages_llm_raw_response.json"]) == 1
+    assert isinstance(captured_by_filename["check_languages_llm_raw_response.json"][0].get("content"), str)
 
 
 def test_llm_request_artifact_writer_not_called_when_none():
@@ -331,6 +336,41 @@ def test_llm_request_artifact_writer_not_called_when_none():
     provider.prefetch_reviews(rows, "fr")
     assert requests_sent > 1
     assert provider.get_llm_review_stats()["llm_batches_attempted"] == requests_sent
+
+
+def test_llm_raw_response_artifact_not_written_for_later_batches():
+    captured: list[tuple[str, dict]] = []
+    requests_sent = 0
+
+    def artifact_writer(filename, payload):
+        captured.append((filename, payload))
+
+    def good_request(endpoint, api_key, timeout_s, payload):
+        nonlocal requests_sent
+        requests_sent += 1
+        user = json.loads(payload["messages"][1]["content"])
+        return {
+            "choices": [{
+                "message": {
+                    "content": json.dumps({"r": [[int(item[0]), 10, 20, 30, 0] for item in user["i"]]})
+                }
+            }],
+        }
+
+    provider = LLMReviewProvider(
+        api_key="k",
+        hard_context_tokens=1024,
+        token_reserve_ratio=0.5,
+        fixed_token_margin=900,
+        request_fn=good_request,
+        artifact_writer=artifact_writer,
+    )
+    rows = [(f"Hello {i}", f"Bonjour {i}") for i in range(24)]
+    provider.prefetch_reviews(rows, "fr")
+
+    assert requests_sent > 1
+    raw_artifacts = [payload for filename, payload in captured if filename == "check_languages_llm_raw_response.json"]
+    assert len(raw_artifacts) == 1
 
 
 def test_llm_stats_mixed_multi_batch_execution():
