@@ -4215,3 +4215,44 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cac0bcdc9c832c9ebf562021f2515e)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #227 — 2026-03-31T11:31:30Z
+
+- Title: Persist and surface LLM request artifact (check_languages_llm_request.json) from phase6 LLM provider to UI and manifest
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/227
+- Author: evinaeva
+- Base branch: main
+- Head branch: 2sgre5-codex/implement-support-for-check_languages_llm_request.json
+- Merge commit: dd233a89828c1e1770143269fd25d8434e314a0a
+- Changed files:
+  - app/check_languages_service.py
+  - app/skeleton_server.py
+  - pipeline/phase6_providers.py
+  - pipeline/run_phase6.py
+  - tests/test_check_languages_page.py
+  - tests/test_phase6_providers.py
+  - tests/test_phase6_review_pipeline.py
+- Description:
+  ### Motivation
+  
+  - Capture the exact LLM request payload emitted by the Phase6 LLM review provider so it can be persisted as an artifact and surfaced in the Check Languages UI and phase manifest for debugging and auditing.
+  
+  ### Description
+  
+  - Add an optional `artifact_writer` constructor argument to `LLMReviewProvider` and store it on the provider instance as `self._artifact_writer`. 
+  - Invoke the artifact writer for the first LLM batch (`batch_index == 1`) to emit `check_languages_llm_request.json` containing the LLM request payload. 
+  - Change `build_provider` signature to `build_provider(mode: str, **provider_kwargs)` and forward provider kwargs so callers can supply `artifact_writer`. 
+  - Add `_check_languages_llm_request_artifact_status` to read/validate the saved `check_languages_llm_request.json`. 
+  - Wire the new artifact into the web UI by adding lookup, preview, and path rendering in `skeleton_server.py`, and include `check_languages_llm_request.json` preview in the payload preview block. 
+  - In `pipeline/run_phase6.py` add a local `_phase6_artifact_writer` that writes artifacts via `write_json_artifact`, captures the returned URI for `check_languages_llm_request.json`, and ensures the artifact URI is included in the phase manifest's `artifact_uris` when present. 
+  - Add and update tests to cover writing and rendering of the LLM request artifact and the provider behavior.
+  
+  ### Testing
+  
+  - Ran unit tests in `tests/test_phase6_providers.py` covering `LLMReviewProvider` artifact writer behavior and the new no-writer case, and they passed. 
+  - Ran UI-related tests in `tests/test_check_languages_page.py` that assert the `check_languages_llm_request.json` preview and status are rendered, and they passed. 
+  - Ran pipeline tests in `tests/test_phase6_review_pipeline.py` that verify the manifest includes/omits the LLM request artifact as appropriate and they passed.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cb9c720b50832ca452b3f26be32f2b)
+- Notes: Auto-generated from merged PR metadata.
