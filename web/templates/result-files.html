@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Polyglot Watchdog - Result Files</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="/static/button-fx.css" />
+  <link rel="stylesheet" href="/static/theme-graph.css" />
+</head>
+<body>
+  {{header}}
+  <main>
+    <div class="top-unified-block">
+      <h1 class="page-title">Result Files<span class="page-title-subtitle">Browse saved LLM request/response artifacts across runs.</span></h1>
+
+      <section>
+        <form method="get" action="/result-files">
+          <div class="controls">
+            <div>
+              <label for="resultFilesDomain">Domain</label>
+              <select id="resultFilesDomain" name="domain" onchange="this.form.submit()">
+                {{result_files_domain_options}}
+              </select>
+            </div>
+            <div>
+              <label for="resultFilesRun">Run</label>
+              <select id="resultFilesRun" name="run_id" onchange="this.form.submit()">
+                {{result_files_run_options}}
+              </select>
+            </div>
+          </div>
+          <noscript><button type="submit">Load</button></noscript>
+        </form>
+      </section>
+
+      <section>
+        <p>Selected domain: <code>{{result_files_selected_domain}}</code></p>
+        <p>Selected run: <code>{{result_files_selected_run_id}}</code></p>
+      </section>
+
+      <section>
+        <h2>Artifacts</h2>
+        {{result_files_artifacts}}
+      </section>
+    </div>
+  </main>
+  <script src="/static/button-fx.js"></script>
+  <script src="/static/i18n.js"></script>
+  <script src="/static/nav-active.js"></script>
+  <script src="/static/auth.js"></script>
+</body>
+</html>

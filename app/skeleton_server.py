@@ -487,6 +487,28 @@ def _list_persisted_issue_results(domain: str) -> list[dict]:
     return results
 
 
+def _result_file_artifact_status(domain: str, run_id: str, filename: str) -> dict[str, Any]:
+    status = "missing"
+    payload: Any = None
+    error = ""
+    try:
+        payload = storage.read_json_artifact(domain, run_id, filename)
+        status = "valid"
+    except json.JSONDecodeError as exc:
+        status = "malformed"
+        error = str(exc)
+    except Exception as exc:
+        status = "missing" if _is_missing_artifact_error(exc) else "read_error"
+        error = "" if status == "missing" else str(exc)
+    return {
+        "filename": filename,
+        "status": status,
+        "error": error,
+        "payload": payload if status == "valid" else None,
+        "path": f"gs://{storage.BUCKET_NAME}/{storage.artifact_path(domain, run_id, filename)}",
+    }
+
+
 def _save_runs(domain: str, payload: dict) -> None:
     from pipeline.storage import write_json_artifact
 
@@ -1485,6 +1507,11 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             if not self._require_auth(api=False):
                 return
             self._serve_check_languages_page(parse_qs(parsed.query))
+            return
+        if parsed.path == "/result-files":
+            if not self._require_auth(api=False):
+                return
+            self._serve_result_files_page(parse_qs(parsed.query))
             return
 
         page_templates = {
@@ -3062,6 +3089,94 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         redirect_payload["target_run_id"] = target_run_id
         redirect_payload["generated_target_url"] = generated_target_url
         self._redirect_check_languages(redirect_payload, message=ok_message, level="ok")
+
+    def _serve_result_files_page(self, query: dict[str, list[str]]) -> None:
+        domain_options = sorted(
+            {_normalize_check_languages_domain(item) for item in _list_domains() if _is_supported_check_languages_domain(item)}
+        )
+        selected_domain = _normalize_check_languages_domain(str((query.get("domain") or [""])[0]).strip())
+        if not selected_domain and domain_options:
+            selected_domain = _normalize_check_languages_domain(_default_check_languages_domain())
+        if selected_domain and selected_domain not in domain_options:
+            domain_options.append(selected_domain)
+            domain_options = sorted(set(domain_options))
+
+        runs = _load_check_language_runs(selected_domain) if selected_domain else []
+        selected_run_id = str((query.get("run_id") or [""])[0]).strip()
+        if not selected_run_id and runs:
+            selected_run_id = str(runs[0].get("run_id", "")).strip()
+
+        selected_run: dict[str, Any] | None = None
+        run_options: list[str] = []
+        for run in runs:
+            run_id = str(run.get("run_id", "")).strip()
+            run_domain = str(run.get("domain", "")).strip()
+            if not run_id or not run_domain:
+                continue
+            if selected_run is None and run_id == selected_run_id:
+                selected_run = run
+            selected_attr = ' selected="selected"' if run_id == selected_run_id else ""
+            run_options.append(
+                f'<option value="{_h(run_id)}"{selected_attr}>{_h(_run_display_label(run))} · {_h(run_domain)}</option>'
+            )
+
+        if selected_run is None and runs:
+            selected_run = runs[0]
+            selected_run_id = str(selected_run.get("run_id", "")).strip()
+            run_options = []
+            for run in runs:
+                run_id = str(run.get("run_id", "")).strip()
+                run_domain = str(run.get("domain", "")).strip()
+                if not run_id or not run_domain:
+                    continue
+                selected_attr = ' selected="selected"' if run_id == selected_run_id else ""
+                run_options.append(
+                    f'<option value="{_h(run_id)}"{selected_attr}>{_h(_run_display_label(run))} · {_h(run_domain)}</option>'
+                )
+
+        domain_options_html = "".join(
+            f'<option value="{_h(item)}"{" selected=\"selected\"" if item == selected_domain else ""}>{_h(item)}</option>'
+            for item in domain_options
+        ) or '<option value="">No supported domains found</option>'
+        run_options_html = "".join(run_options) or '<option value="">No runs found</option>'
+
+        artifact_sections = [
+            ("Request sent to LLM", "check_languages_llm_request.json"),
+            ("Raw LLM response", "check_languages_llm_raw_response.json"),
+            ("Parsed result", "issues.json"),
+        ]
+        artifact_sections_html = "<p>No run selected.</p>"
+        if selected_run is not None:
+            selected_run_domain = str(selected_run.get("domain", "")).strip()
+            blocks: list[str] = []
+            for label, filename in artifact_sections:
+                artifact = _result_file_artifact_status(selected_run_domain, selected_run_id, filename)
+                preview = "Unavailable"
+                if artifact["status"] == "valid":
+                    preview = json.dumps(artifact["payload"], ensure_ascii=False, indent=2)
+                status_line = f'<p>Status: <strong>{_h(str(artifact["status"]))}</strong></p>'
+                error_line = f"<p>Error: {_h(str(artifact['error']))}</p>" if artifact["error"] else ""
+                blocks.append(
+                    f"<details>"
+                    f"<summary>{_h(label)} ({_h(filename)})</summary>"
+                    f"{status_line}"
+                    f"<p>Path: <code>{_h(str(artifact['path']))}</code></p>"
+                    f"{error_line}"
+                    f"<pre>{_h(preview)}</pre>"
+                    f"</details>"
+                )
+            artifact_sections_html = "".join(blocks)
+
+        self._serve_template(
+            "result-files.html",
+            replacements={
+                "{{result_files_domain_options}}": domain_options_html,
+                "{{result_files_run_options}}": run_options_html,
+                "{{result_files_selected_domain}}": _h(selected_domain or "—"),
+                "{{result_files_selected_run_id}}": _h(selected_run_id or "—"),
+                "{{result_files_artifacts}}": artifact_sections_html,
+            },
+        )
 
     def _serve_check_languages_page(self, query: dict[str, list[str]]) -> None:
         domain = _normalize_check_languages_domain(str(query.get("selected_domain", [""])[0]) or str(query.get("domain", [""])[0]))
