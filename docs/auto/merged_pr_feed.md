@@ -4256,3 +4256,39 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cb9c720b50832ca452b3f26be32f2b)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #228 — 2026-03-31T17:10:59Z
+
+- Title: Add Result Files UI page and persist raw LLM response artifacts
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/228
+- Author: evinaeva
+- Base branch: main
+- Head branch: 8y97ez-codex/add-dedicated-artifact-browser-page
+- Merge commit: 017fd831369e0a60c573efd4b3748574d1da1c09
+- Changed files:
+  - app/skeleton_server.py
+  - pipeline/phase6_providers.py
+  - tests/test_check_languages_page.py
+  - tests/test_phase6_providers.py
+  - web/templates/_header.html
+  - web/templates/result-files.html
+- Description:
+  ### Motivation
+  - Provide operators a dedicated UI to browse LLM-related artifacts across runs (requests, raw responses, parsed results) independent of the check-languages flow. 
+  - Persist the raw model output so operators can inspect exactly what the provider returned before decoding. 
+  
+  ### Description
+  - Persist raw LLM responses in `LLMReviewProvider._review_batch` by calling the existing `artifact_writer` callback with `check_languages_llm_raw_response.json` (shape: `{"content": "<raw string>"}`) only for `batch_index == 1`, matching the request artifact behavior (file changed: `pipeline/phase6_providers.py`).
+  - Add a new server route `/result-files` and handler `_serve_result_files_page` that reuses existing run/domain helpers, lists runs newest-first, defaults to the newest run, and renders artifact sections for `check_languages_llm_request.json`, `check_languages_llm_raw_response.json`, and `issues.json` in collapsed `<details>` blocks (file changed: `app/skeleton_server.py`).
+  - Implement artifact status helper `_result_file_artifact_status` to return `valid`, `missing`, `malformed`, or `read_error` plus gs:// paths using existing storage helpers (file changed: `app/skeleton_server.py`).
+  - Add a simple server-rendered template for the page at `web/templates/result-files.html` and insert the navigation link `Result Files` immediately before `About` in `web/templates/_header.html`.
+  - Update tests to cover raw-response persistence semantics and the new UI/menu behavior (files changed: `tests/test_phase6_providers.py`, `tests/test_check_languages_page.py`).
+  
+  ### Testing
+  - Installed missing test dependency with `python -m pip install jsonschema` to satisfy schema validation during import; installation succeeded. 
+  - Ran the focused test set with `PYTHONPATH=. pytest -q tests/test_phase6_providers.py tests/test_check_languages_page.py -k "raw_response or result_files or navigation_includes_result_files or request_and_raw_response"` and the selected tests passed (`5 passed, 155 deselected`).
+  - Unit tests verify: raw response artifact is written for the first batch only, not written when no callback is provided, not written for later batches, the `/result-files` route renders and defaults to the newest run, artifact sections are collapsed by default, missing/present artifacts are shown, and the navigation includes `Result Files` immediately before `About`.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cbdfcc6008832cbe82e82d0b65133a)
+- Notes: Auto-generated from merged PR metadata.
