@@ -4368,3 +4368,44 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cc2315bbac832ca63e0cebd2b85e0d)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #231 — 2026-03-31T20:28:34Z
+
+- Title: Deduplicate/sort persisted runs, infer target language from issues, and strengthen UI fields and link safety
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/231
+- Author: evinaeva
+- Base branch: main
+- Head branch: 204114-codex/audit-and-patch-see-errors-flow
+- Merge commit: 0248e474046e214c7cd50ccfd2cece2479cf86fc
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_operator_ui_runtime_regressions.py
+  - tests/test_stage_a_read_routes_api.py
+  - web/static/index.js
+  - web/static/issues-detail.js
+- Description:
+  ### Motivation
+  
+  - Ensure persisted runs listing does not duplicate run IDs discovered from manifest and GCS and that results are globally sorted newest-first.
+  - Provide a deterministic fallback for run target language by inspecting persisted `issues.json` when run metadata or query param is absent.
+  - Normalize UI issue field aliases and improve source/target text extraction and screenshot link safety in the web UI.
+  
+  ### Description
+  
+  - Change `_list_persisted_issue_results` to build a unique map `results_by_run_id` merging capture manifest rows and artifact-discovered runs, deduplicating by `run_id` and then producing a globally sorted list by `created_at` and `run_id`.
+  - Update `_infer_target_language_for_run` to handle missing run rows more robustly and to inspect the `issues.json` artifact to count language occurrences and deterministically pick the most frequent normalized language.
+  - Add domain validation early in the request handling for `/api/issues` and `/api/issues/detail` to return `400` for invalid domains.
+  - Update UI logic in `web/static/index.js` to support additional schema aliases for severity, source and target text extraction, and to compute a deterministic target language from issue frequency when no explicit value is provided.
+  - Add helper `deriveIssueLanguage`, `deterministicTargetLanguageFromIssues`, and wire them into `updateTargetLanguage` so the UI header uses the computed language rather than relying on row order.
+  - Improve `web/static/issues-detail.js` to: normalize fields (source/target text, severity), escape/serialize JSON safely, render DOM nodes rather than raw `innerHTML`, and only allow screenshot links that are `http:`, `https:` or a single-slash local path while blocking scheme-relative and javascript links.
+  - Add and update tests under `tests/` to cover deduplication and global sorting of persisted runs, deterministic fallback for run target language, domain validation for issues endpoints, and multiple UI runtime behaviors (target-language selection, schema alias support, and safe screenshot URLs).
+  
+  ### Testing
+  
+  - Ran the automated test suite with `pytest`, including new API tests in `tests/test_stage_a_read_routes_api.py` and UI/runtime tests in `tests/test_operator_ui_runtime_regressions.py`; all tests passed.
+  - Exercised the modified server endpoints `/api/issues/results`, `/api/issues`, and `/api/issues/detail` via the added unit tests to validate deduplication, sorting, language fallback, and domain validation.
+  - Exercised the browser-side logic via node-based runtime tests to validate deterministic language selection, schema alias handling, text extraction, and screenshot link safety.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cc27976220832cb54c285d596d1902)
+- Notes: Auto-generated from merged PR metadata.
