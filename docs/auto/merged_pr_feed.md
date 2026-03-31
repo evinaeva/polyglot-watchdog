@@ -4329,3 +4329,42 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cbdff0e288832c86697db9c21c2907)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #230 — 2026-03-31T19:56:46Z
+
+- Title: Infer target language, discover artifact-only runs, and enrich issue list UI with source/target/severity and safe links
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/230
+- Author: evinaeva
+- Base branch: main
+- Head branch: cv1fm4-codex/fix-see-errors-operator-page
+- Merge commit: 4375aca5696ac2587a794d20ad64713916c108e4
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_operator_ui_runtime_regressions.py
+  - tests/test_stage_a_read_routes_api.py
+  - web/static/index.js
+  - web/static/issues-detail.js
+  - web/templates/index.html
+- Description:
+  ### Motivation
+  
+  - Ensure persisted issue results include runs even when `capture_runs.json` is missing by discovering artifacts from storage.
+  - Surface a run-level `target_language` in the `/api/issues` response derived from query params, run metadata, or job history to drive UI language hints.
+  - Make the issues index more useful by showing source/target text, computed severity, and safe external links while preventing non-HTTP links.
+  - Provide a canonical screenshot view link in issue detail pages when a page screenshot is available.
+  
+  ### Description
+  
+  - Server: added GCS fallback discovery to `_list_persisted_issue_results` to include runs that have `issues.json` in storage even if not listed in `capture_runs.json` and sort them by timestamp; implemented `_infer_target_language_for_run` to pick target language from query, run metadata, or job entries; included `target_language` in the `/api/issues` JSON response; compute and return `screenshot_view_url` in `/api/issues/detail` when a page id can be resolved.
+  - Frontend: updated `web/static/index.js` to add helper `readField`, `deriveSeverity`, `deriveSourceText`, `deriveTargetText`, `isSafeExternalHttpUrl`, and `updateTargetLanguage`, and changed `loadIssues` to render columns for source, target, issue, severity, and links (including safe external URL links with `target="_blank" rel="noopener"`); updated `web/static/issues-detail.js` to use `deriveSeverity` and to prefer `screenshot_view_url` when rendering the screenshot link; updated template `web/templates/index.html` to add `targetLanguageSummary` and the table header.
+  - Tests: updated many JS VM test sandboxes to provide the global `URL` and adjusted expectations for the new UI elements; added API tests `test_issues_results_lists_runs_even_without_capture_runs_manifest` and `test_issues_response_includes_target_language_from_query_or_run_metadata`; added UI runtime tests `test_index_runtime_renders_source_target_severity_and_links` and `test_index_runtime_blocks_non_http_external_url_links` and updated regressions in `tests/test_operator_ui_runtime_regressions.py` to reflect new DOM elements and behaviors.
+  
+  ### Testing
+  
+  - Ran the API test file with `pytest tests/test_stage_a_read_routes_api.py` which exercised persisted-run discovery and the `target_language` behavior, and the tests passed.
+  - Ran the operator UI runtime regression tests with `pytest tests/test_operator_ui_runtime_regressions.py`, which execute JS via the existing `_run_node_json` harness and confirmed the new UI rendering and safe-link behavior, and the tests passed.
+  - The added JS-driven UI tests run under the Python test harness (via Node in `_run_node_json`) and succeeded, validating table cell values, link counts, and header/summary text.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cc2315bbac832ca63e0cebd2b85e0d)
+- Notes: Auto-generated from merged PR metadata.
