@@ -469,6 +469,24 @@ def _sort_runs_newest_first(runs: list[dict]) -> list[dict]:
     )
 
 
+def _list_persisted_issue_results(domain: str) -> list[dict]:
+    runs_payload = _load_runs(domain)
+    runs = runs_payload.get("runs", []) if isinstance(runs_payload, dict) else []
+    results: list[dict] = []
+    for run in _sort_runs_newest_first(runs):
+        run_id = str((run or {}).get("run_id", "")).strip()
+        if not run_id:
+            continue
+        if not _artifact_exists(domain, run_id, "issues.json"):
+            continue
+        results.append({
+            "run_id": run_id,
+            "created_at": str((run or {}).get("created_at", "")).strip(),
+            "display_label": _run_display_label(run),
+        })
+    return results
+
+
 def _result_file_artifact_status(domain: str, run_id: str, filename: str) -> dict[str, Any]:
     status = "missing"
     payload: Any = None
@@ -1760,6 +1778,21 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                     self._json_response({"error": str(exc), "status": "artifact_invalid"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
                 return
             self._json_response({"rules": rules})
+            return
+        if parsed.path == "/api/issues/results":
+            if not self._require_auth(api=True):
+                return
+            query = parse_qs(parsed.query)
+            required, missing = _require_query_params(query, "domain")
+            if missing:
+                self._json_response(_missing_required_query_params(*missing), status=HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                domain = validate_domain(_normalize_testsite_domain_key(required["domain"]))
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            self._json_response({"results": _list_persisted_issue_results(domain)})
             return
         if parsed.path in {"/api/issues", "/api/issues/export"}:
             if not self._require_auth(api=True):

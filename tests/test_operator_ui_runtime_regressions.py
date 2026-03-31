@@ -1486,3 +1486,447 @@ def test_pulls_advanced_primary_labels_are_readable_and_user_tier_defaults_to_fr
     assert out["summary"] == "EN · Desktop · baseline · Free"
     assert out["hasReadableAdvancedLabel"] is True
     assert out["hasTechnicalDisclosure"] is True
+
+
+def test_index_runtime_uses_newest_persisted_result_and_allows_selection_change():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function makeElement(id='') {
+          const listeners = {};
+          const classes = new Set();
+          const el = {
+            id,
+            value: '',
+            href: '',
+            textContent: '',
+            innerHTML: '',
+            disabled: false,
+            children: [],
+            className: '',
+            classList: {
+              add(name){ classes.add(name); },
+              remove(name){ classes.delete(name); },
+              toggle(name, force){ if (force === true) classes.add(name); else if (force === false) classes.delete(name); },
+            },
+            appendChild(child){ this.children.push(child); return child; },
+            addEventListener(type, cb){ listeners[type] = cb; },
+            dispatch(type){ if (listeners[type]) return listeners[type]({ target: this }); },
+            querySelector(){ return makeElement('qs'); },
+          };
+          Object.defineProperty(el, 'options', { get(){ return this.children; } });
+          return el;
+        }
+
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','issuesBackToCheckLanguages','workflowContextSummary'];
+        const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
+        const tbody = makeElement('tbody');
+        els.issuesTable.querySelector = () => tbody;
+
+        const calls = [];
+        const sandbox = {
+          console,
+          URLSearchParams,
+          Intl,
+          document: {
+            getElementById: (id) => els[id],
+            createElement: () => makeElement('created'),
+          },
+          window: {
+            location: { search: '?domain=example.com' },
+            history: { replaceState(){} },
+          },
+          safeReadPayload: async (response) => response.json(),
+          fetch: async (url) => {
+            calls.push(url);
+            if (url.startsWith('/api/issues/results?')) {
+              return { ok: true, status: 200, json: async () => ({ results: [
+                { run_id: 'run-new', created_at: '2026-03-02T10:00:00Z', display_label: 'First_run_12:00|02.03.2026' },
+                { run_id: 'run-old', created_at: '2026-03-01T10:00:00Z', display_label: 'First_run_12:00|01.03.2026' },
+              ]}) };
+            }
+            if (url.startsWith('/api/issues?')) {
+              return { ok: true, status: 200, json: async () => ({ issues: [{ id: '1', message: 'x', evidence: { url: 'https://example.com' } }], count: 1 }) };
+            }
+            throw new Error('Unexpected URL: ' + url);
+          },
+        };
+
+        vm.createContext(sandbox);
+        vm.runInContext(fs.readFileSync('web/static/index.js', 'utf8'), sandbox);
+
+        setTimeout(() => {
+          const initialRunId = els.runIdInput.value;
+          const initialIssuesCall = calls.find((url) => url.includes('/api/issues?')) || '';
+          els.persistedResultSelect.value = 'run-old';
+          els.persistedResultSelect.dispatch('change');
+          setTimeout(() => {
+            const latestIssuesCall = [...calls].reverse().find((url) => url.includes('/api/issues?')) || '';
+            console.log(JSON.stringify({
+              optionValues: els.persistedResultSelect.options.map((row) => row.value),
+              initialRunId,
+              initialIssuesCall,
+              latestIssuesCall,
+            }));
+          }, 0);
+        }, 0);
+        """
+    )
+    out = _run_node_json(script)
+    option_values = [value for value in out["optionValues"] if value]
+    assert option_values[:2] == ["run-new", "run-old"]
+    assert out["initialRunId"] == "run-new"
+    assert "run_id=run-new" in out["initialIssuesCall"]
+    assert "run_id=run-old" in out["latestIssuesCall"]
+
+
+def test_index_runtime_handles_empty_persisted_results_state():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function makeElement(id='') {
+          const listeners = {};
+          const classes = new Set();
+          const el = {
+            id,
+            value: '',
+            textContent: '',
+            innerHTML: '',
+            disabled: false,
+            children: [],
+            className: '',
+            classList: {
+              add(name){ classes.add(name); },
+              remove(name){ classes.delete(name); },
+              toggle(name, force){ if (force === true) classes.add(name); else if (force === false) classes.delete(name); },
+            },
+            appendChild(child){ this.children.push(child); return child; },
+            addEventListener(type, cb){ listeners[type] = cb; },
+            querySelector(){ return makeElement('qs'); },
+          };
+          Object.defineProperty(el, 'options', { get(){ return this.children; } });
+          return el;
+        }
+
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','issuesBackToCheckLanguages','workflowContextSummary'];
+        const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
+        els.issuesTable.querySelector = () => makeElement('tbody');
+
+        const sandbox = {
+          console,
+          URLSearchParams,
+          Intl,
+          document: {
+            getElementById: (id) => els[id],
+            createElement: () => makeElement('created'),
+          },
+          window: { location: { search: '?domain=example.com' }, history: { replaceState(){} } },
+          safeReadPayload: async (response) => response.json(),
+          fetch: async (url) => {
+            if (url.startsWith('/api/issues/results?')) {
+              return { ok: true, status: 200, json: async () => ({ results: [] }) };
+            }
+            throw new Error('Unexpected URL: ' + url);
+          },
+        };
+
+        vm.createContext(sandbox);
+        vm.runInContext(fs.readFileSync('web/static/index.js', 'utf8'), sandbox);
+
+        setTimeout(() => {
+          console.log(JSON.stringify({
+            optionText: els.persistedResultSelect.options[0] ? els.persistedResultSelect.options[0].textContent : '',
+            selectDisabled: els.persistedResultSelect.disabled,
+            statusText: els.issueStatus.textContent,
+          }));
+        }, 0);
+        """
+    )
+    out = _run_node_json(script)
+    assert out["optionText"] == "No persisted results available"
+    assert out["selectDisabled"] is True
+    assert "No persisted issue results found" in out["statusText"]
+
+
+def test_index_domain_change_auto_loads_newest_result_for_new_domain():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function makeElement(id='') {
+          const listeners = {};
+          const classes = new Set();
+          const el = {
+            id,
+            value: '',
+            textContent: '',
+            innerHTML: '',
+            disabled: false,
+            children: [],
+            className: '',
+            classList: {
+              add(name){ classes.add(name); },
+              remove(name){ classes.delete(name); },
+              toggle(name, force){ if (force === true) classes.add(name); else if (force === false) classes.delete(name); },
+              contains(name){ return classes.has(name); },
+            },
+            appendChild(child){ this.children.push(child); return child; },
+            addEventListener(type, cb){ listeners[type] = cb; },
+            dispatch(type){ if (listeners[type]) return listeners[type]({ target: this }); },
+            querySelector(){ return makeElement('qs'); },
+          };
+          Object.defineProperty(el, 'options', { get(){ return this.children; } });
+          return el;
+        }
+
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','issuesBackToCheckLanguages','workflowContextSummary'];
+        const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
+        const tbody = makeElement('tbody');
+        els.issuesTable.querySelector = () => tbody;
+
+        const calls = [];
+        const sandbox = {
+          console,
+          URLSearchParams,
+          Intl,
+          document: {
+            getElementById: (id) => els[id],
+            createElement: () => makeElement('created'),
+          },
+          window: { location: { search: '?domain=domain-a' }, history: { replaceState(){} } },
+          safeReadPayload: async (response) => response.json(),
+          fetch: async (url) => {
+            calls.push(url);
+            if (url.startsWith('/api/issues/results?')) {
+              if (url.includes('domain=domain-a')) {
+                return { ok: true, status: 200, json: async () => ({ results: [
+                  { run_id: 'a-run-1', created_at: '2026-03-01T10:00:00Z', display_label: 'A1' },
+                ]}) };
+              }
+              return { ok: true, status: 200, json: async () => ({ results: [
+                { run_id: 'b-run-new', created_at: '2026-03-03T10:00:00Z', display_label: 'B-new' },
+                { run_id: 'b-run-old', created_at: '2026-03-02T10:00:00Z', display_label: 'B-old' },
+              ]}) };
+            }
+            if (url.startsWith('/api/issues?')) {
+              return { ok: true, status: 200, json: async () => ({ issues: [{ id: '1', message: 'x', evidence: { url: 'https://example.com' } }], count: 1 }) };
+            }
+            throw new Error('Unexpected URL: ' + url);
+          },
+        };
+
+        vm.createContext(sandbox);
+        vm.runInContext(fs.readFileSync('web/static/index.js', 'utf8'), sandbox);
+
+        setTimeout(() => {
+          els.domainInput.value = 'domain-b';
+          els.domainInput.dispatch('input');
+          setTimeout(() => {
+            const latestIssuesCall = [...calls].reverse().find((url) => url.includes('/api/issues?')) || '';
+            console.log(JSON.stringify({
+              selectedRunId: els.runIdInput.value,
+              latestIssuesCall,
+            }));
+          }, 0);
+        }, 0);
+        """
+    )
+    out = _run_node_json(script)
+    assert out["selectedRunId"] == "b-run-new"
+    assert "domain=domain-b" in out["latestIssuesCall"]
+    assert "run_id=b-run-new" in out["latestIssuesCall"]
+
+
+def test_index_domain_change_to_empty_results_clears_stale_issue_table():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function makeElement(id='') {
+          const listeners = {};
+          const classes = new Set();
+          const el = {
+            id,
+            value: '',
+            textContent: '',
+            _innerHTML: '',
+            disabled: false,
+            children: [],
+            className: '',
+            classList: {
+              add(name){ classes.add(name); },
+              remove(name){ classes.delete(name); },
+              toggle(name, force){ if (force === true) classes.add(name); else if (force === false) classes.delete(name); },
+              contains(name){ return classes.has(name); },
+            },
+            appendChild(child){ this.children.push(child); return child; },
+            addEventListener(type, cb){ listeners[type] = cb; },
+            dispatch(type){ if (listeners[type]) return listeners[type]({ target: this }); },
+            querySelector(){ return makeElement('qs'); },
+          };
+          Object.defineProperty(el, 'innerHTML', {
+            get(){ return this._innerHTML || ''; },
+            set(v){ this._innerHTML = v; if (v === '') this.children = []; },
+          });
+          Object.defineProperty(el, 'options', { get(){ return this.children; } });
+          return el;
+        }
+
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','issuesBackToCheckLanguages','workflowContextSummary'];
+        const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
+        const tbody = makeElement('tbody');
+        els.issuesTable.querySelector = () => tbody;
+
+        const sandbox = {
+          console,
+          URLSearchParams,
+          Intl,
+          document: {
+            getElementById: (id) => els[id],
+            createElement: () => makeElement('created'),
+          },
+          window: { location: { search: '?domain=domain-a' }, history: { replaceState(){} } },
+          safeReadPayload: async (response) => response.json(),
+          fetch: async (url) => {
+            if (url.startsWith('/api/issues/results?')) {
+              if (url.includes('domain=domain-a')) {
+                return { ok: true, status: 200, json: async () => ({ results: [{ run_id: 'a-run', created_at: '2026-03-01T10:00:00Z' }] }) };
+              }
+              return { ok: true, status: 200, json: async () => ({ results: [] }) };
+            }
+            if (url.startsWith('/api/issues?')) {
+              return { ok: true, status: 200, json: async () => ({ issues: [{ id: '1', message: 'stale', evidence: { url: 'https://example.com' } }], count: 1 }) };
+            }
+            throw new Error('Unexpected URL: ' + url);
+          },
+        };
+
+        vm.createContext(sandbox);
+        vm.runInContext(fs.readFileSync('web/static/index.js', 'utf8'), sandbox);
+
+        setTimeout(() => {
+          const hadRowsBefore = tbody.children.length > 0;
+          els.domainInput.value = 'domain-empty';
+          els.domainInput.dispatch('input');
+          setTimeout(() => {
+            console.log(JSON.stringify({
+              hadRowsBefore,
+              rowsAfter: tbody.children.length,
+              tableHidden: els.issuesTable.classList.contains('hidden'),
+              issueCountHidden: els.issueCount.classList.contains('hidden'),
+              issueCountText: els.issueCount.textContent,
+              statusText: els.issueStatus.textContent,
+            }));
+          }, 0);
+        }, 0);
+        """
+    )
+    out = _run_node_json(script)
+    assert out["hadRowsBefore"] is True
+    assert out["rowsAfter"] == 0
+    assert out["tableHidden"] is True
+    assert out["issueCountHidden"] is True
+    assert out["issueCountText"] == ""
+    assert "No persisted issue results found" in out["statusText"]
+
+
+def test_index_refresh_empty_results_clears_stale_issue_table():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function makeElement(id='') {
+          const listeners = {};
+          const classes = new Set();
+          const el = {
+            id,
+            value: '',
+            textContent: '',
+            _innerHTML: '',
+            disabled: false,
+            children: [],
+            className: '',
+            classList: {
+              add(name){ classes.add(name); },
+              remove(name){ classes.delete(name); },
+              toggle(name, force){ if (force === true) classes.add(name); else if (force === false) classes.delete(name); },
+              contains(name){ return classes.has(name); },
+            },
+            appendChild(child){ this.children.push(child); return child; },
+            addEventListener(type, cb){ listeners[type] = cb; },
+            dispatch(type){ if (listeners[type]) return listeners[type]({ target: this }); },
+            click(){ if (listeners.click) return listeners.click({ target: this }); },
+            querySelector(){ return makeElement('qs'); },
+          };
+          Object.defineProperty(el, 'innerHTML', {
+            get(){ return this._innerHTML || ''; },
+            set(v){ this._innerHTML = v; if (v === '') this.children = []; },
+          });
+          Object.defineProperty(el, 'options', { get(){ return this.children; } });
+          return el;
+        }
+
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','issuesBackToCheckLanguages','workflowContextSummary'];
+        const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
+        const tbody = makeElement('tbody');
+        els.issuesTable.querySelector = () => tbody;
+
+        let resultsCallCount = 0;
+        const sandbox = {
+          console,
+          URLSearchParams,
+          Intl,
+          document: {
+            getElementById: (id) => els[id],
+            createElement: () => makeElement('created'),
+          },
+          window: { location: { search: '?domain=domain-a' }, history: { replaceState(){} } },
+          safeReadPayload: async (response) => response.json(),
+          fetch: async (url) => {
+            if (url.startsWith('/api/issues/results?')) {
+              resultsCallCount += 1;
+              if (resultsCallCount === 1) {
+                return { ok: true, status: 200, json: async () => ({ results: [{ run_id: 'a-run', created_at: '2026-03-01T10:00:00Z' }] }) };
+              }
+              return { ok: true, status: 200, json: async () => ({ results: [] }) };
+            }
+            if (url.startsWith('/api/issues?')) {
+              return { ok: true, status: 200, json: async () => ({ issues: [{ id: '1', message: 'stale', evidence: { url: 'https://example.com' } }], count: 1 }) };
+            }
+            throw new Error('Unexpected URL: ' + url);
+          },
+        };
+
+        vm.createContext(sandbox);
+        vm.runInContext(fs.readFileSync('web/static/index.js', 'utf8'), sandbox);
+
+        setTimeout(() => {
+          const hadRowsBefore = tbody.children.length > 0;
+          els.refreshPersistedResults.click();
+          setTimeout(() => {
+            console.log(JSON.stringify({
+              hadRowsBefore,
+              rowsAfter: tbody.children.length,
+              tableHidden: els.issuesTable.classList.contains('hidden'),
+              issueCountHidden: els.issueCount.classList.contains('hidden'),
+              issueCountText: els.issueCount.textContent,
+              statusText: els.issueStatus.textContent,
+            }));
+          }, 0);
+        }, 0);
+        """
+    )
+    out = _run_node_json(script)
+    assert out["hadRowsBefore"] is True
+    assert out["rowsAfter"] == 0
+    assert out["tableHidden"] is True
+    assert out["issueCountHidden"] is True
+    assert out["issueCountText"] == ""
+    assert "No persisted issue results found" in out["statusText"]

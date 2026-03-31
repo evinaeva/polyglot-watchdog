@@ -2,6 +2,8 @@ const applyBtn = document.getElementById('applyIssueQuery');
 const exportCsvBtn = document.getElementById('exportIssuesCsv');
 const queryInput = document.getElementById('issueQuery');
 const domainInput = document.getElementById('domainInput');
+const persistedResultSelect = document.getElementById('persistedResultSelect');
+const refreshPersistedResults = document.getElementById('refreshPersistedResults');
 const runIdInput = document.getElementById('runIdInput');
 const languageFilter = document.getElementById('languageFilter');
 const severityFilter = document.getElementById('severityFilter');
@@ -20,6 +22,16 @@ const workflowContext = {
   domain: '',
   runId: '',
 };
+let persistedResults = [];
+const tallinnDateTimeFormatter = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Europe/Tallinn',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
 
 function queryParamsFromLocation() {
   const params = new URLSearchParams(window.location.search);
@@ -32,6 +44,23 @@ function queryParamsFromLocation() {
 function setStatus(message, cls = '') {
   issueStatus.className = cls;
   issueStatus.textContent = message || '';
+}
+
+function clearIssuesView() {
+  tbody.innerHTML = '';
+  table.classList.add('hidden');
+  issueCount.textContent = '';
+  issueCount.classList.add('hidden');
+}
+
+function formatUtcTimestampForUi(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw;
+  const parts = tallinnDateTimeFormatter.formatToParts(parsed);
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${map.year}-${map.month}-${map.day} ${map.hour}:${map.minute}`;
 }
 
 function activeDomain() {
@@ -85,6 +114,66 @@ function syncDefaultsFromQuery() {
   issuesBackToCheckLanguages.href = `${basePath}${params.toString() ? `?${params.toString()}` : ''}`;
 
   updateWorkflowSummary();
+}
+
+function resultOptionLabel(result) {
+  const runId = String((result || {}).run_id || '').trim();
+  const createdAt = formatUtcTimestampForUi(result.created_at);
+  const displayLabel = String((result || {}).display_label || '').trim();
+  if (createdAt && displayLabel && displayLabel !== runId) return `${createdAt} · ${displayLabel} · ${runId}`;
+  if (createdAt) return `${createdAt} · ${runId}`;
+  if (displayLabel && displayLabel !== runId) return `${displayLabel} · ${runId}`;
+  return runId;
+}
+
+function renderPersistedResultOptions(selectedRunId = '') {
+  if (!persistedResultSelect) return;
+  persistedResultSelect.innerHTML = '';
+  if (!persistedResults.length) {
+    const option = document.createElement('option');
+    option.value = '';
+    option.textContent = 'No persisted results available';
+    persistedResultSelect.appendChild(option);
+    persistedResultSelect.disabled = true;
+    return;
+  }
+  persistedResultSelect.disabled = false;
+  const hasPreferred = selectedRunId && persistedResults.some((row) => String(row.run_id || '') === selectedRunId);
+  const preferredRunId = hasPreferred ? selectedRunId : String((persistedResults[0] || {}).run_id || '').trim();
+  if (selectedRunId && !hasPreferred) {
+    const option = document.createElement('option');
+    option.value = selectedRunId;
+    option.textContent = `${selectedRunId} · current selection`;
+    option.selected = true;
+    persistedResultSelect.appendChild(option);
+  }
+  for (const result of persistedResults) {
+    const runId = String(result.run_id || '').trim();
+    if (!runId) continue;
+    const option = document.createElement('option');
+    option.value = runId;
+    option.textContent = resultOptionLabel(result);
+    option.selected = !selectedRunId || hasPreferred ? runId === preferredRunId : false;
+    persistedResultSelect.appendChild(option);
+  }
+  if (selectedRunId && !hasPreferred) {
+    runIdInput.value = selectedRunId;
+    return;
+  }
+  if (preferredRunId) runIdInput.value = preferredRunId;
+}
+
+async function loadPersistedResults(preferredRunId = '') {
+  const domain = activeDomain();
+  persistedResults = [];
+  renderPersistedResultOptions('');
+  if (!domain) return;
+  const response = await fetch(`/api/issues/results?${new URLSearchParams({ domain }).toString()}`);
+  const payload = await safeReadPayload(response);
+  if (!response.ok) throw new Error(payload.error || `Failed to load persisted results (${response.status})`);
+  const rows = Array.isArray(payload.results) ? payload.results : [];
+  persistedResults = rows;
+  renderPersistedResultOptions(preferredRunId);
 }
 
 function issueLabel(issue) {
@@ -146,6 +235,49 @@ if (runIdInput) {
 if (domainInput) {
   domainInput.addEventListener('input', () => {
     updateWorkflowSummary();
+    const preferredRunId = String(workflowContext.runId || '').trim();
+    loadPersistedResults(preferredRunId)
+      .then(() => {
+        if (!persistedResults.length) {
+          clearIssuesView();
+          setStatus('No persisted issue results found for this domain.', 'empty');
+          return;
+        }
+        loadIssues().catch((err) => setStatus(err.message, 'error'));
+      })
+      .catch((err) => setStatus(err.message, 'error'));
+  });
+}
+
+if (persistedResultSelect) {
+  persistedResultSelect.addEventListener('change', () => {
+    runIdInput.value = String(persistedResultSelect.value || '').trim();
+    updateWorkflowSummary();
+    const params = buildParams();
+    window.history.replaceState({}, '', `/?${params.toString()}`);
+    loadIssues().catch((err) => setStatus(err.message, 'error'));
+  });
+}
+
+if (refreshPersistedResults) {
+  refreshPersistedResults.addEventListener('click', () => {
+    const previousRunId = activeRunId();
+    setStatus('Loading persisted results…');
+    loadPersistedResults(previousRunId)
+      .then(() => {
+        if (!persistedResults.length) {
+          clearIssuesView();
+          setStatus('No persisted issue results found for this domain.', 'empty');
+          return;
+        }
+        const nextRunId = activeRunId();
+        if (nextRunId !== previousRunId) {
+          loadIssues().catch((err) => setStatus(err.message, 'error'));
+          return;
+        }
+        setStatus('Persisted issue results loaded.', 'ok');
+      })
+      .catch((err) => setStatus(err.message, 'error'));
   });
 }
 
@@ -171,6 +303,13 @@ if (exportCsvBtn) {
 }
 
 syncDefaultsFromQuery();
-if (activeDomain() && activeRunId()) {
-  loadIssues().catch((err) => setStatus(err.message, 'error'));
-}
+loadPersistedResults()
+  .then(() => {
+    if (activeDomain() && activeRunId()) return loadIssues();
+    if (activeDomain() && !persistedResults.length) {
+      clearIssuesView();
+      setStatus('No persisted issue results found for this domain.', 'empty');
+    }
+    return null;
+  })
+  .catch((err) => setStatus(err.message, 'error'));

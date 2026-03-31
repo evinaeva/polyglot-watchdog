@@ -339,6 +339,29 @@ def test_issues_not_ready_and_corruption(api_env):
     assert json.loads(body2) == {"error": "issues.json artifact_invalid", "status": "artifact_invalid"}
 
 
+def test_issues_results_lists_persisted_runs_newest_first(api_env):
+    domain = "example.com"
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {"run_id": "run-old", "created_at": "2026-03-01T10:00:00Z", "display_name": "First_run_12:00|01.03.2026"},
+            {"run_id": "run-new", "created_at": "2026-03-02T10:00:00Z", "display_name": "First_run_12:00|02.03.2026"},
+            {"run_id": "run-no-issues", "created_at": "2026-03-03T10:00:00Z", "display_name": "First_run_12:00|03.03.2026"},
+        ]
+    })
+    _write(domain, "run-old", "issues.json", [{"id": "1", "evidence": {"url": "https://example.com/a"}}])
+    _write(domain, "run-new", "issues.json", [{"id": "2", "evidence": {"url": "https://example.com/b"}}])
+
+    status, _, body = _request(api_env, f"/api/issues/results?domain={domain}")
+    assert status == HTTPStatus.OK
+    payload = json.loads(body)
+    assert [row["run_id"] for row in payload["results"]] == ["run-new", "run-old"]
+    assert payload["results"][0]["display_label"] == "First_run_12:00|02.03.2026"
+
+    status_bad, _, body_bad = _request(api_env, "/api/issues/results?domain=bad domain")
+    assert status_bad == HTTPStatus.BAD_REQUEST
+    assert "domain" in json.loads(body_bad)["error"]
+
+
 
 
 
