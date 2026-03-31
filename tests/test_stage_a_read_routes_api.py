@@ -373,6 +373,27 @@ def test_issues_results_lists_runs_even_without_capture_runs_manifest(api_env):
     assert "Artifact run" in row["display_label"]
 
 
+def test_issues_results_deduplicates_run_ids_and_sorts_globally(api_env):
+    domain = "example.com"
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {"run_id": "run-old", "created_at": "2026-03-01T10:00:00Z"},
+            {"run_id": "run-manifest", "created_at": "2026-03-02T10:00:00Z"},
+        ]
+    })
+    _write(domain, "run-old", "issues.json", [{"id": "1"}])
+    _write(domain, "run-manifest", "issues.json", [{"id": "2"}])
+    _write(domain, "run-latest-artifact", "issues.json", [{"id": "3"}])
+
+    status, _, body = _request(api_env, f"/api/issues/results?domain={domain}")
+    assert status == HTTPStatus.OK
+    payload = json.loads(body)
+    run_ids = [row["run_id"] for row in payload["results"]]
+    assert run_ids.count("run-old") == 1
+    assert run_ids.count("run-manifest") == 1
+    assert run_ids[0] == "run-latest-artifact"
+
+
 def test_issues_response_includes_target_language_from_query_or_run_metadata(api_env):
     domain = "example.com"
     run_id = "run-target-lang"
@@ -394,6 +415,20 @@ def test_issues_response_includes_target_language_from_query_or_run_metadata(api
     status_query, _, body_query = _request(api_env, f"/api/issues?domain={domain}&run_id={run_id}&language=de")
     assert status_query == HTTPStatus.OK
     assert json.loads(body_query)["target_language"] == "de"
+
+
+def test_issues_response_target_language_falls_back_to_deterministic_issue_language(api_env):
+    domain = "example.com"
+    run_id = "run-target-fallback"
+    _write(domain, run_id, "issues.json", [
+        {"id": "1", "language": "es", "evidence": {"url": "https://example.com/a"}},
+        {"id": "2", "target_language": "fr", "evidence": {"url": "https://example.com/b"}},
+        {"id": "3", "language": "fr", "evidence": {"url": "https://example.com/c"}},
+    ])
+
+    status, _, body = _request(api_env, f"/api/issues?domain={domain}&run_id={run_id}")
+    assert status == HTTPStatus.OK
+    assert json.loads(body)["target_language"] == "fr"
 
 
 
@@ -510,6 +545,15 @@ def test_issue_detail_not_found_and_required_param(api_env):
     status2, _, body2 = _request(api_env, "/api/issues/detail?domain=example.com&run_id=run-404")
     assert status2 == HTTPStatus.BAD_REQUEST
     assert json.loads(body2) == {"error": "missing_required_query_params", "missing": ["id"]}
+
+
+def test_issues_and_issue_detail_reject_invalid_domain(api_env):
+    status_issues, _, body_issues = _request(api_env, "/api/issues?domain=bad domain&run_id=run-1")
+    assert status_issues == HTTPStatus.BAD_REQUEST
+    assert "domain" in json.loads(body_issues)["error"]
+    status_detail, _, body_detail = _request(api_env, "/api/issues/detail?domain=bad domain&run_id=run-1&id=1")
+    assert status_detail == HTTPStatus.BAD_REQUEST
+    assert "domain" in json.loads(body_detail)["error"]
 
 
 
