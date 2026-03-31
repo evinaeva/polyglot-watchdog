@@ -192,7 +192,7 @@ function readField(obj, keys = []) {
 }
 
 function deriveSeverity(issue) {
-  const explicit = readField(issue, ['severity', 'issue_severity', 'level']).toLowerCase();
+  const explicit = readField(issue, ['severity', 'issue_severity', 'level', 'priority', 'risk_level']).toLowerCase();
   if (explicit) return explicit;
   const confidence = Number(issue?.confidence || issue?.score || 0);
   if (!Number.isNaN(confidence)) {
@@ -216,18 +216,47 @@ function isSafeExternalHttpUrl(value) {
 
 function deriveSourceText(issue) {
   const evidence = issue?.evidence || {};
-  return readField(issue, ['source_text', 'en_text', 'source']) || readField(evidence, ['source_text', 'en_text', 'source', 'source_value']) || '—';
+  return (
+    readField(issue, ['source_text', 'en_text', 'source', 'original_text', 'sourceText', 'text_en']) ||
+    readField(evidence, ['source_text', 'en_text', 'source', 'source_value', 'original_text', 'text_en']) ||
+    '—'
+  );
 }
 
 function deriveTargetText(issue) {
   const evidence = issue?.evidence || {};
-  return readField(issue, ['target_text', 'translated_text', 'target']) || readField(evidence, ['target_text', 'translated_text', 'target', 'target_value']) || '—';
+  return (
+    readField(issue, ['target_text', 'translated_text', 'target', 'translation', 'targetText', 'text_target']) ||
+    readField(evidence, ['target_text', 'translated_text', 'target', 'target_value', 'translation', 'text_target']) ||
+    '—'
+  );
+}
+
+function deriveIssueLanguage(issue) {
+  const evidence = issue?.evidence || {};
+  return readField(issue, ['language', 'target_language', 'lang']) || readField(evidence, ['language', 'target_language', 'lang']);
+}
+
+function deterministicTargetLanguageFromIssues(issues = []) {
+  const counts = new Map();
+  for (const row of issues) {
+    const language = deriveIssueLanguage(row).toLowerCase();
+    if (!language) continue;
+    counts.set(language, (counts.get(language) || 0) + 1);
+  }
+  if (!counts.size) return '';
+  return [...counts.entries()]
+    .sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return a[0].localeCompare(b[0]);
+    })[0][0];
 }
 
 function updateTargetLanguage(issues = [], explicitTargetLanguage = '') {
   const explicit = String(explicitTargetLanguage || '').trim().toLowerCase();
   const preferred = (languageFilter?.value || '').trim().toLowerCase();
-  const candidates = explicit ? [explicit] : (preferred ? [preferred] : issues.map((row) => String(row?.language || '').trim().toLowerCase()).filter(Boolean));
+  const fallbackFromIssues = deterministicTargetLanguageFromIssues(issues);
+  const candidates = explicit ? [explicit] : (preferred ? [preferred] : (fallbackFromIssues ? [fallbackFromIssues] : []));
   const selected = candidates[0] || 'target';
   if (targetLanguageHeader) targetLanguageHeader.textContent = selected;
   if (targetLanguageSummary) targetLanguageSummary.textContent = selected === 'target' ? 'Target language: —' : `Target language: ${selected.toUpperCase()}`;

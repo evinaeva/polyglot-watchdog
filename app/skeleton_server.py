@@ -477,7 +477,7 @@ def _list_persisted_issue_results(domain: str) -> list[dict]:
         for row in runs
         if isinstance(row, dict) and str((row or {}).get("run_id", "")).strip()
     }
-    results: list[dict] = []
+    results_by_run_id: dict[str, dict] = {}
     seen_run_ids: set[str] = set()
     for run in _sort_runs_newest_first(runs):
         run_id = str((run or {}).get("run_id", "")).strip()
@@ -486,11 +486,11 @@ def _list_persisted_issue_results(domain: str) -> list[dict]:
         if not _artifact_exists(domain, run_id, "issues.json"):
             continue
         seen_run_ids.add(run_id)
-        results.append({
+        results_by_run_id[run_id] = {
             "run_id": run_id,
             "created_at": str((run or {}).get("created_at", "")).strip(),
             "display_label": _run_display_label(run),
-        })
+        }
     try:
         from pipeline.storage import _gcs_client
 
@@ -525,10 +525,12 @@ def _list_persisted_issue_results(domain: str) -> list[dict]:
                 "display_label": run_label or discovered_label,
             })
             seen_run_ids.add(run_id)
-        fallback_rows.sort(key=lambda row: (_parse_utc_timestamp(str(row.get("created_at", ""))) or float("-inf"), str(row.get("run_id", ""))), reverse=True)
-        results.extend(fallback_rows)
+        for row in fallback_rows:
+            results_by_run_id[str(row.get("run_id", "")).strip()] = row
     except Exception:
         pass
+    results = [row for row in results_by_run_id.values() if isinstance(row, dict) and str(row.get("run_id", "")).strip()]
+    results.sort(key=lambda row: (_parse_utc_timestamp(str(row.get("created_at", ""))) or float("-inf"), str(row.get("run_id", ""))), reverse=True)
     return results
 
 
@@ -540,7 +542,7 @@ def _infer_target_language_for_run(domain: str, run_id: str, query_language: str
     runs = runs_payload.get("runs", []) if isinstance(runs_payload, dict) else []
     run = next((row for row in runs if isinstance(row, dict) and str(row.get("run_id", "")).strip() == run_id), None)
     if not isinstance(run, dict):
-        return ""
+        run = {}
     direct = _normalize_target_language(str(run.get("target_language", "")).strip())
     if direct:
         return direct
@@ -552,6 +554,22 @@ def _infer_target_language_for_run(domain: str, run_id: str, query_language: str
             value = _normalize_target_language(str(job.get("target_language", "")).strip())
             if value:
                 return value
+    issues = _read_json_safe(domain, run_id, "issues.json", [])
+    if isinstance(issues, list):
+        candidates: dict[str, int] = {}
+        for issue in issues:
+            if not isinstance(issue, dict):
+                continue
+            evidence = issue.get("evidence", {}) if isinstance(issue.get("evidence"), dict) else {}
+            raw = (
+                str(issue.get("language", "") or issue.get("target_language", "") or issue.get("lang", "")).strip()
+                or str(evidence.get("language", "") or evidence.get("target_language", "") or evidence.get("lang", "")).strip()
+            )
+            normalized = _normalize_target_language(raw)
+            if normalized:
+                candidates[normalized] = candidates.get(normalized, 0) + 1
+        if candidates:
+            return sorted(candidates.items(), key=lambda item: (-item[1], item[0]))[0][0]
     return ""
 
 
@@ -1870,7 +1888,11 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             if missing:
                 self._json_response(_missing_required_query_params(*missing), status=HTTPStatus.BAD_REQUEST)
                 return
-            domain = required["domain"]
+            try:
+                domain = validate_domain(_normalize_testsite_domain_key(required["domain"]))
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
             try:
                 run_id = _validate_run_id(required["run_id"])
             except ValueError as exc:
@@ -1906,7 +1928,11 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             if missing:
                 self._json_response(_missing_required_query_params(*missing), status=HTTPStatus.BAD_REQUEST)
                 return
-            domain = required["domain"]
+            try:
+                domain = validate_domain(_normalize_testsite_domain_key(required["domain"]))
+            except ValueError as exc:
+                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
             try:
                 run_id = _validate_run_id(required["run_id"])
             except ValueError as exc:

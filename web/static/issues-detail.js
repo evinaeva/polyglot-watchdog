@@ -29,7 +29,7 @@ function readField(obj, keys = []) {
 }
 
 function deriveSeverity(issue) {
-  const explicit = readField(issue, ['severity', 'issue_severity', 'level']).toLowerCase();
+  const explicit = readField(issue, ['severity', 'issue_severity', 'level', 'priority', 'risk_level']).toLowerCase();
   if (explicit) return explicit;
   const confidence = Number(issue?.confidence || issue?.score || 0);
   if (!Number.isNaN(confidence)) {
@@ -38,6 +38,55 @@ function deriveSeverity(issue) {
     if (confidence > 0) return 'low';
   }
   return '—';
+}
+
+function deriveSourceText(issue) {
+  const evidence = issue?.evidence || {};
+  return (
+    readField(issue, ['source_text', 'en_text', 'source', 'original_text', 'sourceText', 'text_en']) ||
+    readField(evidence, ['source_text', 'en_text', 'source', 'source_value', 'original_text', 'text_en']) ||
+    '—'
+  );
+}
+
+function deriveTargetText(issue) {
+  const evidence = issue?.evidence || {};
+  return (
+    readField(issue, ['target_text', 'translated_text', 'target', 'translation', 'targetText', 'text_target']) ||
+    readField(evidence, ['target_text', 'translated_text', 'target', 'target_value', 'translation', 'text_target']) ||
+    '—'
+  );
+}
+
+function isSafeExternalHttpUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return false;
+  try {
+    const parsed = new URL(raw);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch (_) {
+    return false;
+  }
+}
+
+function isSafeLocalRelativeUrl(value) {
+  const raw = String(value || '').trim();
+  return raw.startsWith('/') && !raw.startsWith('//');
+}
+
+function replaceChildren(parent, children = []) {
+  parent.textContent = '';
+  for (const child of children) parent.appendChild(child);
+}
+
+function section(title, value) {
+  const wrapper = document.createElement('div');
+  const heading = document.createElement('h2');
+  heading.textContent = title;
+  const text = document.createElement('p');
+  text.textContent = value;
+  wrapper.append(heading, text);
+  return wrapper;
 }
 
 async function loadIssueDetailPage() {
@@ -58,45 +107,63 @@ async function loadIssueDetailPage() {
   const dd = payload.drilldown || {};
   const missing = Array.isArray(dd.missing_refs) ? dd.missing_refs : [];
   const evidence = issue.evidence || {};
+  const language = readField(issue, ['language', 'target_language', 'lang']) || readField(evidence, ['language', 'target_language', 'lang']) || 'Unknown';
+  const metadata = document.createElement('ul');
+  for (const [label, value] of [
+    ['ID', issue.id || ''],
+    ['Category', issue.category || issue.type || ''],
+    ['State', issue.state || ''],
+  ]) {
+    const item = document.createElement('li');
+    item.textContent = `${label}: ${value}`;
+    metadata.appendChild(item);
+  }
+  const metadataSection = document.createElement('div');
+  const metadataHeading = document.createElement('h2');
+  metadataHeading.textContent = 'Issue metadata';
+  metadataSection.append(metadataHeading, metadata);
+  replaceChildren(issueCore, [
+    section('What is wrong', issue.message || issue.description || 'No message available.'),
+    section('Where it appears', readField(evidence, ['url', 'page_url', 'source_url']) || 'URL unavailable'),
+    section('Language', language),
+    section('Severity', deriveSeverity(issue)),
+    section('Source text (en)', deriveSourceText(issue)),
+    section('Target text', deriveTargetText(issue)),
+    metadataSection,
+  ]);
 
-  issueCore.innerHTML = `
-    <h2>What is wrong</h2>
-    <p>${issue.message || 'No message available.'}</p>
-
-    <h2>Where it appears</h2>
-    <p>${evidence.url || 'URL unavailable'}</p>
-
-    <h2>Language</h2>
-    <p>${issue.language || 'Unknown'}</p>
-
-    <h2>Severity</h2>
-    <p>${deriveSeverity(issue)}</p>
-
-    <h2>Issue metadata</h2>
-    <ul>
-      <li>ID: ${issue.id || ''}</li>
-      <li>Category: ${issue.category || ''}</li>
-      <li>State: ${issue.state || ''}</li>
-    </ul>
-  `;
-
-  const warning = dd.partial
-    ? `<p class="warning">Partial evidence: missing ${missing.join(', ') || 'some related references'}.</p>`
-    : '';
-  const screenshotHref = dd.screenshot_view_url || dd.screenshot_uri || '';
-  const screenshot = screenshotHref
-    ? `<p>Screenshot: <a href="${screenshotHref}" target="_blank" rel="noopener">${screenshotHref}</a></p>`
-    : '<p>Screenshot: unavailable</p>';
-
-  issueEvidence.innerHTML = `
-    <h3>Evidence snapshot</h3>
-    ${warning}
-    ${screenshot}
-    <h4>Page JSON</h4>
-    <pre>${safeJson(dd.page)}</pre>
-    <h4>Element JSON</h4>
-    <pre>${safeJson(dd.element)}</pre>
-  `;
+  const evidenceNodes = [];
+  const evidenceHeading = document.createElement('h3');
+  evidenceHeading.textContent = 'Evidence snapshot';
+  evidenceNodes.push(evidenceHeading);
+  if (dd.partial) {
+    const warning = document.createElement('p');
+    warning.className = 'warning';
+    warning.textContent = `Partial evidence: missing ${missing.join(', ') || 'some related references'}.`;
+    evidenceNodes.push(warning);
+  }
+  const screenshotLine = document.createElement('p');
+  screenshotLine.textContent = 'Screenshot: ';
+  const screenshotHref = String(dd.screenshot_view_url || dd.screenshot_uri || '').trim();
+  if (isSafeExternalHttpUrl(screenshotHref) || isSafeLocalRelativeUrl(screenshotHref)) {
+    const screenshotLink = document.createElement('a');
+    screenshotLink.href = screenshotHref;
+    screenshotLink.target = '_blank';
+    screenshotLink.rel = 'noopener';
+    screenshotLink.textContent = screenshotHref;
+    screenshotLine.appendChild(screenshotLink);
+  } else {
+    screenshotLine.appendChild(document.createTextNode('unavailable'));
+  }
+  evidenceNodes.push(screenshotLine);
+  for (const [label, value] of [['Page JSON', dd.page], ['Element JSON', dd.element]]) {
+    const subheading = document.createElement('h4');
+    subheading.textContent = label;
+    const pre = document.createElement('pre');
+    pre.textContent = safeJson(value);
+    evidenceNodes.push(subheading, pre);
+  }
+  replaceChildren(issueEvidence, evidenceNodes);
 
   setDetailStatus('Issue detail loaded.', 'ok');
 }
