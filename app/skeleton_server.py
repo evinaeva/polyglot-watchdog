@@ -472,19 +472,87 @@ def _sort_runs_newest_first(runs: list[dict]) -> list[dict]:
 def _list_persisted_issue_results(domain: str) -> list[dict]:
     runs_payload = _load_runs(domain)
     runs = runs_payload.get("runs", []) if isinstance(runs_payload, dict) else []
+    run_rows_by_id = {
+        str((row or {}).get("run_id", "")).strip(): row
+        for row in runs
+        if isinstance(row, dict) and str((row or {}).get("run_id", "")).strip()
+    }
     results: list[dict] = []
+    seen_run_ids: set[str] = set()
     for run in _sort_runs_newest_first(runs):
         run_id = str((run or {}).get("run_id", "")).strip()
         if not run_id:
             continue
         if not _artifact_exists(domain, run_id, "issues.json"):
             continue
+        seen_run_ids.add(run_id)
         results.append({
             "run_id": run_id,
             "created_at": str((run or {}).get("created_at", "")).strip(),
             "display_label": _run_display_label(run),
         })
+    try:
+        from pipeline.storage import _gcs_client
+
+        bucket = _gcs_client().bucket(storage.BUCKET_NAME)
+        prefix = f"{domain}/"
+        fallback_rows: list[dict[str, str]] = []
+        for blob in bucket.list_blobs(prefix=prefix):
+            name = str(getattr(blob, "name", "") or "")
+            if not name.endswith("/issues.json"):
+                continue
+            if name.count("/") != 2:
+                continue
+            parts = name.split("/", 2)
+            if len(parts) < 3:
+                continue
+            run_id = parts[1].strip()
+            if not run_id or run_id in seen_run_ids:
+                continue
+            run = run_rows_by_id.get(run_id, {})
+            created_at = str((run or {}).get("created_at", "")).strip()
+            if not created_at:
+                updated = getattr(blob, "updated", None)
+                if isinstance(updated, datetime.datetime):
+                    created_at = updated.astimezone(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+            discovered_label = f"Artifact run · {run_id}"
+            if created_at:
+                discovered_label = f"Artifact run ({created_at}) · {run_id}"
+            run_label = _run_display_label(run) if isinstance(run, dict) else ""
+            fallback_rows.append({
+                "run_id": run_id,
+                "created_at": created_at,
+                "display_label": run_label or discovered_label,
+            })
+            seen_run_ids.add(run_id)
+        fallback_rows.sort(key=lambda row: (_parse_utc_timestamp(str(row.get("created_at", ""))) or float("-inf"), str(row.get("run_id", ""))), reverse=True)
+        results.extend(fallback_rows)
+    except Exception:
+        pass
     return results
+
+
+def _infer_target_language_for_run(domain: str, run_id: str, query_language: str = "") -> str:
+    explicit = _normalize_target_language(str(query_language or "").strip())
+    if explicit:
+        return explicit
+    runs_payload = _load_runs(domain)
+    runs = runs_payload.get("runs", []) if isinstance(runs_payload, dict) else []
+    run = next((row for row in runs if isinstance(row, dict) and str(row.get("run_id", "")).strip() == run_id), None)
+    if not isinstance(run, dict):
+        return ""
+    direct = _normalize_target_language(str(run.get("target_language", "")).strip())
+    if direct:
+        return direct
+    jobs = run.get("jobs", [])
+    if isinstance(jobs, list):
+        for job in reversed(jobs):
+            if not isinstance(job, dict):
+                continue
+            value = _normalize_target_language(str(job.get("target_language", "")).strip())
+            if value:
+                return value
+    return ""
 
 
 def _result_file_artifact_status(domain: str, run_id: str, filename: str) -> dict[str, Any]:
@@ -1819,6 +1887,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 return
             filtered = _filter_issues(issues, query)
             filtered.sort(key=_issue_sort_key)
+            response_target_language = _infer_target_language_for_run(domain, run_id, query.get("language", [""])[0])
             if parsed.path.endswith("/export") and query.get("format", ["json"])[0].strip().lower() == "csv":
                 encoded = _issues_to_csv(filtered).encode("utf-8")
                 self.send_response(HTTPStatus.OK)
@@ -1827,7 +1896,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(encoded)
                 return
-            self._json_response({"issues": filtered, "count": len(filtered)})
+            self._json_response({"issues": filtered, "count": len(filtered), "target_language": response_target_language})
             return
         if parsed.path == "/api/issues/detail":
             if not self._require_auth(api=True):
@@ -1880,13 +1949,23 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 missing_refs.append("element")
             if item is not None and page is None:
                 missing_refs.append("page")
+            page_id = str((page or {}).get("page_id") or evidence.get("page_id") or "")
             screenshot_uri = str((page or {}).get("storage_uri") or evidence.get("storage_uri", "") or "")
+            if not page_id and screenshot_uri:
+                matched_page = next((
+                    p for p in page_rows
+                    if isinstance(p, dict) and str(p.get("storage_uri", "")).strip() == screenshot_uri and str(p.get("page_id", "")).strip()
+                ), None)
+                if matched_page is not None:
+                    page_id = str(matched_page.get("page_id", "")).strip()
+            screenshot_view_url = _page_screenshot_view_url(domain, run_id, page_id) if page_id else (_parse_http_uri(screenshot_uri) or "")
             if not screenshot_uri:
                 missing_refs.append("screenshot")
             self._json_response({
                 "issue": issue,
                 "drilldown": {
                     "screenshot_uri": screenshot_uri,
+                    "screenshot_view_url": screenshot_view_url,
                     "page": page,
                     "element": item,
                     "artifact_refs": {
