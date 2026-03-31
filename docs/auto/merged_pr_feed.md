@@ -4292,3 +4292,40 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cbdfcc6008832cbe82e82d0b65133a)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #229 — 2026-03-31T17:26:37Z
+
+- Title: Persisted issue results: API, UI selection & refresh, and tests
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/229
+- Author: evinaeva
+- Base branch: main
+- Head branch: 24sogk-codex/add-persisted-access-selection-on-see-errors-page
+- Merge commit: c2caa69cf62c02cd5d93294673f35f8f3230742f
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_operator_ui_runtime_regressions.py
+  - tests/test_stage_a_read_routes_api.py
+  - web/static/index.js
+  - web/templates/index.html
+- Description:
+  ### Motivation
+  
+  - Provide a way to discover persisted issue result runs for a domain so the UI can auto-load the newest available result and let operators switch to older runs. 
+  - Prevent stale issue list views when a domain has no persisted results and surface clear feedback to the user. 
+  
+  ### Description
+  
+  - Added server-side endpoint `GET /api/issues/results` and helper `_list_persisted_issue_results(domain)` which reads `capture_runs.json`, filters runs that have an `issues.json` artifact, and returns runs sorted newest-first. 
+  - Implemented client-side support in `web/static/index.js` to fetch persisted results, render a `persistedResultSelect` dropdown, format timestamps for UI, support selecting a persisted run, refresh persisted results, and clear the issues table when no persisted results exist. 
+  - Updated `web/templates/index.html` to include the persisted results `<select>` and a `Refresh results` button. 
+  - Added comprehensive tests: new API test `test_issues_results_lists_persisted_runs_newest_first` and several JS runtime tests verifying initial selection, selection changes, domain changes, refresh behavior, and empty-state handling in `tests/test_operator_ui_runtime_regressions.py`.
+  
+  ### Testing
+  
+  - Ran API unit test `test_issues_results_lists_persisted_runs_newest_first` which asserts ordering and input validation, and it passed. 
+  - Ran the new JS vm runtime tests `test_index_runtime_uses_newest_persisted_result_and_allows_selection_change`, `test_index_runtime_handles_empty_persisted_results_state`, `test_index_domain_change_auto_loads_newest_result_for_new_domain`, `test_index_domain_change_to_empty_results_clears_stale_issue_table`, and `test_index_refresh_empty_results_clears_stale_issue_table`, all of which passed. 
+  - Existing test suite was exercised and no regressions were observed in related read-route and UI runtime tests.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cbdff0e288832c86697db9c21c2907)
+- Notes: Auto-generated from merged PR metadata.
