@@ -583,6 +583,22 @@ def _check_languages_llm_review_telemetry_status(domain: str, run_id: str) -> di
     return {"status": "valid", "exists": True, "payload": payload, "error": ""}
 
 
+def _check_languages_llm_request_artifact_status(domain: str, run_id: str) -> dict:
+    filename = "check_languages_llm_request.json"
+    try:
+        payload = storage.read_json_artifact(domain, run_id, filename)
+    except json.JSONDecodeError as exc:
+        print(f"[storage] read malformed_json domain={domain} run_id={run_id} file={filename}: {exc}", file=sys.stderr)
+        return {"status": "malformed_json", "exists": True, "payload": None, "error": str(exc)}
+    except Exception as exc:
+        status = "missing" if _is_missing_artifact_error(exc) else "read_error"
+        print(f"[storage] read {status} domain={domain} run_id={run_id} file={filename}: {exc}", file=sys.stderr)
+        return {"status": status, "exists": status != "missing", "payload": None, "error": str(exc)}
+    if not isinstance(payload, dict):
+        return {"status": "invalid_payload", "exists": True, "payload": None, "error": "expected object"}
+    return {"status": "valid", "exists": True, "payload": payload, "error": ""}
+
+
 def _parse_gs_uri_safe(uri: str) -> tuple[str, str, str, str] | None:
     parsed = _parse_gs_uri(uri)
     if not parsed:

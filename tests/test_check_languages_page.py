@@ -2129,6 +2129,34 @@ def test_payload_preview_shows_real_artifact_path_when_input_exists(api_env):
     assert f"gs://test-bucket/{domain}/{target_run_id}/check_languages_llm_input.json" in body
 
 
+def test_payload_preview_includes_llm_request_artifact_collapsed_preview(api_env):
+    domain = SUPPORTED_MAIN_DOMAIN
+    target_run_id = "run-en-check-fr"
+    _seed_runs(domain)
+    _seed_phase6_prereqs(domain, "run-en", "en")
+    _seed_phase6_prereqs(domain, target_run_id, "fr")
+    _write(domain, target_run_id, "check_languages_prepared_payload.json", {"ok": True})
+    _write(domain, target_run_id, "check_languages_llm_input.json", {"target_language": "fr", "review_context_count": 0, "review_contexts": []})
+    _write(
+        domain,
+        target_run_id,
+        "check_languages_llm_request.json",
+        {"model": "m", "messages": [{"role": "system"}, {"role": "user"}]},
+    )
+    _write(domain, "manual", "capture_runs.json", {
+        "runs": [
+            {"run_id": target_run_id, "created_at": "2026-03-12T00:00:00Z", "jobs": [{"job_id": "check-languages-1", "status": "succeeded", "type": "check_languages", "stage": "completed", "workflow_state": "completed", "en_run_id": "run-en", "target_language": "fr"}]},
+            {"run_id": "run-en", "created_at": "2026-03-11T00:00:00Z", "jobs": []},
+        ]
+    })
+
+    status, body, _ = _request("GET", api_env, f"/check-languages?domain={domain}&en_run_id=run-en&target_language=fr&target_run_id={target_run_id}")
+    assert status == HTTPStatus.OK
+    assert "check_languages_llm_request.json" in body
+    assert "status: <strong>valid</strong>" in body
+    assert "<summary>Preview</summary>" in body
+
+
 def test_payload_preview_reports_llm_input_valid_status(api_env):
     domain = SUPPORTED_MAIN_DOMAIN
     target_run_id = "run-en-check-fr"

@@ -608,3 +608,103 @@ def test_heuristic_mode_writes_llm_stats_with_llm_requested_false():
 
     assert captured["llm_review_stats.json"]["review_mode"] == "test-heuristic"
     assert captured["llm_review_stats.json"]["llm_requested"] is False
+
+
+def test_phase6_wires_llm_request_artifact_writer_and_manifest_uri():
+    artifacts = _base_artifacts({"text": "Acheter"})
+    captured = {}
+    manifest = {}
+
+    class _Provider:
+        def __init__(self, artifact_writer):
+            self._artifact_writer = artifact_writer
+
+        def prefetch_reviews(self, rows, language):
+            self._artifact_writer(
+                "check_languages_llm_request.json",
+                {"model": "m", "messages": [{"role": "system"}, {"role": "user"}]},
+            )
+
+        def review_spelling_grammar(self, text_en, text_target, language, **kwargs):
+            from pipeline.phase6_providers import SpellingGrammarSignals
+
+            return SpellingGrammarSignals(spelling_score=0.0, grammar_score=0.0, notes=[])
+
+        def review_meaning(self, text_en, text_target, language, **kwargs):
+            from pipeline.phase6_providers import MeaningSignals
+
+            return MeaningSignals(meaning_mismatch_score=0.0, notes=[])
+
+        def get_llm_review_stats(self):
+            return {"review_mode": "llm", "llm_requested": True}
+
+    def _fake_build_provider(mode, **provider_kwargs):
+        return _Provider(provider_kwargs["artifact_writer"])
+
+    def _capture_write(domain, run_id, filename, payload):
+        captured[filename] = payload
+        return "gs://bucket/" + filename
+
+    def _capture_manifest(domain, run_id, phase, payload):
+        manifest["payload"] = payload
+
+    with patch("pipeline.run_phase6.build_provider", side_effect=_fake_build_provider), patch(
+        "pipeline.run_phase6.read_json_artifact", side_effect=artifacts
+    ), patch("pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]), patch(
+        "pipeline.run_phase6.write_json_artifact", side_effect=_capture_write
+    ), patch("pipeline.run_phase6.write_phase_manifest", side_effect=_capture_manifest):
+        run("example.com", "run-en", "run-fr", review_mode="llm")
+
+    assert "check_languages_llm_request.json" in captured
+    assert any(uri.endswith("/example.com/run-fr/check_languages_llm_request.json") for uri in manifest["payload"]["artifact_uris"])
+
+
+def test_phase6_manifest_omits_llm_request_artifact_for_non_llm_mode():
+    artifacts = _base_artifacts({"text": "Acheter"})
+    manifest = {}
+
+    def _capture_manifest(domain, run_id, phase, payload):
+        manifest["payload"] = payload
+
+    with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
+        "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
+    ), patch("pipeline.run_phase6.write_json_artifact"), patch(
+        "pipeline.run_phase6.write_phase_manifest", side_effect=_capture_manifest
+    ):
+        run("example.com", "run-en", "run-fr", review_mode="test-heuristic")
+
+    assert not any(uri.endswith("/example.com/run-fr/check_languages_llm_request.json") for uri in manifest["payload"]["artifact_uris"])
+
+
+def test_phase6_manifest_omits_llm_request_artifact_when_not_written():
+    artifacts = _base_artifacts({"text": "Acheter"})
+    manifest = {}
+
+    class _Provider:
+        def prefetch_reviews(self, rows, language):
+            return None
+
+        def review_spelling_grammar(self, text_en, text_target, language, **kwargs):
+            from pipeline.phase6_providers import SpellingGrammarSignals
+
+            return SpellingGrammarSignals(spelling_score=0.0, grammar_score=0.0, notes=[])
+
+        def review_meaning(self, text_en, text_target, language, **kwargs):
+            from pipeline.phase6_providers import MeaningSignals
+
+            return MeaningSignals(meaning_mismatch_score=0.0, notes=[])
+
+        def get_llm_review_stats(self):
+            return {"review_mode": "llm", "llm_requested": True}
+
+    def _capture_manifest(domain, run_id, phase, payload):
+        manifest["payload"] = payload
+
+    with patch("pipeline.run_phase6.build_provider", return_value=_Provider()), patch(
+        "pipeline.run_phase6.read_json_artifact", side_effect=artifacts
+    ), patch("pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]), patch(
+        "pipeline.run_phase6.write_json_artifact"
+    ), patch("pipeline.run_phase6.write_phase_manifest", side_effect=_capture_manifest):
+        run("example.com", "run-en", "run-fr", review_mode="llm")
+
+    assert not any(uri.endswith("/example.com/run-fr/check_languages_llm_request.json") for uri in manifest["payload"]["artifact_uris"])

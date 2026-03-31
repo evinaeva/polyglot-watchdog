@@ -237,6 +237,7 @@ class LLMReviewProvider:
         estimated_output_tokens_per_item: int = 64,
         fallback_provider: Phase6ReviewProvider | None = None,
         request_fn: Callable[[str, str, float, dict[str, Any]], dict[str, Any]] | None = None,
+        artifact_writer: Callable[[str, Any], None] | None = None,
     ) -> None:
         self._api_key = (api_key or "").strip()
         self._model = model
@@ -249,6 +250,7 @@ class LLMReviewProvider:
         self._estimated_output_tokens_per_item = max(16, int(estimated_output_tokens_per_item))
         self._fallback = fallback_provider or DeterministicOfflineProvider()
         self._request_fn = request_fn or self._default_request
+        self._artifact_writer = artifact_writer
         self._pair_reviews: dict[tuple[str, str, str, int, int, int, int], _PairReviewResult] = {}
         self._batch_stats: list[dict[str, Any]] = []
         self._input_cost_per_1m = self._read_cost_env("PHASE6_REVIEW_INPUT_COST_PER_1M_TOKENS")
@@ -471,6 +473,8 @@ class LLMReviewProvider:
                 {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False, separators=(",", ":"))},
             ],
         }
+        if self._artifact_writer is not None and batch_index == 1:
+            self._artifact_writer("check_languages_llm_request.json", payload)
 
         try:
             response = self._request_fn(self._endpoint, self._api_key, self._timeout_s, payload)
@@ -823,7 +827,7 @@ class LLMReviewProvider:
         return stats
 
 
-def build_provider(mode: str) -> Phase6ReviewProvider:
+def build_provider(mode: str, **provider_kwargs: Any) -> Phase6ReviewProvider:
     normalized = mode.strip().lower()
     if normalized == "offline":
         warnings.warn(
@@ -874,6 +878,7 @@ def build_provider(mode: str) -> Phase6ReviewProvider:
             token_reserve_ratio=_read_float("PHASE6_REVIEW_TOKEN_RESERVE_RATIO", 0.20),
             fixed_token_margin=_read_int("PHASE6_REVIEW_FIXED_TOKEN_MARGIN", 1024),
             estimated_output_tokens_per_item=_read_int("PHASE6_REVIEW_ESTIMATED_OUTPUT_TOKENS_PER_ITEM", 64),
+            **provider_kwargs,
         )
     raise ValueError(
         f"Unsupported phase6 review mode: {mode!r}. Supported modes: test-heuristic, disabled, llm"
