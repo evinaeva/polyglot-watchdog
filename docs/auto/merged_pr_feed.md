@@ -4477,3 +4477,37 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cce1d62538832c9c6069f8d98dd691)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #234 — 2026-04-01T12:10:44Z
+
+- Title: Add domain selector and domain list loading to issues UI
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/234
+- Author: evinaeva
+- Base branch: main
+- Head branch: 281k57-codex/add-domain-selection-dropdown-to-console
+- Merge commit: 0adf13a10555a4194f6e4d391a476b4c30712f70
+- Changed files:
+  - tests/test_operator_ui_runtime_regressions.py
+  - web/static/index.js
+  - web/templates/index.html
+- Description:
+  ### Motivation
+  
+  - Provide a domain dropdown to make it easier to pick known domains and auto-load persisted results for the selected domain.
+  - Keep the existing manual `domainInput` used for overrides while avoiding stale results when domain selection changes.
+  
+  ### Description
+  
+  - Add a new `<select id="domainSelect">` to the issues UI and move the manual `domainInput` into the advanced filters in `web/templates/index.html`.
+  - Introduce `loadDomains()` in `web/static/index.js` which fetches `/api/domains`, populates `domainSelect`, and auto-fills `domainInput` and persisted results when appropriate.
+  - Make `activeDomain()` prefer `domainSelect` value, update `loadPersistedResults()` to show a muted message when no domain is selected, and wire change/input handlers to keep `domainSelect` and `domainInput` synchronized.
+  - Replace initial `loadPersistedResults()` call with `loadDomains()` at startup and adjust persisted-result key handling and UI flows accordingly.
+  
+  ### Testing
+  
+  - Updated unit/browser runtime tests in `tests/test_operator_ui_runtime_regressions.py` to include `domainSelect` and to mock the `/api/domains` response. These tests exercise persisted result selection, domain-change flows, empty-result clearing, and link rendering.
+  - Ran the modified test suite for the affected runtime regressions and assertions in `tests/test_operator_ui_runtime_regressions.py`, and all updated tests passed.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cd01f3abd0832ca81a546fb6e60a9b)
+- Notes: Auto-generated from merged PR metadata.
