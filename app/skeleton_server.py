@@ -469,69 +469,97 @@ def _sort_runs_newest_first(runs: list[dict]) -> list[dict]:
     )
 
 
-def _list_persisted_issue_results(domain: str) -> list[dict]:
-    runs_payload = _load_runs(domain)
-    runs = runs_payload.get("runs", []) if isinstance(runs_payload, dict) else []
-    run_rows_by_id = {
-        str((row or {}).get("run_id", "")).strip(): row
-        for row in runs
-        if isinstance(row, dict) and str((row or {}).get("run_id", "")).strip()
-    }
+def _persisted_issue_results_payload(domain: str) -> dict[str, Any]:
+    run_domains = _check_languages_run_domains(domain) or [domain]
+    run_rows_by_key: dict[tuple[str, str], dict] = {}
     results_by_run_id: dict[str, dict] = {}
-    seen_run_ids: set[str] = set()
-    for run in _sort_runs_newest_first(runs):
-        run_id = str((run or {}).get("run_id", "")).strip()
+    diagnostics = {
+        "requested_domain": domain,
+        "searched_domains": run_domains,
+        "manifest_runs_scanned": 0,
+        "artifact_fallback_runs_scanned": 0,
+    }
+
+    def upsert_result(row: dict, *, source: str) -> None:
+        run_id = str((row or {}).get("run_id", "")).strip()
         if not run_id:
-            continue
-        if not _artifact_exists(domain, run_id, "issues.json"):
-            continue
-        seen_run_ids.add(run_id)
-        results_by_run_id[run_id] = {
-            "run_id": run_id,
-            "created_at": str((run or {}).get("created_at", "")).strip(),
-            "display_label": _run_display_label(run),
-        }
+            return
+        created_at = str((row or {}).get("created_at", "")).strip()
+        current = results_by_run_id.get(run_id)
+        if current is None:
+            out = dict(row)
+            out["source"] = source
+            results_by_run_id[run_id] = out
+            return
+        current_ts = _parse_utc_timestamp(str(current.get("created_at", ""))) or float("-inf")
+        candidate_ts = _parse_utc_timestamp(created_at) or float("-inf")
+        if candidate_ts > current_ts:
+            out = dict(row)
+            out["source"] = source
+            results_by_run_id[run_id] = out
+
+    for run_domain in run_domains:
+        runs_payload = _load_runs(run_domain)
+        runs = runs_payload.get("runs", []) if isinstance(runs_payload, dict) else []
+        diagnostics["manifest_runs_scanned"] += len([row for row in runs if isinstance(row, dict)])
+        for run in _sort_runs_newest_first(runs):
+            run_id = str((run or {}).get("run_id", "")).strip()
+            if not run_id:
+                continue
+            run_rows_by_key[(run_domain, run_id)] = run
+            if not _artifact_exists(run_domain, run_id, "issues.json"):
+                continue
+            upsert_result({
+                "domain": run_domain,
+                "run_id": run_id,
+                "created_at": str((run or {}).get("created_at", "")).strip(),
+                "display_label": _run_display_label(run),
+            }, source="manifest")
     try:
         from pipeline.storage import _gcs_client
 
         bucket = _gcs_client().bucket(storage.BUCKET_NAME)
-        prefix = f"{domain}/"
-        fallback_rows: list[dict[str, str]] = []
-        for blob in bucket.list_blobs(prefix=prefix):
-            name = str(getattr(blob, "name", "") or "")
-            if not name.endswith("/issues.json"):
-                continue
-            if name.count("/") != 2:
-                continue
-            parts = name.split("/", 2)
-            if len(parts) < 3:
-                continue
-            run_id = parts[1].strip()
-            if not run_id or run_id in seen_run_ids:
-                continue
-            run = run_rows_by_id.get(run_id, {})
-            created_at = str((run or {}).get("created_at", "")).strip()
-            if not created_at:
-                updated = getattr(blob, "updated", None)
-                if isinstance(updated, datetime.datetime):
-                    created_at = updated.astimezone(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-            discovered_label = f"Artifact run · {run_id}"
-            if created_at:
-                discovered_label = f"Artifact run ({created_at}) · {run_id}"
-            run_label = _run_display_label(run) if isinstance(run, dict) else ""
-            fallback_rows.append({
-                "run_id": run_id,
-                "created_at": created_at,
-                "display_label": run_label or discovered_label,
-            })
-            seen_run_ids.add(run_id)
-        for row in fallback_rows:
-            results_by_run_id[str(row.get("run_id", "")).strip()] = row
+        for run_domain in run_domains:
+            prefix = f"{run_domain}/"
+            suffix = "/issues.json"
+            for blob in bucket.list_blobs(prefix=prefix):
+                name = str(getattr(blob, "name", "") or "")
+                if not name.startswith(prefix) or not name.endswith(suffix):
+                    continue
+                run_id = name[len(prefix): -len(suffix)].strip()
+                if not run_id or "/" in run_id:
+                    continue
+                diagnostics["artifact_fallback_runs_scanned"] += 1
+                run = run_rows_by_key.get((run_domain, run_id), {})
+                created_at = str((run or {}).get("created_at", "")).strip()
+                if not created_at:
+                    updated = getattr(blob, "updated", None)
+                    if isinstance(updated, datetime.datetime):
+                        created_at = updated.astimezone(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+                discovered_label = f"Artifact run · {run_id}"
+                if created_at:
+                    discovered_label = f"Artifact run ({created_at}) · {run_id}"
+                run_label = _run_display_label(run) if isinstance(run, dict) else ""
+                upsert_result({
+                    "domain": run_domain,
+                    "run_id": run_id,
+                    "created_at": created_at,
+                    "display_label": run_label or discovered_label,
+                }, source="artifact_fallback")
     except Exception:
         pass
     results = [row for row in results_by_run_id.values() if isinstance(row, dict) and str(row.get("run_id", "")).strip()]
-    results.sort(key=lambda row: (_parse_utc_timestamp(str(row.get("created_at", ""))) or float("-inf"), str(row.get("run_id", ""))), reverse=True)
-    return results
+    results.sort(
+        key=lambda row: (
+            -(_parse_utc_timestamp(str(row.get("created_at", ""))) or float("-inf")),
+            str(row.get("run_id", "")),
+        )
+    )
+    return {"results": results, "diagnostics": diagnostics}
+
+
+def _list_persisted_issue_results(domain: str) -> list[dict]:
+    return _persisted_issue_results_payload(domain)["results"]
 
 
 def _infer_target_language_for_run(domain: str, run_id: str, query_language: str = "") -> str:
@@ -1878,7 +1906,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                 return
-            self._json_response({"results": _list_persisted_issue_results(domain)})
+            payload = _persisted_issue_results_payload(domain)
+            self._json_response(payload)
             return
         if parsed.path in {"/api/issues", "/api/issues/export"}:
             if not self._require_auth(api=True):

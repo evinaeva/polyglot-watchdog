@@ -394,6 +394,55 @@ def test_issues_results_deduplicates_run_ids_and_sorts_globally(api_env):
     assert run_ids[0] == "run-latest-artifact"
 
 
+def test_issues_results_discovers_special_domain_family_runs(api_env):
+    canonical = "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html"
+    legacy = "https://evinaeva.github.io/"
+    run_id = "run-from-legacy-family"
+    _write(legacy, "manual", "capture_runs.json", {
+        "runs": [
+            {"run_id": run_id, "created_at": "2026-03-04T10:00:00Z", "display_name": "First_run_12:00|04.03.2026"},
+        ]
+    })
+    _write(legacy, run_id, "issues.json", [{"id": "1", "evidence": {"url": "https://example.com"}}])
+
+    status, _, body = _request(api_env, f"/api/issues/results?domain={canonical}")
+    assert status == HTTPStatus.OK
+    payload = json.loads(body)
+    assert any(row.get("run_id") == run_id for row in payload["results"])
+    assert legacy in payload["diagnostics"]["searched_domains"]
+
+
+def test_issues_results_artifact_fallback_parses_url_style_domains(api_env):
+    canonical = "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html"
+    legacy = "https://evinaeva.github.io/"
+    run_id = "run-artifact-only-family"
+    _write(legacy, run_id, "issues.json", [{"id": "1"}])
+
+    status, _, body = _request(api_env, f"/api/issues/results?domain={canonical}")
+    assert status == HTTPStatus.OK
+    payload = json.loads(body)
+    matched = next(row for row in payload["results"] if row["run_id"] == run_id)
+    assert matched["domain"] == legacy
+    assert "Artifact run" in matched["display_label"]
+
+
+def test_issues_results_deduplicates_same_run_id_across_domain_aliases(api_env):
+    canonical = "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html"
+    legacy = "https://evinaeva.github.io/"
+    run_id = "run-shared"
+    _write(canonical, "manual", "capture_runs.json", {"runs": [{"run_id": run_id, "created_at": "2026-03-01T10:00:00Z"}]})
+    _write(legacy, "manual", "capture_runs.json", {"runs": [{"run_id": run_id, "created_at": "2026-03-02T10:00:00Z"}]})
+    _write(canonical, run_id, "issues.json", [{"id": "1"}])
+    _write(legacy, run_id, "issues.json", [{"id": "2"}])
+
+    status, _, body = _request(api_env, f"/api/issues/results?domain={canonical}")
+    assert status == HTTPStatus.OK
+    payload = json.loads(body)
+    run_rows = [row for row in payload["results"] if row["run_id"] == run_id]
+    assert len(run_rows) == 1
+    assert run_rows[0]["domain"] == legacy
+
+
 def test_issues_response_includes_target_language_from_query_or_run_metadata(api_env):
     domain = "example.com"
     run_id = "run-target-lang"
