@@ -4409,3 +4409,38 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cc27976220832cb54c285d596d1902)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #232 — 2026-04-01T06:21:44Z
+
+- Title: Discover persisted issue runs across domain aliases, return diagnostics, and update UI to use artifact domains
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/232
+- Author: evinaeva
+- Base branch: main
+- Head branch: jofpf7-codex/audit-and-fix-persisted-results-dropdown
+- Merge commit: 47a696d510ac20e16ba3d8f3a6ad5ffb00439a24
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_operator_ui_runtime_regressions.py
+  - tests/test_stage_a_read_routes_api.py
+  - web/static/index.js
+- Description:
+  ### Motivation
+  - Ensure persisted issue runs can be discovered across related domain aliases (e.g. canonical and legacy URL forms) and artifact-only runs in storage are picked up for a requested domain.
+  - Provide diagnostics about which domains were searched so the UI can surface more helpful empty-state messages and workflow context.
+  - Make the UI use the actual artifact domain for issue queries and detail links when a persisted result comes from an alias domain.
+  
+  ### Description
+  - Replaced `_list_persisted_issue_results` with `_persisted_issue_results_payload` which scans runs across domains returned by `_check_languages_run_domains`, collects manifest runs and performs an artifact fallback scan (GCS blobs), deduplicates by `run_id` preferring the newest `created_at`, and returns both `results` and `diagnostics` (including `searched_domains`, `manifest_runs_scanned`, and `artifact_fallback_runs_scanned`).
+  - Kept a compatibility shim `_list_persisted_issue_results` that returns only the `results` array and updated the `/api/issues/results` handler to return the full payload with `diagnostics`.
+  - Updated artifact fallback logic to parse path-style blob names robustly and to preserve the originating `domain` for artifact-only runs; added timestamp-based selection when runs exist in multiple domains.
+  - Client changes in `web/static/index.js` add `persistedResultsDiagnostics`, implement `selectedPersistedResult` and `activeArtifactDomain`, use the artifact domain for API `domain` params and detail links, and surface searched domains in the empty-state message and workflow summary via `noPersistedResultsMessage`.
+  - Added and updated tests exercising cross-domain discovery, artifact-only fallback, deduplication across aliases, and the UI behavior that reflects artifact domains.
+  
+  ### Testing
+  - Ran the automated unit/integration tests with `pytest`, including the updated `tests/test_stage_a_read_routes_api.py` and `tests/test_operator_ui_runtime_regressions.py` suites.
+  - New API-level tests for cross-domain discovery and artifact fallback were executed and passed.
+  - New JS runtime regression tests validating UI selection, detail link domain, and empty-state diagnostics were executed and passed.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cc328dcc24832c90aefd4daa5a6047)
+- Notes: Auto-generated from merged PR metadata.
