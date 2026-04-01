@@ -22,7 +22,7 @@ The repository already includes:
 - two-step Phase 6 orchestration: payload preparation, then LLM review
 - target-language selection and job orchestration
 - support for GitHub Pages project site paths in language checks
-- persisted issue artifacts and operator-facing issue exploration, with run selection to view historical results
+- persisted issue artifacts and operator-facing issue exploration, with domain and run selection to view historical results, and multi-select filters for state, severity, and type
 - visible navigation between operator workflow pages
 - image-text review coverage tracking through `coverage_gaps.json`
 - explicit Phase 6 review mode: `test-heuristic`, `disabled`, or `llm`

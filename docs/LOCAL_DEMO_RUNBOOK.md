@@ -53,6 +53,7 @@ Open the issues explorer and issue detail pages.
 
 Confirm that:
 - issues are readable from the operator UI,
+- filters (including domain selection and multi-selects) can be used to find specific issues,
 - issue detail pages expose persisted evidence,
 - the operator can move from summary views to detail views through the UI.
 
