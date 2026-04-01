@@ -4511,3 +4511,33 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cd01f3abd0832ca81a546fb6e60a9b)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #235 — 2026-04-01T14:55:36Z
+
+- Title: Add 'Manage recipes' i18n key and styles for URLs config table
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/235
+- Author: evinaeva
+- Base branch: main
+- Head branch: cle1yz-codex/fix-ui-issues-on-/urls-page
+- Merge commit: ff958bea99989d61b494e84819206df5fd2ba78b
+- Changed files:
+  - web/static/locales/en.json
+  - web/static/locales/ru.json
+  - web/static/styles.css
+  - web/templates/urls.html
+- Description:
+  ### Motivation
+  - Provide a localized label for the recipe management action and improve the visual styling of the Saved URLs configuration table to match the rest of the UI.
+  - Make it easier to target the URLs page with scoped CSS by adding a page-level class and semantic classes on the section and table markup.
+  
+  ### Description
+  - Added `"urls.button.manage_recipes"` to `web/static/locales/en.json` and `web/static/locales/ru.json` with English and Russian translations.
+  - Added a `urls-page` class on the `<body>` and added `urls-config-section`, `urls-section-title`, and `urls-config-table` classes to `web/templates/urls.html` to scope layout and styles.
+  - Extended `web/static/styles.css` with scoped rules for `.urls-page` including styles for `.urls-section-title`, `.urls-config-table`, and table cell/hover/heading colors to improve contrast and appearance.
+  
+  ### Testing
+  - No automated tests were run for this change.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cd2f5192b0832c8a47f9161437b518)
+- Notes: Auto-generated from merged PR metadata.
