@@ -12,6 +12,7 @@
                     │  /contexts                   │
                     │  /pulls                      │
                     │  /check-languages            │
+                    │  /result-files               │
                     │  / (issues)                  │
                     │                              │
                     └──────────────┬───────────────┘

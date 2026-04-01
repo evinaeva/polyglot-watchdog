@@ -18,10 +18,11 @@ The repository already includes:
 - a `/urls` operator page for seed URL management
 - persisted domain selection and last-used first-run domain memory on `/urls`
 - a `/check-languages` operator page for Phase 6 language checks
+- a `/result-files` operator page for browsing LLM and issue artifacts
 - two-step Phase 6 orchestration: payload preparation, then LLM review
 - target-language selection and job orchestration
 - support for GitHub Pages project site paths in language checks
-- persisted issue artifacts and operator-facing issue exploration
+- persisted issue artifacts and operator-facing issue exploration, with run selection to view historical results
 - visible navigation between operator workflow pages
 - image-text review coverage tracking through `coverage_gaps.json`
 - explicit Phase 6 review mode: `test-heuristic`, `disabled`, or `llm`

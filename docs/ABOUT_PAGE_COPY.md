@@ -16,7 +16,7 @@ Polyglot Watchdog already includes:
 - deterministic capture and comparison-oriented pipeline behavior;
 - multiple implemented phase-aligned flows;
 - operator-facing URL management;
-- persisted issue exploration backed by Phase 6 artifacts.
+- persisted issue exploration backed by Phase 6 artifacts, with support for browsing historical runs.
 
 ### How the operator workflow works
 
