@@ -1,11 +1,9 @@
 const applyBtn = document.getElementById('applyIssueQuery');
 const exportCsvBtn = document.getElementById('exportIssuesCsv');
 const queryInput = document.getElementById('issueQuery');
-const domainInput = document.getElementById('domainInput');
 const domainSelect = document.getElementById('domainSelect');
 const persistedResultSelect = document.getElementById('persistedResultSelect');
 const refreshPersistedResults = document.getElementById('refreshPersistedResults');
-const runIdInput = document.getElementById('runIdInput');
 const languageFilter = document.getElementById('languageFilter');
 const severityFilter = document.getElementById('severityFilter');
 const typeFilter = document.getElementById('typeFilter');
@@ -15,8 +13,6 @@ const domainFilter = document.getElementById('domainFilter');
 const table = document.getElementById('issuesTable');
 const tbody = table.querySelector('tbody');
 const issueStatus = document.getElementById('issueStatus');
-const issueCount = document.getElementById('issueCount');
-const targetLanguageSummary = document.getElementById('targetLanguageSummary');
 const targetLanguageHeader = document.getElementById('targetLanguageHeader');
 const issuesBackToCheckLanguages = document.getElementById('issuesBackToCheckLanguages');
 const workflowContextSummary = document.getElementById('workflowContextSummary');
@@ -27,15 +23,135 @@ const workflowContext = {
 };
 let persistedResults = [];
 let persistedResultsDiagnostics = null;
-const tallinnDateTimeFormatter = new Intl.DateTimeFormat('en-GB', {
+let loadedIssues = [];
+const llmResultDateFormatter = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Europe/Tallinn',
-  year: 'numeric',
-  month: '2-digit',
   day: '2-digit',
+  month: '2-digit',
+  year: '2-digit',
   hour: '2-digit',
   minute: '2-digit',
   hour12: false,
 });
+
+class MultiSelectFilter {
+  constructor(root, { key, singular, plural, onChange = () => {} }) {
+    this.root = root;
+    this.key = key;
+    this.singular = singular;
+    this.plural = plural;
+    this.options = [];
+    this.selected = new Set();
+    this.onChange = onChange;
+    this._renderShell();
+  }
+
+  _renderShell() {
+    this.root.innerHTML = '';
+    this.root.classList.add('multi-select-filter');
+    this.button = document.createElement('button');
+    this.button.type = 'button';
+    this.button.className = 'multi-select-trigger';
+    this.panel = document.createElement('div');
+    this.panel.className = 'multi-select-panel hidden';
+    this.root.appendChild(this.button);
+    this.root.appendChild(this.panel);
+    this.button.addEventListener('click', () => {
+      this.panel.classList.toggle('hidden');
+    });
+    if (typeof document.addEventListener === 'function') {
+      document.addEventListener('click', (event) => {
+        if (typeof this.root.contains === 'function' && !this.root.contains(event.target)) this.panel.classList.add('hidden');
+      });
+    }
+    this._updateTriggerLabel();
+  }
+
+  setOptions(values = []) {
+    const normalized = [...new Set(values.map((value) => String(value || '').trim().toLowerCase()).filter(Boolean))].sort();
+    const selectedBefore = new Set(this.selected);
+    this.options = normalized;
+    this.selected = new Set(this.options.filter((value) => selectedBefore.has(value)));
+    if (!this.selected.size) this.selected = new Set(this.options);
+    this._renderPanel();
+    this._updateTriggerLabel();
+  }
+
+  value() {
+    if (!this.options.length || this.selected.size === this.options.length) return '';
+    if (!this.selected.size) return '__none__';
+    return [...this.selected].join(',');
+  }
+
+  includes(value) {
+    if (!this.options.length) return true;
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized) return false;
+    return this.selected.has(normalized);
+  }
+
+  _renderPanel() {
+    this.panel.innerHTML = '';
+    const actions = document.createElement('div');
+    actions.className = 'multi-select-actions';
+    const selectAll = document.createElement('button');
+    selectAll.type = 'button';
+    selectAll.textContent = 'Select all';
+    const deselectAll = document.createElement('button');
+    deselectAll.type = 'button';
+    deselectAll.textContent = 'Deselect all';
+    selectAll.addEventListener('click', (event) => {
+      event.preventDefault();
+      this.selected = new Set(this.options);
+      this._renderPanel();
+      this._updateTriggerLabel();
+      this.onChange();
+    });
+    deselectAll.addEventListener('click', (event) => {
+      event.preventDefault();
+      this.selected = new Set();
+      this._renderPanel();
+      this._updateTriggerLabel();
+      this.onChange();
+    });
+    actions.appendChild(selectAll);
+    actions.appendChild(deselectAll);
+    this.panel.appendChild(actions);
+    for (const option of this.options) {
+      const label = document.createElement('label');
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = this.selected.has(option);
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) this.selected.add(option);
+        else this.selected.delete(option);
+        this._updateTriggerLabel();
+        this.onChange();
+      });
+      const text = document.createElement('span');
+      text.textContent = option;
+      label.appendChild(checkbox);
+      label.appendChild(text);
+      this.panel.appendChild(label);
+    }
+  }
+
+  _updateTriggerLabel() {
+    if (!this.options.length || this.selected.size === this.options.length) {
+      this.button.textContent = `All ${this.plural}`;
+      return;
+    }
+    if (!this.selected.size) {
+      this.button.textContent = `No ${this.plural} selected`;
+      return;
+    }
+    this.button.textContent = `${this.selected.size} ${this.selected.size === 1 ? this.singular : this.plural} selected`;
+  }
+}
+
+const stateMultiFilter = new MultiSelectFilter(stateFilter, { key: 'state', singular: 'state', plural: 'states', onChange: () => renderIssues() });
+const severityMultiFilter = new MultiSelectFilter(severityFilter, { key: 'severity', singular: 'severity', plural: 'severities', onChange: () => renderIssues() });
+const typeMultiFilter = new MultiSelectFilter(typeFilter, { key: 'type', singular: 'type', plural: 'types', onChange: () => renderIssues() });
 
 function queryParamsFromLocation() {
   const params = new URLSearchParams(window.location.search);
@@ -53,27 +169,23 @@ function setStatus(message, cls = '') {
 function clearIssuesView() {
   tbody.innerHTML = '';
   table.classList.add('hidden');
-  issueCount.textContent = '';
-  issueCount.classList.add('hidden');
+  loadedIssues = [];
   updateTargetLanguage([]);
 }
 
-function formatUtcTimestampForUi(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) return raw;
-  const parts = tallinnDateTimeFormatter.formatToParts(parsed);
-  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${map.year}-${map.month}-${map.day} ${map.hour}:${map.minute}`;
-}
-
 function activeDomain() {
-  return (domainSelect?.value || domainInput.value || workflowContext.domain || '').trim();
+  return (domainSelect?.value || workflowContext.domain || '').trim();
 }
 
 function activeRunId() {
-  return (runIdInput.value || workflowContext.runId || '').trim();
+  const selected = selectedPersistedResult();
+  if (selected) return String(selected.run_id || '').trim();
+  const selectedValue = String((persistedResultSelect && persistedResultSelect.value) || '').trim();
+  if (selectedValue.includes('|')) {
+    const [, runIdPart] = selectedValue.split('|');
+    return String(runIdPart || '').trim();
+  }
+  return selectedValue || workflowContext.runId || '';
 }
 
 function persistedResultKey(result) {
@@ -89,8 +201,10 @@ function selectedPersistedResult() {
   if (selectedValue) {
     const byValue = persistedResults.find((row) => persistedResultKey(row) === selectedValue);
     if (byValue) return byValue;
+    const byRunId = persistedResults.find((row) => String((row || {}).run_id || '').trim() === selectedValue);
+    if (byRunId) return byRunId;
   }
-  const runId = activeRunId();
+  const runId = String(workflowContext.runId || '').trim();
   if (!runId) return null;
   const matches = persistedResults.filter((row) => String((row || {}).run_id || '').trim() === runId);
   if (matches.length === 1) return matches[0];
@@ -104,14 +218,17 @@ function activeArtifactDomain() {
 }
 
 function buildParams() {
+  const stateValue = stateMultiFilter.value();
+  const severityValue = severityMultiFilter.value();
+  const typeValue = typeMultiFilter.value();
   return new URLSearchParams({
     domain: activeArtifactDomain(),
     run_id: activeRunId(),
     q: (queryInput.value || '').trim(),
     language: (languageFilter.value || '').trim(),
-    severity: (severityFilter.value || '').trim(),
-    type: (typeFilter.value || '').trim(),
-    state: (stateFilter.value || '').trim(),
+    severity: severityValue || '',
+    type: typeValue || '',
+    state: stateValue || '',
     url: (urlFilter.value || '').trim(),
     domain_filter: (domainFilter.value || '').trim(),
   });
@@ -139,8 +256,6 @@ function syncDefaultsFromQuery() {
   const { domain, runId } = queryParamsFromLocation();
   workflowContext.domain = domain;
   workflowContext.runId = runId;
-  domainInput.value = domain;
-  runIdInput.value = '';
 
   const params = new URLSearchParams();
   if (workflowContext.domain) params.set('domain', workflowContext.domain);
@@ -153,13 +268,40 @@ function syncDefaultsFromQuery() {
 }
 
 function resultOptionLabel(result) {
-  const runId = String((result || {}).run_id || '').trim();
-  const createdAt = formatUtcTimestampForUi(result.created_at);
-  const displayLabel = String((result || {}).display_label || '').trim();
-  if (createdAt && displayLabel && displayLabel !== runId) return `${createdAt} · ${displayLabel} · ${runId}`;
-  if (createdAt) return `${createdAt} · ${runId}`;
-  if (displayLabel && displayLabel !== runId) return `${displayLabel} · ${runId}`;
-  return runId;
+  const createdAtRaw = String((result || {}).created_at || '').trim();
+  const parsed = createdAtRaw ? new Date(createdAtRaw) : null;
+  const parts = parsed && !Number.isNaN(parsed.getTime())
+    ? Object.fromEntries(llmResultDateFormatter.formatToParts(parsed).map((part) => [part.type, part.value]))
+    : {};
+  const datePart = parts.day && parts.month && parts.year ? `${parts.day}.${parts.month}.${parts.year}` : 'date unknown';
+  const timePart = parts.hour && parts.minute ? `${parts.hour}:${parts.minute}` : 'time unknown';
+  const language = resolveResultLanguage(result);
+  return `LLM result - ${language} - ${datePart} | ${timePart}`;
+}
+
+function resolveResultLanguage(result) {
+  const metadata = result && typeof result.metadata === 'object' ? result.metadata : {};
+  for (const value of [
+    result?.target_language,
+    result?.language,
+    result?.lang,
+    result?.target_lang,
+    result?.locale,
+    metadata?.target_language,
+    metadata?.language,
+    metadata?.lang,
+  ]) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized) return normalized;
+  }
+  return 'unknown';
+}
+
+function fallbackSelectionTag(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '0000';
+  const fingerprint = [...raw].reduce((acc, ch) => ((acc * 31) + ch.charCodeAt(0)) % 10000, 7);
+  return String(fingerprint).padStart(4, '0');
 }
 
 function renderPersistedResultOptions(selectedRunId = '') {
@@ -189,7 +331,7 @@ function renderPersistedResultOptions(selectedRunId = '') {
   if (selectedRunId && !hasPreferred) {
     const option = document.createElement('option');
     option.value = selectedRunId;
-    option.textContent = `${selectedRunId} · current selection`;
+    option.textContent = `LLM result - unknown - date unknown | time unknown · selection #${fallbackSelectionTag(selectedRunId)}`;
     option.selected = true;
     persistedResultSelect.appendChild(option);
   }
@@ -204,11 +346,7 @@ function renderPersistedResultOptions(selectedRunId = '') {
     option.selected = !selectedRunId || hasPreferred ? option.value === (runIdDuplicated ? preferredKey : preferredRunId) : false;
     persistedResultSelect.appendChild(option);
   }
-  if (selectedRunId && !hasPreferred) {
-    runIdInput.value = selectedRunId;
-    return;
-  }
-  if (preferredRunId) runIdInput.value = preferredRunId;
+  if (selectedRunId && !hasPreferred) return;
 }
 
 async function loadPersistedResults(preferredRunId = '') {
@@ -252,7 +390,6 @@ async function loadDomains() {
       domainSelect.value = items[0];
     }
     if (domainSelect.value) {
-      domainInput.value = domainSelect.value;
       await loadPersistedResults(workflowContext.runId || '');
     }
   } catch (_) {
@@ -349,13 +486,11 @@ function updateTargetLanguage(issues = [], explicitTargetLanguage = '') {
   const candidates = explicit ? [explicit] : (preferred ? [preferred] : (fallbackFromIssues ? [fallbackFromIssues] : []));
   const selected = candidates[0] || 'target';
   if (targetLanguageHeader) targetLanguageHeader.textContent = selected;
-  if (targetLanguageSummary) targetLanguageSummary.textContent = selected === 'target' ? 'Target language: —' : `Target language: ${selected.toUpperCase()}`;
 }
 
 async function loadIssues() {
   updateWorkflowSummary();
   setStatus('Loading…');
-  issueCount.classList.add('hidden');
   tbody.innerHTML = '';
   const response = await fetch(`/api/issues?${buildParams().toString()}`);
   const payload = await safeReadPayload(response);
@@ -369,16 +504,40 @@ async function loadIssues() {
     setStatus(payload.error || `Issues query failed (${response.status})`, 'error');
     return;
   }
-  const issues = payload.issues || [];
-  updateTargetLanguage(issues, payload.target_language || '');
-  issueCount.textContent = `Count: ${payload.count || 0}`;
-  issueCount.classList.remove('hidden');
+  loadedIssues = Array.isArray(payload.issues) ? payload.issues : [];
+  updateTargetLanguage(loadedIssues, payload.target_language || '');
+  syncFilterOptionsFromIssues(loadedIssues);
+  renderIssues();
+}
+
+function syncFilterOptionsFromIssues(issues = []) {
+  stateMultiFilter.setOptions(issues.map((issue) => String(issue?.state || '').trim().toLowerCase()).filter(Boolean));
+  severityMultiFilter.setOptions(issues.map((issue) => deriveSeverity(issue).toLowerCase()).filter(Boolean));
+  typeMultiFilter.setOptions(issues.map((issue) => String(issue?.category || '').trim().toLowerCase()).filter(Boolean));
+}
+
+function filteredIssues() {
+  return loadedIssues.filter((issue) => {
+    const issueState = String(issue?.state || '').trim().toLowerCase();
+    const issueSeverity = deriveSeverity(issue).toLowerCase();
+    const issueType = String(issue?.category || '').trim().toLowerCase();
+    return stateMultiFilter.includes(issueState)
+      && severityMultiFilter.includes(issueSeverity)
+      && typeMultiFilter.includes(issueType);
+  });
+}
+
+function renderIssues() {
+  const issues = filteredIssues();
+  tbody.innerHTML = '';
+  const count = typeof issues.length === 'number' ? issues.length : 0;
+  const countSuffix = Number.isFinite(count) ? ` Count: ${count}` : '';
   if (!issues.length) {
     table.classList.add('hidden');
-    setStatus('No issues found for current filters.', 'empty');
+    setStatus(`No issues found for current filters.${countSuffix}`, 'empty');
     return;
   }
-  setStatus('Issues loaded.', 'ok');
+  setStatus(`Issues loaded.${countSuffix}`, 'ok');
   for (const issue of issues) {
     const tr = document.createElement('tr');
     const evidenceUrl = readField(issue?.evidence || {}, ['url', 'page_url', 'source_url']);
@@ -434,35 +593,8 @@ applyBtn.addEventListener('click', () => {
   loadIssues().catch((err) => setStatus(err.message, 'error'));
 });
 
-if (runIdInput) {
-  runIdInput.addEventListener('input', () => {
-    updateWorkflowSummary();
-  });
-}
-
-if (domainInput) {
-  domainInput.addEventListener('input', () => {
-    if (domainSelect && domainInput.value !== domainSelect.value) {
-      domainSelect.value = '';
-    }
-    updateWorkflowSummary();
-    const preferredRunId = String(workflowContext.runId || '').trim();
-    loadPersistedResults(preferredRunId)
-      .then(() => {
-        if (!persistedResults.length) {
-          clearIssuesView();
-          setStatus(noPersistedResultsMessage(), 'empty');
-          return;
-        }
-        loadIssues().catch((err) => setStatus(err.message, 'error'));
-      })
-      .catch((err) => setStatus(err.message, 'error'));
-  });
-}
-
 if (domainSelect) {
   domainSelect.addEventListener('change', async () => {
-    domainInput.value = domainSelect.value;
     updateWorkflowSummary();
     await loadPersistedResults('');
   });
@@ -470,8 +602,6 @@ if (domainSelect) {
 
 if (persistedResultSelect) {
   persistedResultSelect.addEventListener('change', () => {
-    const selected = selectedPersistedResult();
-    runIdInput.value = String((selected || {}).run_id || persistedResultSelect.value || '').trim();
     updateWorkflowSummary();
     const params = buildParams();
     window.history.replaceState({}, '', `/?${params.toString()}`);
