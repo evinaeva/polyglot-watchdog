@@ -24,29 +24,25 @@
           <option value="">Select persisted result</option>
         </select>
         <button id="refreshPersistedResults" type="button">Refresh results</button>
-        <input id="languageFilter" placeholder="language" />
-        <input id="issueQuery" placeholder="search" />
-        <button id="applyIssueQuery" type="button">Apply</button>
       </div>
 
       <details>
-        <summary>Advanced filters &amp; run override</summary>
+        <summary>Advanced filters</summary>
         <div class="controls">
-          <input id="domainInput" placeholder="domain (manual override)" />
-          <input id="runIdInput" placeholder="run id (optional override)" />
-          <input id="severityFilter" placeholder="severity" />
-          <input id="stateFilter" placeholder="state" />
-          <input id="typeFilter" placeholder="issue type" />
+          <div id="stateFilter" class="multi-select-filter"></div>
+          <div id="severityFilter" class="multi-select-filter"></div>
+          <div id="typeFilter" class="multi-select-filter"></div>
+          <input id="languageFilter" placeholder="language" />
+          <input id="issueQuery" placeholder="search" />
           <input id="urlFilter" placeholder="url contains" />
           <input id="domainFilter" placeholder="domain substring in URL" />
+          <button id="applyIssueQuery" type="button">Apply</button>
           <button id="exportIssuesCsv" type="button">Export CSV</button>
         </div>
       </details>
     </div>
 
     <div id="issueStatus"></div>
-    <p id="issueCount" class="hidden"></p>
-    <p id="targetLanguageSummary" class="muted"></p>
     <table id="issuesTable" class="hidden">
       <thead><tr><th>en</th><th id="targetLanguageHeader">target</th><th>Error/Issue</th><th>Severity</th><th>Open details</th></tr></thead>
       <tbody></tbody>

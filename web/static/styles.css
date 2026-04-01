@@ -445,3 +445,40 @@ pre { background: #0f172a; color: #e2e8f0; padding: 10px; border-radius: 4px; ov
 .top-unified-block > * {
   margin: 0;
 }
+
+.multi-select-filter {
+  position: relative;
+}
+
+.multi-select-trigger {
+  min-width: 180px;
+  text-align: left;
+}
+
+.multi-select-panel {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 220px;
+  max-height: 240px;
+  overflow: auto;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.multi-select-panel label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.multi-select-actions {
+  display: flex;
+  gap: 8px;
+}
