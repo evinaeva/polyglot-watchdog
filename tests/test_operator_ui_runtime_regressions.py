@@ -1597,6 +1597,93 @@ def test_index_runtime_uses_newest_persisted_result_and_allows_selection_change(
     assert "run_id=run-old" in out["latestIssuesCall"]
 
 
+def test_index_runtime_uses_selected_result_domain_for_issues_and_detail_links():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function makeElement(id='') {
+          const listeners = {};
+          const classes = new Set();
+          const el = {
+            id,
+            value: '',
+            href: '',
+            textContent: '',
+            innerHTML: '',
+            disabled: false,
+            children: [],
+            className: '',
+            classList: {
+              add(name){ classes.add(name); },
+              remove(name){ classes.delete(name); },
+              toggle(name, force){ if (force === true) classes.add(name); else if (force === false) classes.delete(name); },
+            },
+            appendChild(child){ this.children.push(child); return child; },
+            addEventListener(type, cb){ listeners[type] = cb; },
+            dispatch(type){ if (listeners[type]) return listeners[type]({ target: this }); },
+            querySelector(){ return makeElement('qs'); },
+          };
+          Object.defineProperty(el, 'options', { get(){ return this.children; } });
+          return el;
+        }
+
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
+        const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
+        const tbody = makeElement('tbody');
+        els.issuesTable.querySelector = () => tbody;
+
+        const calls = [];
+        const sandbox = {
+          console,
+          URL,
+          URLSearchParams,
+          Intl,
+          document: {
+            getElementById: (id) => els[id],
+            createElement: () => makeElement('created'),
+          },
+          window: {
+            location: { search: '?domain=https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html' },
+            history: { replaceState(){} },
+          },
+          safeReadPayload: async (response) => response.json(),
+          fetch: async (url) => {
+            calls.push(url);
+            if (url.startsWith('/api/issues/results?')) {
+              return { ok: true, status: 200, json: async () => ({ results: [
+                { run_id: 'run-legacy', domain: 'https://evinaeva.github.io/', created_at: '2026-03-02T10:00:00Z', display_label: 'First_run_12:00|02.03.2026' },
+              ]}) };
+            }
+            if (url.startsWith('/api/issues?')) {
+              return { ok: true, status: 200, json: async () => ({ issues: [{ id: '1', message: 'x', evidence: { url: 'https://example.com' } }], count: 1 }) };
+            }
+            throw new Error('Unexpected URL: ' + url);
+          },
+        };
+
+        vm.createContext(sandbox);
+        vm.runInContext(fs.readFileSync('web/static/index.js', 'utf8'), sandbox);
+
+        setTimeout(() => {
+          const initialIssuesCall = calls.find((url) => url.includes('/api/issues?')) || '';
+          const detailHref = (((tbody.children[0] || {}).children || [])[4] || {}).children ? ((((tbody.children[0] || {}).children || [])[4] || {}).children[0] || {}).href || '' : '';
+          console.log(JSON.stringify({
+            initialIssuesCall,
+            detailHref,
+            workflowSummary: els.workflowContextSummary.textContent,
+          }));
+        }, 0);
+        """
+    )
+    out = _run_node_json(script)
+    assert "domain=https%3A%2F%2Fevinaeva.github.io%2F" in out["initialIssuesCall"]
+    assert "run_id=run-legacy" in out["initialIssuesCall"]
+    assert "domain=https%3A%2F%2Fevinaeva.github.io%2F" in out["detailHref"]
+    assert "artifact-domain: https://evinaeva.github.io/" in out["workflowSummary"]
+
+
 def test_index_runtime_handles_empty_persisted_results_state():
     script = textwrap.dedent(
         r"""
@@ -1666,6 +1753,76 @@ def test_index_runtime_handles_empty_persisted_results_state():
     assert out["optionText"] == "No persisted results available"
     assert out["selectDisabled"] is True
     assert "No persisted issue results found" in out["statusText"]
+
+
+def test_index_runtime_empty_state_surfaces_searched_domains_diagnostics():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function makeElement(id='') {
+          const listeners = {};
+          const classes = new Set();
+          const el = {
+            id,
+            value: '',
+            textContent: '',
+            innerHTML: '',
+            disabled: false,
+            children: [],
+            className: '',
+            classList: {
+              add(name){ classes.add(name); },
+              remove(name){ classes.delete(name); },
+              toggle(name, force){ if (force === true) classes.add(name); else if (force === false) classes.delete(name); },
+            },
+            appendChild(child){ this.children.push(child); return child; },
+            addEventListener(type, cb){ listeners[type] = cb; },
+            querySelector(){ return makeElement('qs'); },
+          };
+          Object.defineProperty(el, 'options', { get(){ return this.children; } });
+          return el;
+        }
+
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
+        const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
+        els.issuesTable.querySelector = () => makeElement('tbody');
+
+        const sandbox = {
+          console,
+          URL,
+          URLSearchParams,
+          Intl,
+          document: {
+            getElementById: (id) => els[id],
+            createElement: () => makeElement('created'),
+          },
+          window: { location: { search: '?domain=https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html' }, history: { replaceState(){} } },
+          safeReadPayload: async (response) => response.json(),
+          fetch: async (url) => {
+            if (url.startsWith('/api/issues/results?')) {
+              return {
+                ok: true,
+                status: 200,
+                json: async () => ({ results: [], diagnostics: { searched_domains: ['https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html', 'https://evinaeva.github.io/'] } }),
+              };
+            }
+            throw new Error('Unexpected URL: ' + url);
+          },
+        };
+
+        vm.createContext(sandbox);
+        vm.runInContext(fs.readFileSync('web/static/index.js', 'utf8'), sandbox);
+
+        setTimeout(() => {
+          console.log(JSON.stringify({ statusText: els.issueStatus.textContent }));
+        }, 0);
+        """
+    )
+    out = _run_node_json(script)
+    assert "Searched domains:" in out["statusText"]
+    assert "https://evinaeva.github.io/" in out["statusText"]
 
 
 def test_index_domain_change_auto_loads_newest_result_for_new_domain():

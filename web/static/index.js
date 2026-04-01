@@ -25,6 +25,7 @@ const workflowContext = {
   runId: '',
 };
 let persistedResults = [];
+let persistedResultsDiagnostics = null;
 const tallinnDateTimeFormatter = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Europe/Tallinn',
   year: 'numeric',
@@ -74,9 +75,21 @@ function activeRunId() {
   return (runIdInput.value || workflowContext.runId || '').trim();
 }
 
+function selectedPersistedResult() {
+  const runId = activeRunId();
+  if (!runId) return null;
+  return persistedResults.find((row) => String((row || {}).run_id || '').trim() === runId) || null;
+}
+
+function activeArtifactDomain() {
+  const selected = selectedPersistedResult();
+  const selectedDomain = String((selected || {}).domain || '').trim();
+  return selectedDomain || activeDomain();
+}
+
 function buildParams() {
   return new URLSearchParams({
-    domain: activeDomain(),
+    domain: activeArtifactDomain(),
     run_id: activeRunId(),
     q: (queryInput.value || '').trim(),
     language: (languageFilter.value || '').trim(),
@@ -99,6 +112,10 @@ function updateWorkflowSummary() {
   const contextParts = [];
   if (domain) contextParts.push(`domain: ${domain}`);
   if (runId) contextParts.push(`run: ${runId}`);
+  const artifactDomain = activeArtifactDomain();
+  if (runId && artifactDomain && artifactDomain !== domain) {
+    contextParts.push(`artifact-domain: ${artifactDomain}`);
+  }
   workflowContextSummary.textContent = `Workflow context: ${contextParts.join(' · ')}.`;
 }
 
@@ -169,6 +186,7 @@ function renderPersistedResultOptions(selectedRunId = '') {
 async function loadPersistedResults(preferredRunId = '') {
   const domain = activeDomain();
   persistedResults = [];
+  persistedResultsDiagnostics = null;
   renderPersistedResultOptions('');
   if (!domain) return;
   const response = await fetch(`/api/issues/results?${new URLSearchParams({ domain }).toString()}`);
@@ -176,7 +194,17 @@ async function loadPersistedResults(preferredRunId = '') {
   if (!response.ok) throw new Error(payload.error || `Failed to load persisted results (${response.status})`);
   const rows = Array.isArray(payload.results) ? payload.results : [];
   persistedResults = rows;
+  persistedResultsDiagnostics = payload.diagnostics && typeof payload.diagnostics === 'object' ? payload.diagnostics : null;
   renderPersistedResultOptions(preferredRunId);
+}
+
+function noPersistedResultsMessage() {
+  if (!persistedResultsDiagnostics) return 'No persisted issue results found for this domain.';
+  const searched = Array.isArray(persistedResultsDiagnostics.searched_domains)
+    ? persistedResultsDiagnostics.searched_domains.filter((row) => String(row || '').trim())
+    : [];
+  if (!searched.length) return 'No persisted issue results found for this domain.';
+  return `No persisted issue results found. Searched domains: ${searched.join(', ')}.`;
 }
 
 function issueLabel(issue) {
@@ -293,7 +321,7 @@ async function loadIssues() {
     const tr = document.createElement('tr');
     const evidenceUrl = readField(issue?.evidence || {}, ['url', 'page_url', 'source_url']);
     const detailHref = `/issues/detail?${new URLSearchParams({
-      domain: activeDomain(),
+      domain: activeArtifactDomain(),
       run_id: activeRunId(),
       id: String(issue.id || ''),
     }).toString()}`;
@@ -358,7 +386,7 @@ if (domainInput) {
       .then(() => {
         if (!persistedResults.length) {
           clearIssuesView();
-          setStatus('No persisted issue results found for this domain.', 'empty');
+          setStatus(noPersistedResultsMessage(), 'empty');
           return;
         }
         loadIssues().catch((err) => setStatus(err.message, 'error'));
@@ -385,7 +413,7 @@ if (refreshPersistedResults) {
       .then(() => {
         if (!persistedResults.length) {
           clearIssuesView();
-          setStatus('No persisted issue results found for this domain.', 'empty');
+          setStatus(noPersistedResultsMessage(), 'empty');
           return;
         }
         const nextRunId = activeRunId();
@@ -426,7 +454,7 @@ loadPersistedResults()
     if (activeDomain() && activeRunId()) return loadIssues();
     if (activeDomain() && !persistedResults.length) {
       clearIssuesView();
-      setStatus('No persisted issue results found for this domain.', 'empty');
+      setStatus(noPersistedResultsMessage(), 'empty');
     }
     return null;
   })
