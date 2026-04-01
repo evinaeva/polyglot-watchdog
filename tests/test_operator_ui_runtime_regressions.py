@@ -1684,6 +1684,90 @@ def test_index_runtime_uses_selected_result_domain_for_issues_and_detail_links()
     assert "artifact-domain: https://evinaeva.github.io/" in out["workflowSummary"]
 
 
+def test_index_runtime_allows_selecting_duplicate_run_ids_across_domains():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function makeElement(id='') {
+          const listeners = {};
+          const classes = new Set();
+          const el = {
+            id,
+            value: '',
+            href: '',
+            textContent: '',
+            innerHTML: '',
+            disabled: false,
+            children: [],
+            className: '',
+            classList: {
+              add(name){ classes.add(name); },
+              remove(name){ classes.delete(name); },
+              toggle(name, force){ if (force === true) classes.add(name); else if (force === false) classes.delete(name); },
+            },
+            appendChild(child){ this.children.push(child); return child; },
+            addEventListener(type, cb){ listeners[type] = cb; },
+            dispatch(type){ if (listeners[type]) return listeners[type]({ target: this }); },
+            querySelector(){ return makeElement('qs'); },
+          };
+          Object.defineProperty(el, 'options', { get(){ return this.children; } });
+          return el;
+        }
+
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
+        const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
+        const tbody = makeElement('tbody');
+        els.issuesTable.querySelector = () => tbody;
+
+        const calls = [];
+        const sandbox = {
+          console,
+          URL,
+          URLSearchParams,
+          Intl,
+          document: {
+            getElementById: (id) => els[id],
+            createElement: () => makeElement('created'),
+          },
+          window: { location: { search: '?domain=https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html' }, history: { replaceState(){} } },
+          safeReadPayload: async (response) => response.json(),
+          fetch: async (url) => {
+            calls.push(url);
+            if (url.startsWith('/api/issues/results?')) {
+              return { ok: true, status: 200, json: async () => ({ results: [
+                { run_id: 'run-shared', result_key: 'https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html|run-shared', domain: 'https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html', created_at: '2026-03-03T10:00:00Z', display_label: 'Canonical run' },
+                { run_id: 'run-shared', result_key: 'https://evinaeva.github.io/|run-shared', domain: 'https://evinaeva.github.io/', created_at: '2026-03-02T10:00:00Z', display_label: 'Legacy run' },
+              ]}) };
+            }
+            if (url.startsWith('/api/issues?')) {
+              return { ok: true, status: 200, json: async () => ({ issues: [{ id: '1', message: 'x', evidence: { url: 'https://example.com' } }], count: 1 }) };
+            }
+            throw new Error('Unexpected URL: ' + url);
+          },
+        };
+
+        vm.createContext(sandbox);
+        vm.runInContext(fs.readFileSync('web/static/index.js', 'utf8'), sandbox);
+
+        setTimeout(() => {
+          const optionValues = els.persistedResultSelect.options.map((row) => row.value);
+          els.persistedResultSelect.value = 'https://evinaeva.github.io/|run-shared';
+          els.persistedResultSelect.dispatch('change');
+          setTimeout(() => {
+            const latestIssuesCall = [...calls].reverse().find((url) => url.includes('/api/issues?')) || '';
+            console.log(JSON.stringify({ optionValues, latestIssuesCall }));
+          }, 0);
+        }, 0);
+        """
+    )
+    out = _run_node_json(script)
+    assert "https://evinaeva.github.io/|run-shared" in out["optionValues"]
+    assert "domain=https%3A%2F%2Fevinaeva.github.io%2F" in out["latestIssuesCall"]
+    assert "run_id=run-shared" in out["latestIssuesCall"]
+
+
 def test_index_runtime_handles_empty_persisted_results_state():
     script = textwrap.dedent(
         r"""

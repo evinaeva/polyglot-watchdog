@@ -426,7 +426,7 @@ def test_issues_results_artifact_fallback_parses_url_style_domains(api_env):
     assert "Artifact run" in matched["display_label"]
 
 
-def test_issues_results_deduplicates_same_run_id_across_domain_aliases(api_env):
+def test_issues_results_keeps_same_run_id_across_domain_aliases_when_domains_differ(api_env):
     canonical = "https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html"
     legacy = "https://evinaeva.github.io/"
     run_id = "run-shared"
@@ -439,8 +439,9 @@ def test_issues_results_deduplicates_same_run_id_across_domain_aliases(api_env):
     assert status == HTTPStatus.OK
     payload = json.loads(body)
     run_rows = [row for row in payload["results"] if row["run_id"] == run_id]
-    assert len(run_rows) == 1
-    assert run_rows[0]["domain"] == legacy
+    assert len(run_rows) == 2
+    assert {row["domain"] for row in run_rows} == {canonical, legacy}
+    assert all(str(row.get("result_key", "")).strip() for row in run_rows)
 
 
 def test_issues_response_includes_target_language_from_query_or_run_metadata(api_env):

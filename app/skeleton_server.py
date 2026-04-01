@@ -472,7 +472,7 @@ def _sort_runs_newest_first(runs: list[dict]) -> list[dict]:
 def _persisted_issue_results_payload(domain: str) -> dict[str, Any]:
     run_domains = _check_languages_run_domains(domain) or [domain]
     run_rows_by_key: dict[tuple[str, str], dict] = {}
-    results_by_run_id: dict[str, dict] = {}
+    results_by_key: dict[tuple[str, str], dict] = {}
     diagnostics = {
         "requested_domain": domain,
         "searched_domains": run_domains,
@@ -481,22 +481,26 @@ def _persisted_issue_results_payload(domain: str) -> dict[str, Any]:
     }
 
     def upsert_result(row: dict, *, source: str) -> None:
+        row_domain = str((row or {}).get("domain", "")).strip()
         run_id = str((row or {}).get("run_id", "")).strip()
-        if not run_id:
+        if not row_domain or not run_id:
             return
+        result_key = (row_domain, run_id)
         created_at = str((row or {}).get("created_at", "")).strip()
-        current = results_by_run_id.get(run_id)
+        current = results_by_key.get(result_key)
         if current is None:
             out = dict(row)
+            out["result_key"] = f"{row_domain}|{run_id}"
             out["source"] = source
-            results_by_run_id[run_id] = out
+            results_by_key[result_key] = out
             return
         current_ts = _parse_utc_timestamp(str(current.get("created_at", ""))) or float("-inf")
         candidate_ts = _parse_utc_timestamp(created_at) or float("-inf")
         if candidate_ts > current_ts:
             out = dict(row)
+            out["result_key"] = f"{row_domain}|{run_id}"
             out["source"] = source
-            results_by_run_id[run_id] = out
+            results_by_key[result_key] = out
 
     for run_domain in run_domains:
         runs_payload = _load_runs(run_domain)
@@ -548,7 +552,7 @@ def _persisted_issue_results_payload(domain: str) -> dict[str, Any]:
                 }, source="artifact_fallback")
     except Exception:
         pass
-    results = [row for row in results_by_run_id.values() if isinstance(row, dict) and str(row.get("run_id", "")).strip()]
+    results = [row for row in results_by_key.values() if isinstance(row, dict) and str(row.get("run_id", "")).strip()]
     results.sort(
         key=lambda row: (
             -(_parse_utc_timestamp(str(row.get("created_at", ""))) or float("-inf")),
