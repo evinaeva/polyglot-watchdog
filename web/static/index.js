@@ -75,10 +75,25 @@ function activeRunId() {
   return (runIdInput.value || workflowContext.runId || '').trim();
 }
 
+function persistedResultKey(result) {
+  const explicit = String((result || {}).result_key || '').trim();
+  if (explicit) return explicit;
+  const domain = String((result || {}).domain || '').trim();
+  const runId = String((result || {}).run_id || '').trim();
+  return domain ? `${domain}|${runId}` : runId;
+}
+
 function selectedPersistedResult() {
+  const selectedValue = String((persistedResultSelect && persistedResultSelect.value) || '').trim();
+  if (selectedValue) {
+    const byValue = persistedResults.find((row) => persistedResultKey(row) === selectedValue);
+    if (byValue) return byValue;
+  }
   const runId = activeRunId();
   if (!runId) return null;
-  return persistedResults.find((row) => String((row || {}).run_id || '').trim() === runId) || null;
+  const matches = persistedResults.filter((row) => String((row || {}).run_id || '').trim() === runId);
+  if (matches.length === 1) return matches[0];
+  return matches.find((row) => String((row || {}).domain || '').trim() === activeDomain()) || null;
 }
 
 function activeArtifactDomain() {
@@ -158,8 +173,18 @@ function renderPersistedResultOptions(selectedRunId = '') {
     return;
   }
   persistedResultSelect.disabled = false;
-  const hasPreferred = selectedRunId && persistedResults.some((row) => String(row.run_id || '') === selectedRunId);
-  const preferredRunId = hasPreferred ? selectedRunId : String((persistedResults[0] || {}).run_id || '').trim();
+  const runIdCounts = new Map();
+  for (const row of persistedResults) {
+    const runId = String((row || {}).run_id || '').trim();
+    if (!runId) continue;
+    runIdCounts.set(runId, (runIdCounts.get(runId) || 0) + 1);
+  }
+  const hasPreferred = selectedRunId && persistedResults.some((row) => String(row.run_id || '').trim() === selectedRunId);
+  const preferredResult = hasPreferred
+    ? (persistedResults.find((row) => String(row.run_id || '').trim() === selectedRunId) || null)
+    : (persistedResults[0] || null);
+  const preferredRunId = String((preferredResult || {}).run_id || '').trim();
+  const preferredKey = preferredResult ? persistedResultKey(preferredResult) : '';
   if (selectedRunId && !hasPreferred) {
     const option = document.createElement('option');
     option.value = selectedRunId;
@@ -171,9 +196,11 @@ function renderPersistedResultOptions(selectedRunId = '') {
     const runId = String(result.run_id || '').trim();
     if (!runId) continue;
     const option = document.createElement('option');
-    option.value = runId;
-    option.textContent = resultOptionLabel(result);
-    option.selected = !selectedRunId || hasPreferred ? runId === preferredRunId : false;
+    const runIdDuplicated = (runIdCounts.get(runId) || 0) > 1;
+    option.value = runIdDuplicated ? persistedResultKey(result) : runId;
+    const domainSuffix = runIdDuplicated ? ` · ${String(result.domain || '').trim()}` : '';
+    option.textContent = `${resultOptionLabel(result)}${domainSuffix}`;
+    option.selected = !selectedRunId || hasPreferred ? option.value === (runIdDuplicated ? preferredKey : preferredRunId) : false;
     persistedResultSelect.appendChild(option);
   }
   if (selectedRunId && !hasPreferred) {
@@ -397,7 +424,8 @@ if (domainInput) {
 
 if (persistedResultSelect) {
   persistedResultSelect.addEventListener('change', () => {
-    runIdInput.value = String(persistedResultSelect.value || '').trim();
+    const selected = selectedPersistedResult();
+    runIdInput.value = String((selected || {}).run_id || persistedResultSelect.value || '').trim();
     updateWorkflowSummary();
     const params = buildParams();
     window.history.replaceState({}, '', `/?${params.toString()}`);
