@@ -4541,3 +4541,38 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cd2f5192b0832c8a47f9161437b518)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #236 — 2026-04-01T14:58:53Z
+
+- Title: Add multi-select filters, improve persisted-result labels, and refactor issue rendering
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/236
+- Author: evinaeva
+- Base branch: main
+- Head branch: 3jygt9-codex/improve-ui-of-see-errors-page
+- Merge commit: deeeb0a4d9aebc785dc72a98e4487bb8d8c1bb7c
+- Changed files:
+  - web/static/index.js
+  - web/static/styles.css
+  - web/templates/index.html
+- Description:
+  ### Motivation
+  
+  - Provide richer filtering for issues by replacing single-value text inputs with multi-select controls for `state`, `severity`, and `type` to make filtering more expressive and user-friendly.
+  - Make persisted LLM result options clearer and more robust by standardizing date/time labels and deriving result language from multiple metadata fields.
+  - Simplify and consolidate client-side issue loading and rendering state to support the above UI enhancements.
+  
+  ### Description
+  
+  - Introduces a `MultiSelectFilter` class in `web/static/index.js` and replaces the plain inputs for `state`, `severity`, and `type` with multi-select widgets wired to render logic via `stateMultiFilter`, `severityMultiFilter`, and `typeMultiFilter` and their `value()`/`includes()` APIs.
+  - Replaces ad-hoc issue-loading state with `loadedIssues` plus new functions `syncFilterOptionsFromIssues()`, `filteredIssues()`, and `renderIssues()` to sync filter options from loaded issues and perform client-side filtering and rendering.
+  - Refactors persisted-result handling: adds `llmResultDateFormatter`, `resultOptionLabel()`, `resolveResultLanguage()`, and `fallbackSelectionTag()` to produce stable, human-friendly option labels like `LLM result - <language> - DD.MM.YY | HH:MM`, and improves `selectedPersistedResult()` lookup to consider `run_id` matches and duplicate run ids.
+  - Removes obsolete elements and behaviors: deletes `domainInput` and `runIdInput` handling and the old `formatUtcTimestampForUi()` and `targetLanguageSummary` usage, and updates `buildParams()` to use multi-select values.
+  - Updates `web/templates/index.html` to replace inputs with the multi-select containers and rearranges controls (moves `Apply` into advanced filters), and adds supporting styles in `web/static/styles.css` for the multi-select UI.
+  
+  ### Testing
+  
+  - No automated tests were run for this change.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cd2caadb18832c95efa7a380d59bba)
+- Notes: Auto-generated from merged PR metadata.
