@@ -2,6 +2,7 @@ const applyBtn = document.getElementById('applyIssueQuery');
 const exportCsvBtn = document.getElementById('exportIssuesCsv');
 const queryInput = document.getElementById('issueQuery');
 const domainInput = document.getElementById('domainInput');
+const domainSelect = document.getElementById('domainSelect');
 const persistedResultSelect = document.getElementById('persistedResultSelect');
 const refreshPersistedResults = document.getElementById('refreshPersistedResults');
 const runIdInput = document.getElementById('runIdInput');
@@ -68,7 +69,7 @@ function formatUtcTimestampForUi(value) {
 }
 
 function activeDomain() {
-  return (domainInput.value || workflowContext.domain || '').trim();
+  return (domainSelect?.value || domainInput.value || workflowContext.domain || '').trim();
 }
 
 function activeRunId() {
@@ -215,7 +216,11 @@ async function loadPersistedResults(preferredRunId = '') {
   persistedResults = [];
   persistedResultsDiagnostics = null;
   renderPersistedResultOptions('');
-  if (!domain) return;
+  if (!domain) {
+    setStatus('Select a domain to load persisted results.', 'muted');
+    renderPersistedResultOptions('');
+    return;
+  }
   const response = await fetch(`/api/issues/results?${new URLSearchParams({ domain }).toString()}`);
   const payload = await safeReadPayload(response);
   if (!response.ok) throw new Error(payload.error || `Failed to load persisted results (${response.status})`);
@@ -223,6 +228,36 @@ async function loadPersistedResults(preferredRunId = '') {
   persistedResults = rows;
   persistedResultsDiagnostics = payload.diagnostics && typeof payload.diagnostics === 'object' ? payload.diagnostics : null;
   renderPersistedResultOptions(preferredRunId);
+}
+
+async function loadDomains() {
+  if (!domainSelect) return;
+  try {
+    const response = await fetch('/api/domains');
+    const payload = await safeReadPayload(response);
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    domainSelect.innerHTML = '<option value="">— select domain —</option>';
+    const domains = [...items];
+    const prefilledDomain = workflowContext.domain;
+    if (prefilledDomain && !domains.includes(prefilledDomain)) domains.push(prefilledDomain);
+    for (const domain of domains) {
+      const option = document.createElement('option');
+      option.value = domain;
+      option.textContent = domain;
+      domainSelect.appendChild(option);
+    }
+    if (prefilledDomain) {
+      domainSelect.value = prefilledDomain;
+    } else if (items.length === 1) {
+      domainSelect.value = items[0];
+    }
+    if (domainSelect.value) {
+      domainInput.value = domainSelect.value;
+      await loadPersistedResults(workflowContext.runId || '');
+    }
+  } catch (_) {
+    // fail silently
+  }
 }
 
 function noPersistedResultsMessage() {
@@ -407,6 +442,9 @@ if (runIdInput) {
 
 if (domainInput) {
   domainInput.addEventListener('input', () => {
+    if (domainSelect && domainInput.value !== domainSelect.value) {
+      domainSelect.value = '';
+    }
     updateWorkflowSummary();
     const preferredRunId = String(workflowContext.runId || '').trim();
     loadPersistedResults(preferredRunId)
@@ -419,6 +457,14 @@ if (domainInput) {
         loadIssues().catch((err) => setStatus(err.message, 'error'));
       })
       .catch((err) => setStatus(err.message, 'error'));
+  });
+}
+
+if (domainSelect) {
+  domainSelect.addEventListener('change', async () => {
+    domainInput.value = domainSelect.value;
+    updateWorkflowSummary();
+    await loadPersistedResults('');
   });
 }
 
@@ -477,7 +523,7 @@ if (exportCsvBtn) {
 }
 
 syncDefaultsFromQuery();
-loadPersistedResults()
+loadDomains()
   .then(() => {
     if (activeDomain() && activeRunId()) return loadIssues();
     if (activeDomain() && !persistedResults.length) {

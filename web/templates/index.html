@@ -17,7 +17,9 @@
       <p id="workflowContextSummary" class="muted"></p>
 
       <div class="controls">
-        <input id="domainInput" placeholder="domain" />
+        <select id="domainSelect">
+          <option value="">— select domain —</option>
+        </select>
         <select id="persistedResultSelect">
           <option value="">Select persisted result</option>
         </select>
@@ -30,6 +32,7 @@
       <details>
         <summary>Advanced filters &amp; run override</summary>
         <div class="controls">
+          <input id="domainInput" placeholder="domain (manual override)" />
           <input id="runIdInput" placeholder="run id (optional override)" />
           <input id="severityFilter" placeholder="severity" />
           <input id="stateFilter" placeholder="state" />

@@ -1534,7 +1534,7 @@ def test_index_runtime_uses_newest_persisted_result_and_allows_selection_change(
           return el;
         }
 
-        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainSelect','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         const tbody = makeElement('tbody');
         els.issuesTable.querySelector = () => tbody;
@@ -1556,6 +1556,7 @@ def test_index_runtime_uses_newest_persisted_result_and_allows_selection_change(
           safeReadPayload: async (response) => response.json(),
           fetch: async (url) => {
             calls.push(url);
+            if (url === '/api/domains') return { ok: true, status: 200, json: async () => ({ items: ['example.com'] }) };
             if (url.startsWith('/api/issues/results?')) {
               return { ok: true, status: 200, json: async () => ({ results: [
                 { run_id: 'run-new', created_at: '2026-03-02T10:00:00Z', display_label: 'First_run_12:00|02.03.2026' },
@@ -1629,7 +1630,7 @@ def test_index_runtime_uses_selected_result_domain_for_issues_and_detail_links()
           return el;
         }
 
-        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainSelect','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         const tbody = makeElement('tbody');
         els.issuesTable.querySelector = () => tbody;
@@ -1651,6 +1652,7 @@ def test_index_runtime_uses_selected_result_domain_for_issues_and_detail_links()
           safeReadPayload: async (response) => response.json(),
           fetch: async (url) => {
             calls.push(url);
+            if (url === '/api/domains') return { ok: true, status: 200, json: async () => ({ items: ['example.com'] }) };
             if (url.startsWith('/api/issues/results?')) {
               return { ok: true, status: 200, json: async () => ({ results: [
                 { run_id: 'run-legacy', domain: 'https://evinaeva.github.io/', created_at: '2026-03-02T10:00:00Z', display_label: 'First_run_12:00|02.03.2026' },
@@ -1716,7 +1718,7 @@ def test_index_runtime_allows_selecting_duplicate_run_ids_across_domains():
           return el;
         }
 
-        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainSelect','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         const tbody = makeElement('tbody');
         els.issuesTable.querySelector = () => tbody;
@@ -1735,6 +1737,7 @@ def test_index_runtime_allows_selecting_duplicate_run_ids_across_domains():
           safeReadPayload: async (response) => response.json(),
           fetch: async (url) => {
             calls.push(url);
+            if (url === '/api/domains') return { ok: true, status: 200, json: async () => ({ items: ['example.com'] }) };
             if (url.startsWith('/api/issues/results?')) {
               return { ok: true, status: 200, json: async () => ({ results: [
                 { run_id: 'run-shared', result_key: 'https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html|run-shared', domain: 'https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html', created_at: '2026-03-03T10:00:00Z', display_label: 'Canonical run' },
@@ -1798,7 +1801,7 @@ def test_index_runtime_handles_empty_persisted_results_state():
           return el;
         }
 
-        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainSelect','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         els.issuesTable.querySelector = () => makeElement('tbody');
 
@@ -1814,6 +1817,7 @@ def test_index_runtime_handles_empty_persisted_results_state():
           window: { location: { search: '?domain=example.com' }, history: { replaceState(){} } },
           safeReadPayload: async (response) => response.json(),
           fetch: async (url) => {
+            if (url === '/api/domains') return { ok: true, status: 200, json: async () => ({ items: ['example.com'] }) };
             if (url.startsWith('/api/issues/results?')) {
               return { ok: true, status: 200, json: async () => ({ results: [] }) };
             }
@@ -1869,7 +1873,7 @@ def test_index_runtime_empty_state_surfaces_searched_domains_diagnostics():
           return el;
         }
 
-        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainSelect','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         els.issuesTable.querySelector = () => makeElement('tbody');
 
@@ -1885,6 +1889,7 @@ def test_index_runtime_empty_state_surfaces_searched_domains_diagnostics():
           window: { location: { search: '?domain=https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html' }, history: { replaceState(){} } },
           safeReadPayload: async (response) => response.json(),
           fetch: async (url) => {
+            if (url === '/api/domains') return { ok: true, status: 200, json: async () => ({ items: ['example.com'] }) };
             if (url.startsWith('/api/issues/results?')) {
               return {
                 ok: true,
@@ -1941,7 +1946,7 @@ def test_index_domain_change_auto_loads_newest_result_for_new_domain():
           return el;
         }
 
-        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainSelect','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         const tbody = makeElement('tbody');
         els.issuesTable.querySelector = () => tbody;
@@ -1960,6 +1965,7 @@ def test_index_domain_change_auto_loads_newest_result_for_new_domain():
           safeReadPayload: async (response) => response.json(),
           fetch: async (url) => {
             calls.push(url);
+            if (url === '/api/domains') return { ok: true, status: 200, json: async () => ({ items: ['example.com'] }) };
             if (url.startsWith('/api/issues/results?')) {
               if (url.includes('domain=domain-a')) {
                 return { ok: true, status: 200, json: async () => ({ results: [
@@ -2036,7 +2042,7 @@ def test_index_domain_change_to_empty_results_clears_stale_issue_table():
           return el;
         }
 
-        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainSelect','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         const tbody = makeElement('tbody');
         els.issuesTable.querySelector = () => tbody;
@@ -2053,6 +2059,7 @@ def test_index_domain_change_to_empty_results_clears_stale_issue_table():
           window: { location: { search: '?domain=domain-a' }, history: { replaceState(){} } },
           safeReadPayload: async (response) => response.json(),
           fetch: async (url) => {
+            if (url === '/api/domains') return { ok: true, status: 200, json: async () => ({ items: ['example.com'] }) };
             if (url.startsWith('/api/issues/results?')) {
               if (url.includes('domain=domain-a')) {
                 return { ok: true, status: 200, json: async () => ({ results: [{ run_id: 'a-run', created_at: '2026-03-01T10:00:00Z' }] }) };
@@ -2070,18 +2077,21 @@ def test_index_domain_change_to_empty_results_clears_stale_issue_table():
         vm.runInContext(fs.readFileSync('web/static/index.js', 'utf8'), sandbox);
 
         setTimeout(() => {
-          const hadRowsBefore = tbody.children.length > 0;
-          els.domainInput.value = 'domain-empty';
-          els.domainInput.dispatch('input');
           setTimeout(() => {
-            console.log(JSON.stringify({
-              hadRowsBefore,
-              rowsAfter: tbody.children.length,
-              tableHidden: els.issuesTable.classList.contains('hidden'),
-              issueCountHidden: els.issueCount.classList.contains('hidden'),
-              issueCountText: els.issueCount.textContent,
-              statusText: els.issueStatus.textContent,
-            }));
+            tbody.appendChild(makeElement('stale-row'));
+            const hadRowsBefore = tbody.children.length > 0;
+            els.domainInput.value = 'domain-empty';
+            els.domainInput.dispatch('input');
+            setTimeout(() => {
+              console.log(JSON.stringify({
+                hadRowsBefore,
+                rowsAfter: tbody.children.length,
+                tableHidden: els.issuesTable.classList.contains('hidden'),
+                issueCountHidden: els.issueCount.classList.contains('hidden'),
+                issueCountText: els.issueCount.textContent,
+                statusText: els.issueStatus.textContent,
+              }));
+            }, 0);
           }, 0);
         }, 0);
         """
@@ -2133,7 +2143,7 @@ def test_index_runtime_renders_source_target_severity_and_links():
           return el;
         }
 
-        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainSelect','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         const tbody = makeElement('tbody');
         els.issuesTable.querySelector = () => tbody;
@@ -2150,6 +2160,7 @@ def test_index_runtime_renders_source_target_severity_and_links():
           window: { location: { search: '?domain=example.com' }, history: { replaceState(){} } },
           safeReadPayload: async (response) => response.json(),
           fetch: async (url) => {
+            if (url === '/api/domains') return { ok: true, status: 200, json: async () => ({ items: ['example.com'] }) };
             if (url.startsWith('/api/issues/results?')) {
               return { ok: true, status: 200, json: async () => ({ results: [{ run_id: 'run-1', created_at: '2026-03-02T10:00:00Z', display_label: 'R1' }] }) };
             }
@@ -2216,7 +2227,7 @@ def test_index_runtime_blocks_non_http_external_url_links():
           return el;
         }
 
-        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainSelect','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         const tbody = makeElement('tbody');
         els.issuesTable.querySelector = () => tbody;
@@ -2230,6 +2241,7 @@ def test_index_runtime_blocks_non_http_external_url_links():
           window: { location: { search: '?domain=example.com' }, history: { replaceState(){} } },
           safeReadPayload: async (response) => response.json(),
           fetch: async (url) => {
+            if (url === '/api/domains') return { ok: true, status: 200, json: async () => ({ items: ['example.com'] }) };
             if (url.startsWith('/api/issues/results?')) return { ok: true, status: 200, json: async () => ({ results: [{ run_id: 'run-1' }] }) };
             if (url.startsWith('/api/issues?')) return { ok: true, status: 200, json: async () => ({ issues: [{ id: '1', message: 'X', language: 'ru', evidence: { url: 'javascript:alert(1)' } }], count: 1 }) };
             throw new Error('Unexpected URL: ' + url);
@@ -2289,7 +2301,7 @@ def test_index_refresh_empty_results_clears_stale_issue_table():
           return el;
         }
 
-        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainSelect','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         const tbody = makeElement('tbody');
         els.issuesTable.querySelector = () => tbody;
@@ -2307,6 +2319,7 @@ def test_index_refresh_empty_results_clears_stale_issue_table():
           window: { location: { search: '?domain=domain-a' }, history: { replaceState(){} } },
           safeReadPayload: async (response) => response.json(),
           fetch: async (url) => {
+            if (url === '/api/domains') return { ok: true, status: 200, json: async () => ({ items: ['example.com'] }) };
             if (url.startsWith('/api/issues/results?')) {
               resultsCallCount += 1;
               if (resultsCallCount === 1) {
@@ -2366,7 +2379,7 @@ def test_index_runtime_target_language_header_uses_deterministic_frequency_not_r
           Object.defineProperty(el, 'options', { get(){ return this.children; } });
           return el;
         }
-        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainSelect','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         const tbody = makeElement('tbody');
         els.issuesTable.querySelector = () => tbody;
@@ -2376,6 +2389,7 @@ def test_index_runtime_target_language_header_uses_deterministic_frequency_not_r
           window: { location: { search: '?domain=example.com' }, history: { replaceState(){} } },
           safeReadPayload: async (response) => response.json(),
           fetch: async (url) => {
+            if (url === '/api/domains') return { ok: true, status: 200, json: async () => ({ items: ['example.com'] }) };
             if (url.startsWith('/api/issues/results?')) return { ok: true, status: 200, json: async () => ({ results: [{ run_id: 'run-1' }] }) };
             if (url.startsWith('/api/issues?')) return { ok: true, status: 200, json: async () => ({ issues: [
               { id: '1', language: 'es', evidence: { url: 'https://x/a' } },
@@ -2411,7 +2425,7 @@ def test_index_runtime_uses_schema_aliases_for_source_target_and_severity():
           Object.defineProperty(el, 'options', { get(){ return this.children; } });
           return el;
         }
-        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainSelect','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         const tbody = makeElement('tbody');
         els.issuesTable.querySelector = () => tbody;
@@ -2421,6 +2435,7 @@ def test_index_runtime_uses_schema_aliases_for_source_target_and_severity():
           window: { location: { search: '?domain=example.com' }, history: { replaceState(){} } },
           safeReadPayload: async (response) => response.json(),
           fetch: async (url) => {
+            if (url === '/api/domains') return { ok: true, status: 200, json: async () => ({ items: ['example.com'] }) };
             if (url.startsWith('/api/issues/results?')) return { ok: true, status: 200, json: async () => ({ results: [{ run_id: 'run-1' }] }) };
             if (url.startsWith('/api/issues?')) return { ok: true, status: 200, json: async () => ({ issues: [{
               id: '1', message: 'legacy', level: 'medium', target_language: 'ru',
