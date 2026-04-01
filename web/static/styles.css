@@ -288,6 +288,28 @@ input[data-field="URL"] { width: 100%; box-sizing: border-box; }
   white-space: nowrap;
   margin-left: auto;
 }
+
+.urls-page .urls-section-title {
+  padding: 12px 14px;
+}
+
+.urls-page .urls-config-table {
+  background: #002647;
+}
+
+.urls-page .urls-config-table td {
+  background: #002647;
+  border-color: #2f4d70;
+}
+
+.urls-page .urls-config-table tbody tr:hover td {
+  background: #07345d;
+}
+
+.urls-page .urls-config-table th {
+  background: #002647;
+  border-color: #2f4d70;
+}
 .ui-action-button {
   display: inline-flex;
   align-items: center;

@@ -296,5 +296,6 @@
   "urls.status.load_failed": "Load failed.",
   "urls.status.updated": "Changes applied.",
   "urls.status.update_failed": "Action failed.",
+  "urls.button.manage_recipes": "Manage recipes",
   "urls.button.delete": "Delete"
 }
