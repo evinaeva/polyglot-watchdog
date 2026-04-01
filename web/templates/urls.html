@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/static/button-fx.css" />
   <link rel="stylesheet" href="/static/theme-graph.css" />
 </head>
-<body>
+<body class="urls-page">
   {{header}}
   <main>
     <h1 class="page-title">Add Domain. Add URL list.<span class="page-title-subtitle">Choose a domain, load existing URLs, and update your working URL list.</span></h1>
@@ -33,9 +33,9 @@
         <a id="continueFirstRun" class="ui-action-button" href="#" data-button-fx="on">Continue to First Run &gt;</a>
       </div>
     </div>
-    <section>
-      <h2>Domain URL config</h2>
-      <table>
+    <section class="urls-config-section">
+      <h2 class="urls-section-title">Domain URL config</h2>
+      <table class="urls-config-table">
         <thead><tr><th><div class="urls-header-main"><span>URL</span><span class="updated-at-inline">Updated at: <span id="updatedAt">-</span></span></div></th><th>Active</th><th>Recipes</th><th>Manage</th><th>Save</th><th>Delete</th></tr></thead>
         <tbody id="savedUrlsBody"></tbody>
       </table>

@@ -296,5 +296,6 @@
   "urls.status.load_failed": "Не удалось загрузить.",
   "urls.status.updated": "Изменения применены.",
   "urls.status.update_failed": "Действие не выполнено.",
+  "urls.button.manage_recipes": "Управлять рецептами",
   "urls.button.delete": "Удалить"
 }
