@@ -55,7 +55,7 @@ def _base_artifacts(target_item_overrides=None):
 
 def test_review_class_mapping_and_rich_evidence_for_placeholder():
     artifacts = _base_artifacts({"text": "Acheter %s"})
-    artifacts[0][0]["text"] = "Buy now <name>"
+    artifacts[0][0]["text"] = "Buy now <n>"
 
     with patch("pipeline.run_phase6.read_json_artifact", side_effect=artifacts), patch(
         "pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]
@@ -69,7 +69,7 @@ def test_review_class_mapping_and_rich_evidence_for_placeholder():
     assert issue["evidence"]["reason"]
     assert "signals" in issue["evidence"]
     assert issue["evidence"]["pairing_basis"] in {"logical_match_key_exact", "fallback_weighted"}
-    assert issue["evidence"]["text_en"] == "Buy now <name>"
+    assert issue["evidence"]["text_en"] == "Buy now <n>"
     assert issue["evidence"]["text_target"] == "Acheter %s"
 
 
@@ -643,7 +643,7 @@ def test_phase6_wires_llm_request_artifact_writer_and_manifest_uri():
 
     def _capture_write(domain, run_id, filename, payload):
         captured[filename] = payload
-        return "gs://bucket/" + filename
+        return f"gs://bucket/{domain}/{run_id}/{filename}"
 
     def _capture_manifest(domain, run_id, phase, payload):
         manifest["payload"] = payload
@@ -652,7 +652,9 @@ def test_phase6_wires_llm_request_artifact_writer_and_manifest_uri():
         "pipeline.run_phase6.read_json_artifact", side_effect=artifacts
     ), patch("pipeline.run_phase6._load_blocked_overlay_pages", return_value=[]), patch(
         "pipeline.run_phase6.write_json_artifact", side_effect=_capture_write
-    ), patch("pipeline.run_phase6.write_phase_manifest", side_effect=_capture_manifest):
+    ), patch(
+        "pipeline.run_phase6.write_phase_manifest", side_effect=_capture_manifest
+    ):
         run("example.com", "run-en", "run-fr", review_mode="llm")
 
     assert "check_languages_llm_request.json" in captured
