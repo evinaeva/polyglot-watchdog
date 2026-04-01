@@ -4444,3 +4444,36 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cc328dcc24832c90aefd4daa5a6047)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #233 — 2026-04-01T09:32:57Z
+
+- Title: Fix persisted result selection for duplicate run IDs across alias domains
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/233
+- Author: evinaeva
+- Base branch: main
+- Head branch: 0zwm3s-codex/conduct-root-cause-audit-and-fix-for-see-errors-page
+- Merge commit: 2c0ecd344c624a98e90a62f848e0eb37e45d9cc8
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_operator_ui_runtime_regressions.py
+  - tests/test_stage_a_read_routes_api.py
+  - web/static/index.js
+- Description:
+  ### Motivation
+  - Operators could not reliably select persisted results when the same `run_id` existed under multiple artifact domains because the backend collapsed results by `run_id` only, losing `(domain, run_id)` identity. 
+  - The change ensures the UI can disambiguate runs that share `run_id` across alias/domain-family artifacts so selection maps to the correct artifact domain. 
+  - Live endpoint probing from this runner was blocked by an upstream CONNECT/403, so the fix and regression tests were validated locally against the project test suite rather than a direct production API call.
+  
+  ### Description
+  - Change backend aggregation in `_persisted_issue_results_payload` to keep results unique by `(domain, run_id)` and add a stable `result_key` (`"{domain}|{run_id}"`) on returned rows instead of collapsing by `run_id` only. (file: `app/skeleton_server.py`)
+  - Update frontend selection logic to compute and use a `persistedResultKey` and to resolve selected rows by `result_key` first; generate select option values that include the domain suffix when run IDs are duplicated, and ensure `runIdInput` and artifact-domain routing remain correct on change. (file: `web/static/index.js`)
+  - Expand/adjust tests to assert the backend returns multiple rows for the same `run_id` across alias domains and to verify runtime selection preserves artifact domain and triggers correct `/api/issues` calls. (files: `tests/test_stage_a_read_routes_api.py`, `tests/test_operator_ui_runtime_regressions.py`)
+  
+  ### Testing
+  - Ran targeted backend tests: `PYTHONPATH=. pytest -q tests/test_stage_a_read_routes_api.py::test_issues_results_keeps_same_run_id_across_domain_aliases_when_domains_differ tests/test_stage_a_read_routes_api.py::test_issues_results_artifact_fallback_parses_url_style_domains tests/test_stage_a_read_routes_api.py::test_issues_results_discovers_special_domain_family_runs` and they all passed. 
+  - Ran runtime/js unit tests: `PYTHONPATH=. pytest -q tests/test_operator_ui_runtime_regressions.py::test_index_runtime_allows_selecting_duplicate_run_ids_across_domains tests/test_operator_ui_runtime_regressions.py::test_index_runtime_uses_selected_result_domain_for_issues_and_detail_links tests/test_operator_ui_runtime_regressions.py::test_index_runtime_handles_empty_persisted_results_state` and they all passed. 
+  - All executed automated tests passed locally, covering artifact discovery, URL-style domain handling, alias-family runs, selection behavior, and empty-state handling.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cce1d62538832c9c6069f8d98dd691)
+- Notes: Auto-generated from merged PR metadata.
