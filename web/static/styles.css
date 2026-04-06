@@ -504,3 +504,123 @@ pre { background: #0f172a; color: #e2e8f0; padding: 10px; border-radius: 4px; ov
   display: flex;
   gap: 8px;
 }
+
+.issue-cell {
+  position: relative;
+}
+
+.issue-label {
+  display: inline;
+}
+
+.issue-details-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  width: 20px;
+  height: 20px;
+  border: 1px solid #64748b;
+  border-radius: 999px;
+  background: #0d1833;
+  color: #dff8ff;
+  vertical-align: text-top;
+  cursor: pointer;
+}
+
+.issue-details-trigger:hover,
+.issue-details-trigger:focus-visible {
+  border-color: #7dd3fc;
+  color: #7dd3fc;
+  outline: none;
+}
+
+.issue-detail-popover {
+  position: fixed;
+  z-index: 80;
+  width: min(420px, calc(100vw - 24px));
+  max-height: 300px;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: #0f172a;
+  box-shadow: 0 10px 30px rgba(2, 6, 23, 0.45);
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 120ms ease, transform 120ms ease;
+  pointer-events: none;
+}
+
+.issue-detail-popover.is-open {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.issue-detail-popover.is-closing {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.issue-detail-popover[data-placement="bottom"] {
+  transform: translateY(-4px);
+}
+
+.issue-detail-popover[data-placement="bottom"].is-open {
+  transform: translateY(0);
+}
+
+.issue-detail-popover[data-placement="top"] {
+  transform: translateY(4px);
+}
+
+.issue-detail-popover[data-placement="top"].is-open {
+  transform: translateY(0);
+}
+
+.issue-detail-popover-caret {
+  position: absolute;
+  left: var(--issue-popover-caret-left, 24px);
+  width: 10px;
+  height: 10px;
+  transform: translateX(-50%) rotate(45deg);
+  background: #0f172a;
+  border-left: 1px solid #334155;
+  border-top: 1px solid #334155;
+}
+
+.issue-detail-popover[data-placement="bottom"] .issue-detail-popover-caret {
+  top: -6px;
+}
+
+.issue-detail-popover[data-placement="top"] .issue-detail-popover-caret {
+  bottom: -6px;
+  transform: translateX(-50%) rotate(225deg);
+}
+
+.issue-detail-popover-section + .issue-detail-popover-section {
+  margin-top: 10px;
+}
+
+.issue-detail-popover-section h4 {
+  margin: 0 0 4px;
+  font-size: 0.85rem;
+}
+
+.issue-detail-popover-content {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.issue-detail-popover-content a {
+  color: #7dd3fc;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .issue-detail-popover {
+    transition: none;
+    transform: none !important;
+  }
+}
