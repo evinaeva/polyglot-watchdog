@@ -1,0 +1,40 @@
+name: Smoke Gate
+
+on:
+  pull_request:
+    paths:
+      - 'app/skeleton_server.py'
+      - 'app/http/**'
+      - 'app/services/**'
+      - 'tests/test_smoke_matrix_regressions.py'
+      - 'tests/smoke_matrix.py'
+  push:
+    paths:
+      - 'app/skeleton_server.py'
+      - 'app/http/**'
+      - 'app/services/**'
+      - 'tests/test_smoke_matrix_regressions.py'
+      - 'tests/smoke_matrix.py'
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+
+      - name: Run smoke matrix regression suite
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest -q tests/test_smoke_matrix_regressions.py
