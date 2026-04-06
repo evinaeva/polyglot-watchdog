@@ -4634,3 +4634,37 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69d360a53914832c9f321ea94d0811f4)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #239 — 2026-04-06T08:12:38Z
+
+- Title: Remove runtime severity surface and align tests
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/239
+- Author: evinaeva
+- Base branch: main
+- Head branch: eb528i-codex/audit-code-after-removing-severity
+- Merge commit: 3f3d1ea23fc7a0d9782d3e6f56ba244f7e561f38
+- Changed files:
+  - app/skeleton_server.py
+  - tests/test_check_languages_page.py
+  - tests/test_operator_ui_runtime_regressions.py
+  - tests/test_stage_a_read_routes_api.py
+  - web/templates/about.html
+- Description:
+  ### Motivation
+  - Ensure `severity` is fully removed from runtime behaviour (UI, CSV export, summary rendering and filtering) while keeping a deprecated helper for compatibility.
+  - Make minimal, targeted edits so no page or API tries to read a `by_severity` key or render a severity column anymore.
+  
+  ### Description
+  - Remove the leftover `By severity` summary rendering from `app/skeleton_server.py` so pages no longer expect `issues_summary['by_severity']`.
+  - Update operator-facing copy in `web/templates/about.html` to stop referencing severity in the UX text.
+  - Adjust tests to reflect the new contract: update `tests/test_stage_a_read_routes_api.py` CSV assertions and filtering expectations, add an assertion in `tests/test_check_languages_page.py` that the completed summary does not render severity, and update JS runtime regression tests in `tests/test_operator_ui_runtime_regressions.py` to validate the current table shape (source/target/issue + links) and schema-alias behaviour.
+  - Preserve `_estimate_severity` in `app/issues_utils.py` as a deprecated helper for import compatibility and keep `_issues_to_csv`, `_filter_issues`, and `_summarize_issues_payload` aligned with the severity-free contract.
+  
+  ### Testing
+  - Ran `python -m py_compile app/issues_utils.py app/skeleton_server.py tests/test_stage_a_read_routes_api.py tests/test_check_languages_page.py tests/test_operator_ui_runtime_regressions.py` and the files compiled successfully.
+  - Performed a quick contract smoke-check with an inline Python script that validated the CSV header from `_issues_to_csv`, the keys returned by `_summarize_issues_payload`, and that `_filter_issues` ignores `severity`, and it succeeded.
+  - Attempted `pytest` on selected tests but test collection of the repo in this environment failed due to a missing test dependency (`jsonschema`), so full `pytest` run was not completed in this environment.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69d36865382c832c8cde92d59ae82635)
+- Notes: Auto-generated from merged PR metadata.
