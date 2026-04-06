@@ -4699,3 +4699,36 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69d365d42108832c8063eb0cafda4107)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #247 — 2026-04-06T19:11:50Z
+
+- Title: Restore issue detail link and fix SEE ERRORS rendering after severity removal
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/247
+- Author: evinaeva
+- Base branch: main
+- Head branch: 83h8u4-codex/conduct-regression-audit-after-commit-df09ff98
+- Merge commit: 3d3d8c8f3338ee893af8eadb7105f3d3250652c5
+- Changed files:
+  - tests/test_operator_ui_runtime_regressions.py
+  - web/static/index.js
+  - web/templates/index.html
+- Description:
+  ### Motivation
+  - Recent removal of `severity` left a stale rendering path in `renderIssues()` that caused the SEE ERRORS table rows to be built incorrectly and JS to fail when issues loaded. 
+  - The UI also lacked an explicit per-row `/issues/detail` navigation link, breaking the expected detail-page contract used by users and tests. 
+  - Table header in `index.html` was out of sync with the actual DOM columns after `severity` removal.
+  
+  ### Description
+  - Removed leftover severity cell rendering from `web/static/index.js` and stopped relying on the removed `deriveSeverity` in the issues flow. 
+  - Added deterministic `detailHref` built from `activeArtifactDomain()`, `activeRunId()` and `issue.id`, and inserted an `a.issue-details-link` with that href into each issue row in `web/static/index.js`. 
+  - Updated `web/templates/index.html` to remove the stale `Severity` header so the table header matches rendered columns. 
+  - Extended runtime UI test in `tests/test_operator_ui_runtime_regressions.py` to assert the presence and exact value of the detail link (`/issues/detail?domain=...&run_id=...&id=...`) while preserving existing popover behavior assertions. 
+  
+  ### Testing
+  - Ran UI runtime regressions: `pytest -q tests/test_operator_ui_runtime_regressions.py -k "issue_details_popover_open_close_and_cache or issue_details_popover_escape_and_error_state or issue_details_popover_positions_and_keeps_single_open_instance"` and all relevant tests passed (`3 passed, 31 deselected`).
+  - Running `pytest -q tests/test_issues_explorer_api.py` in this environment fails at collection due to a missing test dependency (`jsonschema`) required by import paths, so API tests were not executed here (`ModuleNotFoundError: No module named 'jsonschema'`).
+  - The change is a minimal UI-only patch that restores the detail link contract and removes the broken severity render path; added test protects the contract from regression.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69d4036162a8832c8741bcd154a5b733)
+- Notes: Auto-generated from merged PR metadata.
