@@ -139,6 +139,10 @@ from app.check_languages_service import (
 )
 from app.check_languages_presenter import _h, _llm_review_display
 from app.testbench import get_modules, run_module_test
+from app.http.router import MethodPathRouter
+from app.http.handlers import api_read as api_read_handlers
+from app.http.handlers import api_write as api_write_handlers
+from app.http.handlers import pages as page_handlers
 from pipeline import storage
 from pipeline.runtime_config import validate_seed_urls_payload, load_phase1_runtime_config
 from pipeline.interactive_capture import GCSArtifactWriter
@@ -159,6 +163,18 @@ SESSION_MAX_AGE_SECONDS = max(int(os.environ.get("SESSION_MAX_AGE_SECONDS", "288
 _jobs: dict[str, dict] = {}
 _template_cache: dict[Path, tuple[int, str]] = {}
 _TALLINN_TZ = ZoneInfo("Europe/Tallinn")
+
+
+def _build_http_router() -> MethodPathRouter:
+    router = MethodPathRouter()
+    router.add_prefix("GET", "/", page_handlers.handle_get)
+    router.add_prefix("GET", "/api/", api_read_handlers.handle_get)
+    router.add_prefix("POST", "/", api_write_handlers.handle_post)
+    router.add_prefix("PUT", "/", api_write_handlers.handle_put)
+    return router
+
+
+_HTTP_ROUTER = _build_http_router()
 
 
 def _strip_json5_comments(source: str) -> str:
@@ -1598,9 +1614,43 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         cookie_token = self._get_cookie(CSRF_COOKIE)
         return bool(cookie_token and token and secrets.compare_digest(cookie_token, token))
 
+    def _require_query_or_bad_request(self, query: dict[str, list[str]], *params: str) -> dict[str, str] | None:
+        required, missing = _require_query_params(query, *params)
+        if missing:
+            self._json_response(_missing_required_query_params(*missing), status=HTTPStatus.BAD_REQUEST)
+            return None
+        return required
+
+    def _require_domain_and_run_or_bad_request(self, query: dict[str, list[str]], *, normalize_domain: bool = False) -> tuple[str, str] | None:
+        required = self._require_query_or_bad_request(query, "domain", "run_id")
+        if required is None:
+            return None
+        domain = required["domain"]
+        try:
+            if normalize_domain:
+                domain = validate_domain(_normalize_testsite_domain_key(domain))
+            run_id = _validate_run_id(required["run_id"])
+        except ValueError as exc:
+            self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return None
+        return domain, run_id
+
+    def _handle_artifact_exception(self, exc: Exception, *, missing_payload: dict | None = None) -> bool:
+        if isinstance(exc, FileNotFoundError):
+            self._json_response(missing_payload or {"status": "not_ready", "error": str(exc)}, status=HTTPStatus.NOT_FOUND)
+            return True
+        if isinstance(exc, ValueError):
+            self._json_response({"error": str(exc), "status": "artifact_invalid"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return True
+        return False
+
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
+        if _HTTP_ROUTER.dispatch(self, method="GET", parsed=parsed):
+            return
+        self._legacy_api_get(parsed)
 
+    def _legacy_api_get(self, parsed) -> None:
         # Health check — must be first to ensure it is always reachable.
         if parsed.path == "/healthz":
             self._json_response({"status": "ok"})
@@ -2149,16 +2199,10 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             if not self._require_auth(api=True):
                 return
             query = parse_qs(parsed.query)
-            required, missing = _require_query_params(query, "domain", "run_id")
-            if missing:
-                self._json_response(_missing_required_query_params(*missing), status=HTTPStatus.BAD_REQUEST)
+            validated = self._require_domain_and_run_or_bad_request(query)
+            if validated is None:
                 return
-            domain = required["domain"]
-            try:
-                run_id = _validate_run_id(required["run_id"])
-            except ValueError as exc:
-                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
-                return
+            domain, run_id = validated
             language_filter = str(query.get("language", [""])[0]).strip()
             if not _artifact_exists_strict(domain, run_id, "page_screenshots.json"):
                 self._json_response({"status": "not_ready", "error": "page_screenshots artifact missing"}, status=HTTPStatus.NOT_FOUND)
@@ -2166,7 +2210,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             try:
                 pages = _read_list_artifact_required(domain, run_id, "page_screenshots.json")
             except ValueError as exc:
-                self._json_response({"error": str(exc), "status": "artifact_invalid"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                self._handle_artifact_exception(exc)
                 return
             contexts = [
                 {
@@ -2184,12 +2228,12 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             if not self._require_auth(api=True):
                 return
             query = parse_qs(parsed.query)
-            required, missing = _require_query_params(query, "domain", "run_id")
-            if missing:
-                self._json_response(_missing_required_query_params(*missing), status=HTTPStatus.BAD_REQUEST)
+            validated = self._require_domain_and_run_or_bad_request(query)
+            if validated is None:
                 return
+            domain, run_id = validated
             try:
-                payload = _workflow_status_payload(required["domain"], _validate_run_id(required["run_id"]))
+                payload = _workflow_status_payload(domain, run_id)
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                 return
@@ -2209,6 +2253,12 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
 
     def do_PUT(self) -> None:  # noqa: N802
+        parsed = urlparse(self.path)
+        if _HTTP_ROUTER.dispatch(self, method="PUT", parsed=parsed):
+            return
+        self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
+
+    def _legacy_api_put(self, parsed) -> None:
         if not self._require_auth(api=True):
             return
         csrf_header = self.headers.get("X-CSRF-Token", "")
@@ -2216,7 +2266,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             self._json_response({"error": "csrf validation failed"}, status=HTTPStatus.FORBIDDEN)
             return
 
-        if self.path == "/api/seed-urls":
+        if parsed.path == "/api/seed-urls":
             payload = self._read_json_payload()
             domain = str(payload.get("domain", ""))
             urls_multiline = str(payload.get("urls_multiline", ""))
@@ -2238,12 +2288,18 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path == "/login":
+        parsed = urlparse(self.path)
+        if _HTTP_ROUTER.dispatch(self, method="POST", parsed=parsed):
+            return
+        self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
+
+    def _legacy_api_post(self, parsed) -> None:
+        if parsed.path == "/login":
             if not self._auth_enabled():
                 self.send_response(HTTPStatus.FOUND)
                 self.send_header("Location", "/")
                 self.end_headers()
-                return
+                return True
             form = self._read_form_payload()
             password = str(form.get("password", "")).strip()
             csrf_token = str(form.get("csrf_token", "")).strip()
@@ -2259,7 +2315,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                     },
                     extra_set_cookies=[self._build_cookie_header(CSRF_COOKIE, refreshed_csrf, max_age=SESSION_MAX_AGE_SECONDS, http_only=False)],
                 )
-                return
+                return True
 
             expected_password = self._login_password()
             signing_secret = self._session_signing_secret()
@@ -2272,7 +2328,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                     },
                     status=HTTPStatus.INTERNAL_SERVER_ERROR,
                 )
-                return
+                return True
 
             if secrets.compare_digest(password, expected_password):
                 session_token = self._generate_session_token()
@@ -2282,7 +2338,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self.send_header("Set-Cookie", self._build_cookie_header(SESSION_COOKIE, session_token, max_age=SESSION_MAX_AGE_SECONDS, http_only=True))
                 self.send_header("Set-Cookie", self._build_cookie_header(CSRF_COOKIE, new_csrf, max_age=SESSION_MAX_AGE_SECONDS, http_only=False))
                 self.end_headers()
-                return
+                return True
 
             refreshed_csrf = self._ensure_csrf_cookie()
             self._serve_template(
@@ -2294,14 +2350,14 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 },
                 extra_set_cookies=[self._build_cookie_header(CSRF_COOKIE, refreshed_csrf, max_age=SESSION_MAX_AGE_SECONDS, http_only=False)],
             )
-            return
+            return True
 
-        if self.path == "/logout":
+        if parsed.path == "/logout":
             if not self._auth_enabled():
                 self._json_response({"status": "auth disabled"})
-                return
+                return True
             if not self._require_auth(api=False):
-                return
+                return True
             csrf_header = self.headers.get("X-CSRF-Token", "")
             if not self._validate_csrf(csrf_header):
                 self._json_response({"error": "csrf validation failed"}, status=HTTPStatus.FORBIDDEN)
@@ -2311,26 +2367,26 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             self.send_header("Set-Cookie", self._expire_cookie_header(SESSION_COOKIE, http_only=True))
             self.send_header("Set-Cookie", self._expire_cookie_header(CSRF_COOKIE, http_only=False))
             self.end_headers()
-            return
+            return True
 
-        if self.path == "/check-languages":
+        if parsed.path == "/check-languages":
             if not self._require_auth(api=False):
                 return
             form = self._read_form_payload()
             if not self._validate_csrf(str(form.get("csrf_token", "")).strip()):
                 self._redirect_check_languages(form, message="Security error (CSRF). Please refresh and try again.", level="error")
-                return
+                return True
             self._start_check_languages(form)
-            return
+            return True
 
         if not self._require_auth(api=True):
-            return
+            return True
         csrf_header = self.headers.get("X-CSRF-Token", "")
         if not self._validate_csrf(csrf_header):
             self._json_response({"error": "csrf validation failed"}, status=HTTPStatus.FORBIDDEN)
-            return
+            return True
 
-        if self.path == "/api/seed-urls/add":
+        if parsed.path == "/api/seed-urls/add":
             payload = self._read_json_payload()
             domain = str(payload.get("domain", ""))
             urls_multiline = str(payload.get("urls_multiline", ""))
