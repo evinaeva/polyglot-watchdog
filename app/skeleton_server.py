@@ -15,7 +15,6 @@ import html
 import json
 import os
 import re
-import asyncio
 import base64
 import hashlib
 import hmac
@@ -138,6 +137,14 @@ from app.check_languages_service import (
     _target_capture_url_from_reference_url,
 )
 from app.check_languages_presenter import _h, _llm_review_display
+from app.services.skeleton_runtime import (
+    jobs_store as _service_jobs_store,
+    prepare_check_languages_async as _service_prepare_check_languages_async,
+    run_check_languages_async as _service_run_check_languages_async,
+    run_check_languages_llm_async as _service_run_check_languages_llm_async,
+    upsert_job_status as _service_upsert_job_status,
+    workflow_section_status as _service_workflow_section_status,
+)
 from app.testbench import get_modules, run_module_test
 from pipeline import storage
 from pipeline.runtime_config import validate_seed_urls_payload, load_phase1_runtime_config
@@ -156,7 +163,7 @@ SESSION_MAX_AGE_SECONDS = max(int(os.environ.get("SESSION_MAX_AGE_SECONDS", "288
 
 
 # In-memory job status store (cleared on restart — for UI feedback only)
-_jobs: dict[str, dict] = {}
+_jobs: dict[str, dict] = _service_jobs_store
 _template_cache: dict[Path, tuple[int, str]] = {}
 _TALLINN_TZ = ZoneInfo("Europe/Tallinn")
 
@@ -659,28 +666,16 @@ def _upsert_run_metadata(domain: str, run_id: str, metadata: dict) -> None:
 
 
 def _upsert_job_status(domain: str, run_id: str, job_record: dict) -> None:
-    runs_payload = _load_runs(domain)
-    runs = runs_payload["runs"]
-    run = next((r for r in runs if r.get("run_id") == run_id), None)
-    if run is None:
-        run = {"run_id": run_id, "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "jobs": []}
-        runs.append(run)
-    display_name = _normalize_optional_string(job_record.get("display_name"))
-    if display_name is not None:
-        run["display_name"] = display_name
-    elif "display_name" not in run and "display_name" in job_record:
-        run["display_name"] = None
-    prior_job = next((j for j in run.get("jobs", []) if j.get("job_id") == job_record.get("job_id")), None)
-    normalized_job = dict(job_record)
-    normalized_job.pop("display_name", None)
-    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    normalized_job["updated_at"] = now
-    normalized_job["created_at"] = str((prior_job or {}).get("created_at") or now)
-    jobs = [j for j in run.get("jobs", []) if j.get("job_id") != normalized_job.get("job_id")]
-    jobs.append(normalized_job)
-    jobs.sort(key=lambda r: r.get("job_id", ""))
-    run["jobs"] = jobs
-    _save_runs(domain, {"runs": _sort_runs_newest_first(runs)})
+    _service_upsert_job_status(
+        domain,
+        run_id,
+        job_record,
+        load_runs=_load_runs,
+        save_runs=_save_runs,
+        sort_runs_newest_first=_sort_runs_newest_first,
+        normalize_optional_string=_normalize_optional_string,
+        time_module=time,
+    )
 
 
 def _is_stale_running_job(job: dict) -> bool:
@@ -1077,231 +1072,46 @@ def _run_phase6_async(job_id: str, domain: str, run_id: str, en_run_id: str) -> 
 
 
 
+
+def _persist_check_languages_failure_artifacts(domain: str, target_run_id: str, diagnostics: dict) -> tuple[dict, str | None]:
+    return _persist_check_languages_failure_artifacts_safe(domain, target_run_id, diagnostics)
+
+
 def _prepare_check_languages_async(job_id: str, domain: str, en_run_id: str, target_language: str, target_run_id: str, target_url: str) -> None:
-    _jobs[job_id] = {
-        "status": "running",
-        "phase": "check_languages",
-        "domain": domain,
-        "run_id": target_run_id,
-        "en_run_id": en_run_id,
-        "target_language": target_language,
-        "target_url": target_url,
-    }
-    from pipeline.run_phase1 import main as phase1_main
-    from pipeline.run_phase3 import run as phase3_run
-
-    try:
-        _upsert_job_status(domain, target_run_id, {
-            "job_id": job_id,
-            "status": "running",
-            "type": "check_languages",
-            "stage": "preparing_payload",
-            "workflow_state": "preparing_payload",
-            "en_run_id": en_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-        })
-        replay_jobs = _replay_scope_from_reference_run(domain, en_run_id, target_language, target_url)
-    except Exception as exc:
-        _jobs[job_id]["status"] = "error"
-        _jobs[job_id]["error"] = str(exc)
-        _upsert_job_status(domain, target_run_id, {
-            "job_id": job_id,
-            "status": "failed",
-            "type": "check_languages",
-            "stage": "preparing_target_run_failed",
-            "workflow_state": "failed_before_llm",
-            "en_run_id": en_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-            "error": str(exc),
-        })
-        return
-
-    try:
-        _upsert_job_status(domain, target_run_id, {
-            "job_id": job_id,
-            "status": "running",
-            "type": "check_languages",
-            "stage": "running_target_capture",
-            "workflow_state": "preparing_payload",
-            "en_run_id": en_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-            "contexts": len(replay_jobs),
-        })
-        asyncio.run(phase1_main(domain, target_run_id, target_language, "desktop", "baseline", None, jobs_override=replay_jobs, continue_on_error=True))
-        _require_artifact_exists(domain, target_run_id, "page_screenshots.json")
-        _require_artifact_exists(domain, target_run_id, "collected_items.json")
-    except Exception as exc:
-        replay_context = _replay_unit_diagnostics(
-            exc,
-            replay_jobs,
-            target_url=target_url,
-            en_run_id=en_run_id,
-            target_run_id=target_run_id,
-            target_language=target_language,
-        )
-        diagnostics = _build_exception_diagnostics(exc, stage="running_target_capture_failed", substage="phase1_replay", replay_context=replay_context)
-        artifact_refs, artifact_error = _persist_check_languages_failure_artifacts_safe(domain, target_run_id, diagnostics)
-        error = f"{diagnostics['exception_class']}: {diagnostics['message']}"
-        if artifact_error:
-            error = f"{error} (failure artifact persistence warning: {artifact_error})"
-        _jobs[job_id]["status"] = "failed"
-        _jobs[job_id]["error"] = error
-        failed_record = {
-            "job_id": job_id,
-            "status": "failed",
-            "type": "check_languages",
-            "stage": "running_target_capture_failed",
-            "workflow_state": "failed_before_llm",
-            "en_run_id": en_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-            "error": error,
-            "error_details": diagnostics,
-            "failure_artifacts": artifact_refs,
-        }
-        if artifact_error:
-            failed_record["failure_artifact_error"] = artifact_error
-        _upsert_job_status(domain, target_run_id, failed_record)
-        return
-
-    try:
-        _upsert_job_status(domain, target_run_id, {
-            "job_id": job_id,
-            "status": "running",
-            "type": "check_languages",
-            "stage": "assembling_payload",
-            "workflow_state": "preparing_payload",
-            "en_run_id": en_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-        })
-        phase3_run(domain=domain, run_id=target_run_id)
-        _require_artifact_exists(domain, target_run_id, "eligible_dataset.json")
-        payload_status = _check_languages_payload_status(domain, target_run_id)
-        if not payload_status.get("ready"):
-            raise ValueError("Prepared payload is incomplete or invalid")
-        from pipeline.storage import write_json_artifact
-        from pipeline.run_phase6 import build_prepared_llm_payload
-
-        llm_input_payload = build_prepared_llm_payload(domain, en_run_id, target_run_id)
-        review_contexts = llm_input_payload.get("review_contexts")
-        first_review_context = review_contexts[0] if isinstance(review_contexts, list) and review_contexts else None
-        llm_input_preview_payload = {
-            "target_language": llm_input_payload.get("target_language"),
-            "review_context_count": llm_input_payload.get("review_context_count"),
-            "blocked_pages": llm_input_payload.get("blocked_pages") if isinstance(llm_input_payload.get("blocked_pages"), list) else [],
-            "source_hashes": llm_input_payload.get("source_hashes") if isinstance(llm_input_payload.get("source_hashes"), dict) else {},
-            "sample_review_context": first_review_context,
-        }
-        source_hashes = _check_languages_source_hashes(domain, en_run_id, target_run_id)
-        llm_input_artifact_uri = write_json_artifact(domain, target_run_id, "check_languages_llm_input.json", llm_input_payload)
-        write_json_artifact(domain, target_run_id, "check_languages_llm_input_preview.json", llm_input_preview_payload)
-        write_json_artifact(domain, target_run_id, "check_languages_prepared_payload.json", {
-            "en_run_id": en_run_id,
-            "target_run_id": target_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-            "prepared_at": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "payload_files": payload_status.get("files", []),
-            "source_hashes": source_hashes,
-            "llm_input_artifact": llm_input_artifact_uri,
-            "llm_input_count": int(llm_input_payload.get("review_context_count", 0)),
-        })
-        _jobs[job_id]["status"] = "done"
-        _upsert_job_status(domain, target_run_id, {
-            "job_id": job_id,
-            "status": "succeeded",
-            "type": "check_languages",
-            "stage": "prepared_for_llm",
-            "workflow_state": "prepared_for_llm",
-            "en_run_id": en_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-        })
-    except Exception as exc:
-        _jobs[job_id]["status"] = "error"
-        _jobs[job_id]["error"] = str(exc)
-        _upsert_job_status(domain, target_run_id, {
-            "job_id": job_id,
-            "status": "failed",
-            "type": "check_languages",
-            "stage": "preparing_payload_failed",
-            "workflow_state": "failed_before_llm",
-            "en_run_id": en_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-            "error": str(exc),
-        })
+    _service_prepare_check_languages_async(
+        job_id,
+        domain,
+        en_run_id,
+        target_language,
+        target_run_id,
+        target_url,
+        upsert_job_status=_upsert_job_status,
+        replay_scope_from_reference_run=_replay_scope_from_reference_run,
+        require_artifact_exists=_require_artifact_exists,
+        replay_unit_diagnostics=_replay_unit_diagnostics,
+        build_exception_diagnostics=_build_exception_diagnostics,
+        persist_check_languages_failure_artifacts=_persist_check_languages_failure_artifacts,
+        check_languages_payload_status=_check_languages_payload_status,
+        check_languages_source_hashes=_check_languages_source_hashes,
+    )
 
 
 def _run_check_languages_llm_async(job_id: str, domain: str, en_run_id: str, target_language: str, target_run_id: str, target_url: str) -> None:
-    from pipeline.run_phase6 import run as phase6_run
-
-    _jobs[job_id] = {"status": "running", "phase": "check_languages_llm", "domain": domain, "run_id": target_run_id}
-    try:
-        llm_preflight_error = _check_languages_llm_preflight_error()
-        if llm_preflight_error:
-            raise _CheckLanguagesLlmPreflightError(llm_preflight_error)
-        prepared = _read_json_safe(domain, target_run_id, "check_languages_prepared_payload.json", None)
-        if not isinstance(prepared, dict):
-            raise ValueError("Prepared payload missing. Run Prepare language check payload first.")
-        llm_input_artifact = str(prepared.get("llm_input_artifact", "")).strip()
-        if llm_input_artifact:
-            llm_input_payload = _read_json_artifact_from_gs_uri(llm_input_artifact)
-        else:
-            llm_input_payload = _read_json_safe(domain, target_run_id, "check_languages_llm_input.json", None)
-        if not isinstance(llm_input_payload, dict):
-            raise ValueError("Prepared LLM input payload is missing or invalid. Re-run preparation.")
-        expected_hashes = prepared.get("source_hashes") if isinstance(prepared.get("source_hashes"), dict) else {}
-        actual_hashes = _check_languages_source_hashes(domain, en_run_id, target_run_id)
-        if expected_hashes and expected_hashes != actual_hashes:
-            raise ValueError("Prepared payload is stale: source artifacts changed. Re-run preparation.")
-        _upsert_job_status(domain, target_run_id, {
-            "job_id": job_id,
-            "status": "running",
-            "type": "check_languages",
-            "stage": "running_llm_review",
-            "workflow_state": "running_llm_review",
-            "en_run_id": en_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-        })
-        review_mode = os.environ.get("PHASE6_REVIEW_PROVIDER", "").strip()
-        phase6_run(domain=domain, en_run_id=en_run_id, target_run_id=target_run_id, review_mode=review_mode, prepared_llm_payload=llm_input_payload)
-        _require_artifact_exists(domain, target_run_id, "issues.json")
-        _jobs[job_id]["status"] = "done"
-        _upsert_job_status(domain, target_run_id, {
-            "job_id": job_id,
-            "status": "succeeded",
-            "type": "check_languages",
-            "stage": "completed",
-            "workflow_state": "completed",
-            "en_run_id": en_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-        })
-    except Exception as exc:
-        _jobs[job_id]["status"] = "error"
-        _jobs[job_id]["error"] = str(exc)
-        stage = "running_llm_review_failed"
-        workflow_state = "failed_during_llm"
-        if isinstance(exc, _CheckLanguagesLlmPreflightError):
-            stage = "llm_preflight_failed"
-            workflow_state = "failed_before_llm"
-        _upsert_job_status(domain, target_run_id, {
-            "job_id": job_id,
-            "status": "failed",
-            "type": "check_languages",
-            "stage": stage,
-            "workflow_state": workflow_state,
-            "en_run_id": en_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-            "error": str(exc),
-        })
+    _service_run_check_languages_llm_async(
+        job_id,
+        domain,
+        en_run_id,
+        target_language,
+        target_run_id,
+        target_url,
+        check_languages_llm_preflight_error=_check_languages_llm_preflight_error,
+        preflight_error_cls=_CheckLanguagesLlmPreflightError,
+        read_json_safe=_read_json_safe,
+        read_json_artifact_from_gs_uri=_read_json_artifact_from_gs_uri,
+        check_languages_source_hashes=_check_languages_source_hashes,
+        upsert_job_status=_upsert_job_status,
+        require_artifact_exists=_require_artifact_exists,
+    )
 
 
 def _check_languages_llm_preflight_error() -> str | None:
@@ -1320,37 +1130,23 @@ class _CheckLanguagesLlmPreflightError(ValueError):
 # _run_check_languages_llm_async as separate stages instead of calling this wrapper.
 def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_language: str, target_run_id: str, target_url: str) -> None:
     """Backward-compatible composed flow: prepare payload, then run LLM review."""
-    _prepare_check_languages_async(job_id, domain, en_run_id, target_language, target_run_id, target_url)
-    latest = _latest_check_languages_job(domain, target_run_id)
-    if not isinstance(latest, dict):
-        return
-    if str(latest.get("workflow_state", "")).strip().lower() != "prepared_for_llm":
-        return
-    llm_preflight_error = _check_languages_llm_preflight_error()
-    if llm_preflight_error:
-        _upsert_job_status(domain, target_run_id, {
-            "job_id": f"{job_id}-llm-preflight",
-            "status": "failed",
-            "type": "check_languages",
-            "stage": "llm_preflight_failed",
-            "workflow_state": "failed_before_llm",
-            "en_run_id": en_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-            "error": llm_preflight_error,
-        })
-        return
-    llm_job_id = f"{job_id}-llm"
-    _run_check_languages_llm_async(llm_job_id, domain, en_run_id, target_language, target_run_id, target_url)
+    _service_run_check_languages_async(
+        job_id,
+        domain,
+        en_run_id,
+        target_language,
+        target_run_id,
+        target_url,
+        prepare_check_languages_async=_prepare_check_languages_async,
+        latest_check_languages_job=_latest_check_languages_job,
+        check_languages_llm_preflight_error=_check_languages_llm_preflight_error,
+        upsert_job_status=_upsert_job_status,
+        run_check_languages_llm_async=_run_check_languages_llm_async,
+    )
+
 
 def _workflow_section_status(*, has_artifact: bool, count: int | None = None, pending_on: bool = False) -> str:
-    if has_artifact:
-        if count is not None and count == 0:
-            return "empty"
-        return "ready"
-    if pending_on:
-        return "not_ready"
-    return "not_started"
+    return _service_workflow_section_status(has_artifact=has_artifact, count=count, pending_on=pending_on)
 
 
 def _workflow_status_payload(domain: str, run_id: str) -> dict:
