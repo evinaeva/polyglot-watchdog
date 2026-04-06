@@ -23,6 +23,7 @@ def test_issues_to_csv_handles_quotes_and_commas():
     rows = [{"id": "1", "category": "CAT", "message": "a, b and \"q\"", "language": "fr", "state": "baseline", "evidence": {"url": "https://x"}}]
     csv_text = _issues_to_csv(rows)
     assert csv_text.splitlines()[0] == "id,category,language,state,url,message"
+    assert "id,category,language,state,url,message" in csv_text
     assert '"a, b and ""q"""' in csv_text
 
 
