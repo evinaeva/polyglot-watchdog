@@ -4732,3 +4732,43 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69d4036162a8832c8741bcd154a5b733)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #248 — 2026-04-06T19:16:28Z
+
+- Title: Extract check-languages UI slice into app/check_languages_ui.py
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/248
+- Author: evinaeva
+- Base branch: main
+- Head branch: 3132wm-codex/refactor-check-languages-feature-into-module
+- Merge commit: ff2e5ca781d66b0d3a764137132afbc2b59fa66d
+- Changed files:
+  - app/check_languages_ui.py
+  - app/skeleton_server.py
+- Description:
+  ### Motivation
+  - Reduce size and surface area of `app/skeleton_server.py` by extracting the complete "check-languages" vertical UI slice into a single dedicated module.  
+  - Make the check-languages flow a self-contained controller/service with explicit dependencies to improve readability and testability while preserving runtime behavior.  
+  - Preserve all routes, query/form fields, job ids, artifacts, status/stage/workflow transitions, threading behavior, and environment-variable usage exactly as before.
+  
+  ### Description
+  - Added new module `app/check_languages_ui.py` which contains the full extracted feature slice, including the background workers and controller: `prepare_check_languages_async`, `run_check_languages_llm_async`, `check_languages_llm_preflight_error`, `run_check_languages_async`, `CheckLanguagesLlmPreflightError`, and the `CheckLanguagesUIController` with `serve_check_languages_page`, `start_check_languages`, and `redirect_check_languages` implementations.
+  - Moved the following code out of `app/skeleton_server.py` into the new module (names on disk): `
+    - `_prepare_check_languages_async` -> `prepare_check_languages_async`
+    - `_run_check_languages_llm_async` -> `run_check_languages_llm_async`
+    - `_check_languages_llm_preflight_error` -> `check_languages_llm_preflight_error`
+    - `_run_check_languages_async` -> `run_check_languages_async`
+    - `SkeletonHandler._serve_check_languages_page` -> `CheckLanguagesUIController.serve_check_languages_page`
+    - `SkeletonHandler._start_check_languages` -> `CheckLanguagesUIController.start_check_languages`
+    - `SkeletonHandler._redirect_check_languages` -> `CheckLanguagesUIController.redirect_check_languages`
+  - Kept `app/skeleton_server.py` behavior-identical by adding thin integration points: a `_check_languages_ui()` factory on `SkeletonHandler` that wires explicit dependencies into `CheckLanguagesUIController`, thin compatibility wrapper functions that call into the new module, and short top-level wrappers that delegate the existing `_prepare_*`/`_run_*`/`_check_languages_llm_preflight_error` symbols to the extracted functions so public/test imports remain valid.
+  - Routing changes are minimal and explicit: `GET /check-languages` now calls `self._check_languages_ui().handle_get(parse_qs(parsed.query))` and `POST /check-languages` calls the controller's `handle_post` after CSRF checks; CSRF failure still redirects via the same redirect flow.  All thread creation and `_upsert_job_status` calls are preserved and invoked from the new module as before.
+  - Shared, cross-route utilities (job store `_jobs`, `_upsert_job_status`, auth/CSRF helpers, template rendering, run/domain loaders, etc.) were intentionally left in `app/skeleton_server.py` and passed into the controller as explicit dependencies because they are used by other routes.
+  
+  ### Testing
+  - Compiled both modules successfully with `python -m py_compile app/skeleton_server.py app/check_languages_ui.py`, which passed.  
+  - Ran the check-languages test file `tests/test_check_languages_page.py` under the test runner; test collection failed in this environment due to a missing third-party dependency (`jsonschema`) required by the wider project import graph and not because of the refactor.  
+  - No runtime behavior changes to routes, payload shapes, job ids, artifact names, staging/workflow values, or environment variable checks were introduced; background threads and `_upsert_job_status` call sites remain in place and are invoked from the new module as before.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69d4030ba5e8832c9d340b9318a2722d)
+- Notes: Auto-generated from merged PR metadata.
