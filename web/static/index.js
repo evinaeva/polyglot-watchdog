@@ -5,7 +5,6 @@ const domainSelect = document.getElementById('domainSelect');
 const persistedResultSelect = document.getElementById('persistedResultSelect');
 const refreshPersistedResults = document.getElementById('refreshPersistedResults');
 const languageFilter = document.getElementById('languageFilter');
-const severityFilter = document.getElementById('severityFilter');
 const typeFilter = document.getElementById('typeFilter');
 const stateFilter = document.getElementById('stateFilter');
 const urlFilter = document.getElementById('urlFilter');
@@ -150,7 +149,6 @@ class MultiSelectFilter {
 }
 
 const stateMultiFilter = new MultiSelectFilter(stateFilter, { key: 'state', singular: 'state', plural: 'states', onChange: () => renderIssues() });
-const severityMultiFilter = new MultiSelectFilter(severityFilter, { key: 'severity', singular: 'severity', plural: 'severities', onChange: () => renderIssues() });
 const typeMultiFilter = new MultiSelectFilter(typeFilter, { key: 'type', singular: 'type', plural: 'types', onChange: () => renderIssues() });
 
 function queryParamsFromLocation() {
@@ -219,14 +217,12 @@ function activeArtifactDomain() {
 
 function buildParams() {
   const stateValue = stateMultiFilter.value();
-  const severityValue = severityMultiFilter.value();
   const typeValue = typeMultiFilter.value();
   return new URLSearchParams({
     domain: activeArtifactDomain(),
     run_id: activeRunId(),
     q: (queryInput.value || '').trim(),
     language: (languageFilter.value || '').trim(),
-    severity: severityValue || '',
     type: typeValue || '',
     state: stateValue || '',
     url: (urlFilter.value || '').trim(),
@@ -249,7 +245,7 @@ function updateWorkflowSummary() {
   if (runId && artifactDomain && artifactDomain !== domain) {
     contextParts.push(`artifact-domain: ${artifactDomain}`);
   }
-  workflowContextSummary.textContent = `Workflow context: ${contextParts.join(' · ')}.`;
+  workflowContextSummary.textContent = `Workflow context: ${contextParts.join(' \u00b7 ')}.`;
 }
 
 function syncDefaultsFromQuery() {
@@ -331,7 +327,7 @@ function renderPersistedResultOptions(selectedRunId = '') {
   if (selectedRunId && !hasPreferred) {
     const option = document.createElement('option');
     option.value = selectedRunId;
-    option.textContent = `LLM result - unknown - date unknown | time unknown · selection #${fallbackSelectionTag(selectedRunId)}`;
+    option.textContent = `LLM result - unknown - date unknown | time unknown \u00b7 selection #${fallbackSelectionTag(selectedRunId)}`;
     option.selected = true;
     persistedResultSelect.appendChild(option);
   }
@@ -341,7 +337,7 @@ function renderPersistedResultOptions(selectedRunId = '') {
     const option = document.createElement('option');
     const runIdDuplicated = (runIdCounts.get(runId) || 0) > 1;
     option.value = runIdDuplicated ? persistedResultKey(result) : runId;
-    const domainSuffix = runIdDuplicated ? ` · ${String(result.domain || '').trim()}` : '';
+    const domainSuffix = runIdDuplicated ? ` \u00b7 ${String(result.domain || '').trim()}` : '';
     option.textContent = `${resultOptionLabel(result)}${domainSuffix}`;
     option.selected = !selectedRunId || hasPreferred ? option.value === (runIdDuplicated ? preferredKey : preferredRunId) : false;
     persistedResultSelect.appendChild(option);
@@ -374,7 +370,7 @@ async function loadDomains() {
     const response = await fetch('/api/domains');
     const payload = await safeReadPayload(response);
     const items = Array.isArray(payload.items) ? payload.items : [];
-    domainSelect.innerHTML = '<option value="">— select domain —</option>';
+    domainSelect.innerHTML = '<option value="">\u2014 select domain \u2014</option>';
     const domains = [...items];
     const prefilledDomain = workflowContext.domain;
     if (prefilledDomain && !domains.includes(prefilledDomain)) domains.push(prefilledDomain);
@@ -418,18 +414,6 @@ function readField(obj, keys = []) {
   return '';
 }
 
-function deriveSeverity(issue) {
-  const explicit = readField(issue, ['severity', 'issue_severity', 'level', 'priority', 'risk_level']).toLowerCase();
-  if (explicit) return explicit;
-  const confidence = Number(issue?.confidence || issue?.score || 0);
-  if (!Number.isNaN(confidence)) {
-    if (confidence >= 0.9) return 'high';
-    if (confidence >= 0.7) return 'medium';
-    if (confidence > 0) return 'low';
-  }
-  return '—';
-}
-
 function isSafeExternalHttpUrl(value) {
   const raw = String(value || '').trim();
   if (!raw) return false;
@@ -446,7 +430,7 @@ function deriveSourceText(issue) {
   return (
     readField(issue, ['source_text', 'en_text', 'source', 'original_text', 'sourceText', 'text_en']) ||
     readField(evidence, ['source_text', 'en_text', 'source', 'source_value', 'original_text', 'text_en']) ||
-    '—'
+    '\u2014'
   );
 }
 
@@ -455,7 +439,7 @@ function deriveTargetText(issue) {
   return (
     readField(issue, ['target_text', 'translated_text', 'target', 'translation', 'targetText', 'text_target']) ||
     readField(evidence, ['target_text', 'translated_text', 'target', 'target_value', 'translation', 'text_target']) ||
-    '—'
+    '\u2014'
   );
 }
 
@@ -490,7 +474,7 @@ function updateTargetLanguage(issues = [], explicitTargetLanguage = '') {
 
 async function loadIssues() {
   updateWorkflowSummary();
-  setStatus('Loading…');
+  setStatus('Loading\u2026');
   tbody.innerHTML = '';
   const response = await fetch(`/api/issues?${buildParams().toString()}`);
   const payload = await safeReadPayload(response);
@@ -512,17 +496,14 @@ async function loadIssues() {
 
 function syncFilterOptionsFromIssues(issues = []) {
   stateMultiFilter.setOptions(issues.map((issue) => String(issue?.state || '').trim().toLowerCase()).filter(Boolean));
-  severityMultiFilter.setOptions(issues.map((issue) => deriveSeverity(issue).toLowerCase()).filter(Boolean));
   typeMultiFilter.setOptions(issues.map((issue) => String(issue?.category || '').trim().toLowerCase()).filter(Boolean));
 }
 
 function filteredIssues() {
   return loadedIssues.filter((issue) => {
     const issueState = String(issue?.state || '').trim().toLowerCase();
-    const issueSeverity = deriveSeverity(issue).toLowerCase();
     const issueType = String(issue?.category || '').trim().toLowerCase();
     return stateMultiFilter.includes(issueState)
-      && severityMultiFilter.includes(issueSeverity)
       && typeMultiFilter.includes(issueType);
   });
 }
@@ -559,10 +540,6 @@ function renderIssues() {
     issueTd.textContent = issueLabel(issue);
     tr.appendChild(issueTd);
 
-    const severityTd = document.createElement('td');
-    severityTd.textContent = deriveSeverity(issue);
-    tr.appendChild(severityTd);
-
     const linksTd = document.createElement('td');
     const detailLink = document.createElement('a');
     detailLink.href = detailHref;
@@ -570,7 +547,7 @@ function renderIssues() {
     linksTd.appendChild(detailLink);
     if (isSafeExternalHttpUrl(evidenceUrl)) {
       const separator = document.createElement('span');
-      separator.textContent = ' · ';
+      separator.textContent = ' \u00b7 ';
       linksTd.appendChild(separator);
       const urlLink = document.createElement('a');
       urlLink.href = evidenceUrl;
@@ -612,7 +589,7 @@ if (persistedResultSelect) {
 if (refreshPersistedResults) {
   refreshPersistedResults.addEventListener('click', () => {
     const previousRunId = activeRunId();
-    setStatus('Loading persisted results…');
+    setStatus('Loading persisted results\u2026');
     loadPersistedResults(previousRunId)
       .then(() => {
         if (!persistedResults.length) {
