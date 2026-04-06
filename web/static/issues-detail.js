@@ -28,24 +28,12 @@ function readField(obj, keys = []) {
   return '';
 }
 
-function deriveSeverity(issue) {
-  const explicit = readField(issue, ['severity', 'issue_severity', 'level', 'priority', 'risk_level']).toLowerCase();
-  if (explicit) return explicit;
-  const confidence = Number(issue?.confidence || issue?.score || 0);
-  if (!Number.isNaN(confidence)) {
-    if (confidence >= 0.9) return 'high';
-    if (confidence >= 0.7) return 'medium';
-    if (confidence > 0) return 'low';
-  }
-  return '—';
-}
-
 function deriveSourceText(issue) {
   const evidence = issue?.evidence || {};
   return (
     readField(issue, ['source_text', 'en_text', 'source', 'original_text', 'sourceText', 'text_en']) ||
     readField(evidence, ['source_text', 'en_text', 'source', 'source_value', 'original_text', 'text_en']) ||
-    '—'
+    '\u2014'
   );
 }
 
@@ -54,7 +42,7 @@ function deriveTargetText(issue) {
   return (
     readField(issue, ['target_text', 'translated_text', 'target', 'translation', 'targetText', 'text_target']) ||
     readField(evidence, ['target_text', 'translated_text', 'target', 'target_value', 'translation', 'text_target']) ||
-    '—'
+    '\u2014'
   );
 }
 
@@ -95,7 +83,7 @@ async function loadIssueDetailPage() {
   document.getElementById('detailOpenContexts').href = `/contexts?${new URLSearchParams({ domain, run_id: runId }).toString()}`;
   document.getElementById('detailOpenPulls').href = `/pulls?${new URLSearchParams({ domain, run_id: runId }).toString()}`;
 
-  setDetailStatus('Loading issue detail…');
+  setDetailStatus('Loading issue detail\u2026');
   const response = await fetch(`/api/issues/detail?${new URLSearchParams({ domain, run_id: runId, id }).toString()}`);
   const payload = await safeReadPayload(response);
   if (!response.ok) {
@@ -126,7 +114,6 @@ async function loadIssueDetailPage() {
     section('What is wrong', issue.message || issue.description || 'No message available.'),
     section('Where it appears', readField(evidence, ['url', 'page_url', 'source_url']) || 'URL unavailable'),
     section('Language', language),
-    section('Severity', deriveSeverity(issue)),
     section('Source text (en)', deriveSourceText(issue)),
     section('Target text', deriveTargetText(issue)),
     metadataSection,

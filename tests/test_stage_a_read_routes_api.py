@@ -270,14 +270,14 @@ def test_issues_filters_json_csv_and_contract(api_env):
     assert headers_csv["Content-Type"] == "text/csv; charset=utf-8"
     csv_text = csv_body.decode("utf-8")
     reader = list(csv.reader(io.StringIO(csv_text)))
-    assert reader[0] == ["id", "category", "severity", "language", "state", "url", "message"]
-    assert reader[1] == ["1", "translation_mismatch", "high", "fr", "baseline", "https://shop.example.com/a", "bonjour"]
+    assert reader[0] == ["id", "category", "language", "state", "url", "message"]
+    assert reader[1] == ["1", "translation_mismatch", "fr", "baseline", "https://shop.example.com/a", "bonjour"]
     assert len(reader) == 2
 
     status_csv_all, _, csv_body_all = _request(api_env, f"/api/issues/export?domain={domain}&run_id={run_id}&format=csv")
     all_rows = list(csv.reader(io.StringIO(csv_body_all.decode("utf-8"))))
     assert all_rows[2][0] == "2"
-    assert all_rows[2][6] == "line break"
+    assert all_rows[2][5] == "line break"
 
 
 
@@ -293,7 +293,7 @@ def test_issues_filter_semantics_by_field(api_env):
     checks = [
         ("type=translation_mismatch", ["10"]),
         ("language=fr", ["10"]),
-        ("severity=high", ["10"]),
+        ("severity=high", ["10", "20"]),
         ("state=baseline", ["10"]),
         ("url=path-a", ["10"]),
         ("domain_filter=shop.example.com", ["10"]),

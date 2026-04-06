@@ -374,6 +374,7 @@ def test_completed_state_shows_target_run_and_summary(api_env):
     assert 'Current state: <strong id="checkLanguagesState">completed_with_issues</strong>' in body
     assert f"Generated target run: <code>{target_run_id}</code>" in body
     assert "Total: <strong>1</strong>" in body
+    assert "By severity:" not in body
     assert "Open issue explorer" in body
 
 

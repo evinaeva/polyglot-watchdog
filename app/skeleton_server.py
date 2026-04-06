@@ -3683,7 +3683,6 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 f"<ul>"
                 f"<li>Total: <strong>{issues_summary['total']}</strong></li>"
                 f"<li>By category: {_h(_format_summary_pairs(issues_summary['by_category']))}</li>"
-                f"<li>By severity: {_h(_format_summary_pairs(issues_summary['by_severity']))}</li>"
                 f"<li>By language: {_h(_format_summary_pairs(issues_summary['by_language']))}</li>"
                 f"<li>By state: {_h(_format_summary_pairs(issues_summary['by_state']))}</li>"
                 f"</ul>"
