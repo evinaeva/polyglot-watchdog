@@ -6,7 +6,7 @@ def test_issue_filter_logic():
         {"id": "1", "category": "TRANSLATION_MISMATCH", "message": "foo", "confidence": 0.95, "language": "fr", "state": "baseline", "evidence": {"url": "https://a"}},
         {"id": "2", "category": "FORMATTING_MISMATCH", "message": "bar", "confidence": 0.6, "language": "es", "state": "cart", "evidence": {"url": "https://b"}},
     ]
-    out = _filter_issues(issues, {"severity": ["high"], "language": ["fr"], "state": ["baseline"], "type": ["translation_mismatch"]})
+    out = _filter_issues(issues, {"language": ["fr"], "state": ["baseline"], "type": ["translation_mismatch"]})
     assert [i["id"] for i in out] == ["1"]
 
 
@@ -26,5 +26,5 @@ def test_issue_filter_domain_substring():
 def test_issues_to_csv_handles_quotes_and_commas():
     rows = [{"id": "1", "category": "CAT", "message": "a, b and \"q\"", "language": "fr", "state": "baseline", "evidence": {"url": "https://x"}}]
     csv_text = _issues_to_csv(rows)
-    assert "id,category,severity,language,state,url,message" in csv_text
+    assert "id,category,language,state,url,message" in csv_text
     assert '"a, b and ""q"""' in csv_text
