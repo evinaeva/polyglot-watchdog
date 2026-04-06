@@ -2105,7 +2105,7 @@ def test_index_domain_change_to_empty_results_clears_stale_issue_table():
     assert "No persisted issue results found" in out["statusText"]
 
 
-def test_index_runtime_renders_source_target_severity_and_links():
+def test_index_runtime_renders_source_target_issue_and_links():
     script = textwrap.dedent(
         r"""
         const fs = require('fs');
@@ -2183,7 +2183,7 @@ def test_index_runtime_renders_source_target_severity_and_links():
         setTimeout(() => {
           const row = tbody.children[0];
           const cellTexts = row ? row.children.map((cell) => cell.textContent || '') : [];
-          const linksCell = row && row.children[4] ? row.children[4] : null;
+          const linksCell = row && row.children[3] ? row.children[3] : null;
           const linkHrefs = linksCell ? linksCell.children.map((child) => child.href || '').filter(Boolean) : [];
           console.log(JSON.stringify({
             cellTexts,
@@ -2195,7 +2195,7 @@ def test_index_runtime_renders_source_target_severity_and_links():
         """
     )
     out = _run_node_json(script)
-    assert out["cellTexts"][:4] == ["Hello", "Привет", "Mismatch", "high"]
+    assert out["cellTexts"][:3] == ["Hello", "Привет", "Mismatch"]
     assert len(out["linkHrefs"]) == 2
     assert out["linkHrefs"][1] == "https://example.com/a"
     assert out["targetHeader"] == "ru"
@@ -2408,7 +2408,7 @@ def test_index_runtime_target_language_header_uses_deterministic_frequency_not_r
     assert out["targetHeader"] == "fr"
 
 
-def test_index_runtime_uses_schema_aliases_for_source_target_and_severity():
+def test_index_runtime_uses_schema_aliases_for_source_target():
     script = textwrap.dedent(
         r"""
         const fs = require('fs');
@@ -2438,7 +2438,7 @@ def test_index_runtime_uses_schema_aliases_for_source_target_and_severity():
             if (url === '/api/domains') return { ok: true, status: 200, json: async () => ({ items: ['example.com'] }) };
             if (url.startsWith('/api/issues/results?')) return { ok: true, status: 200, json: async () => ({ results: [{ run_id: 'run-1' }] }) };
             if (url.startsWith('/api/issues?')) return { ok: true, status: 200, json: async () => ({ issues: [{
-              id: '1', message: 'legacy', level: 'medium', target_language: 'ru',
+              id: '1', message: 'legacy', target_language: 'ru',
               evidence: { url: 'https://example.com', original_text: 'Hello', translation: 'Привет' },
             }], count: 1 }) };
             throw new Error('Unexpected URL: ' + url);
@@ -2454,7 +2454,7 @@ def test_index_runtime_uses_schema_aliases_for_source_target_and_severity():
         """
     )
     out = _run_node_json(script)
-    assert out["cells"][:4] == ["Hello", "Привет", "legacy", "medium"]
+    assert out["cells"][:3] == ["Hello", "Привет", "legacy"]
 
 
 def test_issue_detail_runtime_escapes_untrusted_fields_and_blocks_unsafe_screenshot_href():
