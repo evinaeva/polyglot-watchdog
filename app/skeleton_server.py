@@ -15,7 +15,6 @@ import html
 import json
 import os
 import re
-import asyncio
 import base64
 import hashlib
 import hmac
@@ -138,7 +137,20 @@ from app.check_languages_service import (
     _target_capture_url_from_reference_url,
 )
 from app.check_languages_presenter import _h, _llm_review_display
+from app.services import issues_service, recipes_service, seed_urls_service, workflow_service
+from app.services.skeleton_runtime import (
+    jobs_store as _service_jobs_store,
+    prepare_check_languages_async as _service_prepare_check_languages_async,
+    run_check_languages_async as _service_run_check_languages_async,
+    run_check_languages_llm_async as _service_run_check_languages_llm_async,
+    upsert_job_status as _service_upsert_job_status,
+    workflow_section_status as _service_workflow_section_status,
+)
 from app.testbench import get_modules, run_module_test
+from app.http.router import MethodPathRouter
+from app.http.handlers import api_read as api_read_handlers
+from app.http.handlers import api_write as api_write_handlers
+from app.http.handlers import pages as page_handlers
 from pipeline import storage
 from pipeline.runtime_config import validate_seed_urls_payload, load_phase1_runtime_config
 from pipeline.interactive_capture import GCSArtifactWriter
@@ -156,9 +168,21 @@ SESSION_MAX_AGE_SECONDS = max(int(os.environ.get("SESSION_MAX_AGE_SECONDS", "288
 
 
 # In-memory job status store (cleared on restart — for UI feedback only)
-_jobs: dict[str, dict] = {}
+_jobs: dict[str, dict] = _service_jobs_store
 _template_cache: dict[Path, tuple[int, str]] = {}
 _TALLINN_TZ = ZoneInfo("Europe/Tallinn")
+
+
+def _build_http_router() -> MethodPathRouter:
+    router = MethodPathRouter()
+    router.add_prefix("GET", "/", page_handlers.handle_get)
+    router.add_prefix("GET", "/api/", api_read_handlers.handle_get)
+    router.add_prefix("POST", "/", api_write_handlers.handle_post)
+    router.add_prefix("PUT", "/", api_write_handlers.handle_put)
+    return router
+
+
+_HTTP_ROUTER = _build_http_router()
 
 
 def _strip_json5_comments(source: str) -> str:
@@ -659,28 +683,16 @@ def _upsert_run_metadata(domain: str, run_id: str, metadata: dict) -> None:
 
 
 def _upsert_job_status(domain: str, run_id: str, job_record: dict) -> None:
-    runs_payload = _load_runs(domain)
-    runs = runs_payload["runs"]
-    run = next((r for r in runs if r.get("run_id") == run_id), None)
-    if run is None:
-        run = {"run_id": run_id, "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "jobs": []}
-        runs.append(run)
-    display_name = _normalize_optional_string(job_record.get("display_name"))
-    if display_name is not None:
-        run["display_name"] = display_name
-    elif "display_name" not in run and "display_name" in job_record:
-        run["display_name"] = None
-    prior_job = next((j for j in run.get("jobs", []) if j.get("job_id") == job_record.get("job_id")), None)
-    normalized_job = dict(job_record)
-    normalized_job.pop("display_name", None)
-    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    normalized_job["updated_at"] = now
-    normalized_job["created_at"] = str((prior_job or {}).get("created_at") or now)
-    jobs = [j for j in run.get("jobs", []) if j.get("job_id") != normalized_job.get("job_id")]
-    jobs.append(normalized_job)
-    jobs.sort(key=lambda r: r.get("job_id", ""))
-    run["jobs"] = jobs
-    _save_runs(domain, {"runs": _sort_runs_newest_first(runs)})
+    _service_upsert_job_status(
+        domain,
+        run_id,
+        job_record,
+        load_runs=_load_runs,
+        save_runs=_save_runs,
+        sort_runs_newest_first=_sort_runs_newest_first,
+        normalize_optional_string=_normalize_optional_string,
+        time_module=time,
+    )
 
 
 def _is_stale_running_job(job: dict) -> bool:
@@ -1077,231 +1089,46 @@ def _run_phase6_async(job_id: str, domain: str, run_id: str, en_run_id: str) -> 
 
 
 
+
+def _persist_check_languages_failure_artifacts(domain: str, target_run_id: str, diagnostics: dict) -> tuple[dict, str | None]:
+    return _persist_check_languages_failure_artifacts_safe(domain, target_run_id, diagnostics)
+
+
 def _prepare_check_languages_async(job_id: str, domain: str, en_run_id: str, target_language: str, target_run_id: str, target_url: str) -> None:
-    _jobs[job_id] = {
-        "status": "running",
-        "phase": "check_languages",
-        "domain": domain,
-        "run_id": target_run_id,
-        "en_run_id": en_run_id,
-        "target_language": target_language,
-        "target_url": target_url,
-    }
-    from pipeline.run_phase1 import main as phase1_main
-    from pipeline.run_phase3 import run as phase3_run
-
-    try:
-        _upsert_job_status(domain, target_run_id, {
-            "job_id": job_id,
-            "status": "running",
-            "type": "check_languages",
-            "stage": "preparing_payload",
-            "workflow_state": "preparing_payload",
-            "en_run_id": en_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-        })
-        replay_jobs = _replay_scope_from_reference_run(domain, en_run_id, target_language, target_url)
-    except Exception as exc:
-        _jobs[job_id]["status"] = "error"
-        _jobs[job_id]["error"] = str(exc)
-        _upsert_job_status(domain, target_run_id, {
-            "job_id": job_id,
-            "status": "failed",
-            "type": "check_languages",
-            "stage": "preparing_target_run_failed",
-            "workflow_state": "failed_before_llm",
-            "en_run_id": en_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-            "error": str(exc),
-        })
-        return
-
-    try:
-        _upsert_job_status(domain, target_run_id, {
-            "job_id": job_id,
-            "status": "running",
-            "type": "check_languages",
-            "stage": "running_target_capture",
-            "workflow_state": "preparing_payload",
-            "en_run_id": en_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-            "contexts": len(replay_jobs),
-        })
-        asyncio.run(phase1_main(domain, target_run_id, target_language, "desktop", "baseline", None, jobs_override=replay_jobs, continue_on_error=True))
-        _require_artifact_exists(domain, target_run_id, "page_screenshots.json")
-        _require_artifact_exists(domain, target_run_id, "collected_items.json")
-    except Exception as exc:
-        replay_context = _replay_unit_diagnostics(
-            exc,
-            replay_jobs,
-            target_url=target_url,
-            en_run_id=en_run_id,
-            target_run_id=target_run_id,
-            target_language=target_language,
-        )
-        diagnostics = _build_exception_diagnostics(exc, stage="running_target_capture_failed", substage="phase1_replay", replay_context=replay_context)
-        artifact_refs, artifact_error = _persist_check_languages_failure_artifacts_safe(domain, target_run_id, diagnostics)
-        error = f"{diagnostics['exception_class']}: {diagnostics['message']}"
-        if artifact_error:
-            error = f"{error} (failure artifact persistence warning: {artifact_error})"
-        _jobs[job_id]["status"] = "failed"
-        _jobs[job_id]["error"] = error
-        failed_record = {
-            "job_id": job_id,
-            "status": "failed",
-            "type": "check_languages",
-            "stage": "running_target_capture_failed",
-            "workflow_state": "failed_before_llm",
-            "en_run_id": en_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-            "error": error,
-            "error_details": diagnostics,
-            "failure_artifacts": artifact_refs,
-        }
-        if artifact_error:
-            failed_record["failure_artifact_error"] = artifact_error
-        _upsert_job_status(domain, target_run_id, failed_record)
-        return
-
-    try:
-        _upsert_job_status(domain, target_run_id, {
-            "job_id": job_id,
-            "status": "running",
-            "type": "check_languages",
-            "stage": "assembling_payload",
-            "workflow_state": "preparing_payload",
-            "en_run_id": en_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-        })
-        phase3_run(domain=domain, run_id=target_run_id)
-        _require_artifact_exists(domain, target_run_id, "eligible_dataset.json")
-        payload_status = _check_languages_payload_status(domain, target_run_id)
-        if not payload_status.get("ready"):
-            raise ValueError("Prepared payload is incomplete or invalid")
-        from pipeline.storage import write_json_artifact
-        from pipeline.run_phase6 import build_prepared_llm_payload
-
-        llm_input_payload = build_prepared_llm_payload(domain, en_run_id, target_run_id)
-        review_contexts = llm_input_payload.get("review_contexts")
-        first_review_context = review_contexts[0] if isinstance(review_contexts, list) and review_contexts else None
-        llm_input_preview_payload = {
-            "target_language": llm_input_payload.get("target_language"),
-            "review_context_count": llm_input_payload.get("review_context_count"),
-            "blocked_pages": llm_input_payload.get("blocked_pages") if isinstance(llm_input_payload.get("blocked_pages"), list) else [],
-            "source_hashes": llm_input_payload.get("source_hashes") if isinstance(llm_input_payload.get("source_hashes"), dict) else {},
-            "sample_review_context": first_review_context,
-        }
-        source_hashes = _check_languages_source_hashes(domain, en_run_id, target_run_id)
-        llm_input_artifact_uri = write_json_artifact(domain, target_run_id, "check_languages_llm_input.json", llm_input_payload)
-        write_json_artifact(domain, target_run_id, "check_languages_llm_input_preview.json", llm_input_preview_payload)
-        write_json_artifact(domain, target_run_id, "check_languages_prepared_payload.json", {
-            "en_run_id": en_run_id,
-            "target_run_id": target_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-            "prepared_at": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "payload_files": payload_status.get("files", []),
-            "source_hashes": source_hashes,
-            "llm_input_artifact": llm_input_artifact_uri,
-            "llm_input_count": int(llm_input_payload.get("review_context_count", 0)),
-        })
-        _jobs[job_id]["status"] = "done"
-        _upsert_job_status(domain, target_run_id, {
-            "job_id": job_id,
-            "status": "succeeded",
-            "type": "check_languages",
-            "stage": "prepared_for_llm",
-            "workflow_state": "prepared_for_llm",
-            "en_run_id": en_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-        })
-    except Exception as exc:
-        _jobs[job_id]["status"] = "error"
-        _jobs[job_id]["error"] = str(exc)
-        _upsert_job_status(domain, target_run_id, {
-            "job_id": job_id,
-            "status": "failed",
-            "type": "check_languages",
-            "stage": "preparing_payload_failed",
-            "workflow_state": "failed_before_llm",
-            "en_run_id": en_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-            "error": str(exc),
-        })
+    _service_prepare_check_languages_async(
+        job_id,
+        domain,
+        en_run_id,
+        target_language,
+        target_run_id,
+        target_url,
+        upsert_job_status=_upsert_job_status,
+        replay_scope_from_reference_run=_replay_scope_from_reference_run,
+        require_artifact_exists=_require_artifact_exists,
+        replay_unit_diagnostics=_replay_unit_diagnostics,
+        build_exception_diagnostics=_build_exception_diagnostics,
+        persist_check_languages_failure_artifacts=_persist_check_languages_failure_artifacts,
+        check_languages_payload_status=_check_languages_payload_status,
+        check_languages_source_hashes=_check_languages_source_hashes,
+    )
 
 
 def _run_check_languages_llm_async(job_id: str, domain: str, en_run_id: str, target_language: str, target_run_id: str, target_url: str) -> None:
-    from pipeline.run_phase6 import run as phase6_run
-
-    _jobs[job_id] = {"status": "running", "phase": "check_languages_llm", "domain": domain, "run_id": target_run_id}
-    try:
-        llm_preflight_error = _check_languages_llm_preflight_error()
-        if llm_preflight_error:
-            raise _CheckLanguagesLlmPreflightError(llm_preflight_error)
-        prepared = _read_json_safe(domain, target_run_id, "check_languages_prepared_payload.json", None)
-        if not isinstance(prepared, dict):
-            raise ValueError("Prepared payload missing. Run Prepare language check payload first.")
-        llm_input_artifact = str(prepared.get("llm_input_artifact", "")).strip()
-        if llm_input_artifact:
-            llm_input_payload = _read_json_artifact_from_gs_uri(llm_input_artifact)
-        else:
-            llm_input_payload = _read_json_safe(domain, target_run_id, "check_languages_llm_input.json", None)
-        if not isinstance(llm_input_payload, dict):
-            raise ValueError("Prepared LLM input payload is missing or invalid. Re-run preparation.")
-        expected_hashes = prepared.get("source_hashes") if isinstance(prepared.get("source_hashes"), dict) else {}
-        actual_hashes = _check_languages_source_hashes(domain, en_run_id, target_run_id)
-        if expected_hashes and expected_hashes != actual_hashes:
-            raise ValueError("Prepared payload is stale: source artifacts changed. Re-run preparation.")
-        _upsert_job_status(domain, target_run_id, {
-            "job_id": job_id,
-            "status": "running",
-            "type": "check_languages",
-            "stage": "running_llm_review",
-            "workflow_state": "running_llm_review",
-            "en_run_id": en_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-        })
-        review_mode = os.environ.get("PHASE6_REVIEW_PROVIDER", "").strip()
-        phase6_run(domain=domain, en_run_id=en_run_id, target_run_id=target_run_id, review_mode=review_mode, prepared_llm_payload=llm_input_payload)
-        _require_artifact_exists(domain, target_run_id, "issues.json")
-        _jobs[job_id]["status"] = "done"
-        _upsert_job_status(domain, target_run_id, {
-            "job_id": job_id,
-            "status": "succeeded",
-            "type": "check_languages",
-            "stage": "completed",
-            "workflow_state": "completed",
-            "en_run_id": en_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-        })
-    except Exception as exc:
-        _jobs[job_id]["status"] = "error"
-        _jobs[job_id]["error"] = str(exc)
-        stage = "running_llm_review_failed"
-        workflow_state = "failed_during_llm"
-        if isinstance(exc, _CheckLanguagesLlmPreflightError):
-            stage = "llm_preflight_failed"
-            workflow_state = "failed_before_llm"
-        _upsert_job_status(domain, target_run_id, {
-            "job_id": job_id,
-            "status": "failed",
-            "type": "check_languages",
-            "stage": stage,
-            "workflow_state": workflow_state,
-            "en_run_id": en_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-            "error": str(exc),
-        })
+    _service_run_check_languages_llm_async(
+        job_id,
+        domain,
+        en_run_id,
+        target_language,
+        target_run_id,
+        target_url,
+        check_languages_llm_preflight_error=_check_languages_llm_preflight_error,
+        preflight_error_cls=_CheckLanguagesLlmPreflightError,
+        read_json_safe=_read_json_safe,
+        read_json_artifact_from_gs_uri=_read_json_artifact_from_gs_uri,
+        check_languages_source_hashes=_check_languages_source_hashes,
+        upsert_job_status=_upsert_job_status,
+        require_artifact_exists=_require_artifact_exists,
+    )
 
 
 def _check_languages_llm_preflight_error() -> str | None:
@@ -1320,177 +1147,38 @@ class _CheckLanguagesLlmPreflightError(ValueError):
 # _run_check_languages_llm_async as separate stages instead of calling this wrapper.
 def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_language: str, target_run_id: str, target_url: str) -> None:
     """Backward-compatible composed flow: prepare payload, then run LLM review."""
-    _prepare_check_languages_async(job_id, domain, en_run_id, target_language, target_run_id, target_url)
-    latest = _latest_check_languages_job(domain, target_run_id)
-    if not isinstance(latest, dict):
-        return
-    if str(latest.get("workflow_state", "")).strip().lower() != "prepared_for_llm":
-        return
-    llm_preflight_error = _check_languages_llm_preflight_error()
-    if llm_preflight_error:
-        _upsert_job_status(domain, target_run_id, {
-            "job_id": f"{job_id}-llm-preflight",
-            "status": "failed",
-            "type": "check_languages",
-            "stage": "llm_preflight_failed",
-            "workflow_state": "failed_before_llm",
-            "en_run_id": en_run_id,
-            "target_language": target_language,
-            "target_url": target_url,
-            "error": llm_preflight_error,
-        })
-        return
-    llm_job_id = f"{job_id}-llm"
-    _run_check_languages_llm_async(llm_job_id, domain, en_run_id, target_language, target_run_id, target_url)
+    _service_run_check_languages_async(
+        job_id,
+        domain,
+        en_run_id,
+        target_language,
+        target_run_id,
+        target_url,
+        prepare_check_languages_async=_prepare_check_languages_async,
+        latest_check_languages_job=_latest_check_languages_job,
+        check_languages_llm_preflight_error=_check_languages_llm_preflight_error,
+        upsert_job_status=_upsert_job_status,
+        run_check_languages_llm_async=_run_check_languages_llm_async,
+    )
+
 
 def _workflow_section_status(*, has_artifact: bool, count: int | None = None, pending_on: bool = False) -> str:
-    if has_artifact:
-        if count is not None and count == 0:
-            return "empty"
-        return "ready"
-    if pending_on:
-        return "not_ready"
-    return "not_started"
+    return _service_workflow_section_status(has_artifact=has_artifact, count=count, pending_on=pending_on)
 
 
 def _workflow_status_payload(domain: str, run_id: str) -> dict:
-    seed_payload = _read_json_safe(domain, "manual", "seed_urls.json", {"urls": []})
-    seed_urls = seed_payload.get("urls") if isinstance(seed_payload, dict) else []
-    seed_count = len([row for row in seed_urls if isinstance(row, dict) and str(row.get("url", "")).strip() and bool(row.get("active", True))])
-
-    pages = _read_json_safe(domain, run_id, "page_screenshots.json", None)
-    items = _read_json_safe(domain, run_id, "collected_items.json", None)
-    rules = _read_json_safe(domain, run_id, "template_rules.json", None)
-    dataset = _read_json_safe(domain, run_id, "eligible_dataset.json", None)
-    issues = _read_json_safe(domain, run_id, "issues.json", None)
-
-    pages_count = len(pages) if isinstance(pages, list) else 0
-    items_count = len(items) if isinstance(items, list) else 0
-    rules_count = len(rules) if isinstance(rules, list) else 0
-    dataset_count = len(dataset) if isinstance(dataset, list) else 0
-    issues_count = len(issues) if isinstance(issues, list) else 0
-
-    contexts = [{"capture_context_id": _capture_context_id_from_page(domain, row), "language": str(row.get("language", ""))} for row in (pages or []) if isinstance(row, dict)]
-    reviews = list(_load_review_statuses_for_contexts(domain, contexts).values()) if contexts else []
-    reviewed_count = len(reviews)
-
-    run_meta = next((row for row in _load_runs(domain).get("runs", []) if str(row.get("run_id", "")) == run_id), None)
-    jobs = run_meta.get("jobs", []) if isinstance(run_meta, dict) else []
-    effective_jobs = [_as_stale_failed_job(j) if _is_stale_running_job(j) else j for j in jobs]
-    running = [j for j in effective_jobs if str(j.get("status", "")).lower() in {"running", "queued"}]
-    failed = [j for j in effective_jobs if str(j.get("status", "")).lower() in {"failed", "error"}]
-    capture_jobs = [
-        j for j in effective_jobs
-        if str(j.get("type", "")).lower() == "capture" or str(j.get("phase", "")).lower() == "1" or str(j.get("job_id", "")).startswith("phase1-")
-    ]
-    capture_attempted = bool(capture_jobs)
-    capture_running = any(str(j.get("status", "")).lower() in {"running", "queued"} for j in capture_jobs)
-    capture_failed_jobs = [j for j in capture_jobs if str(j.get("status", "")).lower() in {"failed", "error"}]
-    capture_last_failure = capture_failed_jobs[-1] if capture_failed_jobs else None
-
-    capture_status = "not_started"
-    if capture_running:
-        capture_status = "in_progress"
-    elif isinstance(pages, list):
-        capture_status = "ready" if pages_count > 0 else "empty"
-    elif capture_last_failure is not None:
-        capture_status = "failed"
-    elif capture_attempted:
-        capture_status = "not_ready"
-    elif seed_count:
-        capture_status = "not_ready"
-    review_status = "not_started"
-    if isinstance(pages, list):
-        if pages_count == 0:
-            review_status = "empty"
-        elif reviewed_count == 0:
-            review_status = "not_ready"
-        elif reviewed_count < pages_count:
-            review_status = "in_progress"
-        else:
-            review_status = "ready"
-
-    annotation_status = _workflow_section_status(
-        has_artifact=isinstance(rules, list),
-        count=rules_count,
-        pending_on=reviewed_count >= pages_count and pages_count > 0,
+    return workflow_service.workflow_status_payload(
+        domain,
+        run_id,
+        load_runs=_load_runs,
+        capture_context_id_from_page=_capture_context_id_from_page,
+        load_review_statuses_for_contexts=_load_review_statuses_for_contexts,
+        issue_sort_key=_issue_sort_key,
+        latest_phase3_job=_latest_phase3_job,
+        normalize_optional_string=_normalize_optional_string,
+        parse_utc_timestamp=_parse_utc_timestamp,
+        workflow_section_status=_workflow_section_status,
     )
-    if isinstance(rules, list) and rules_count < items_count and items_count > 0:
-        annotation_status = "partial"
-
-    run_status = "not_started"
-    if running:
-        run_status = "in_progress"
-    elif failed:
-        run_status = "failed"
-    elif isinstance(pages, list):
-        run_status = "ready"
-
-    next_action = "configure_seed_urls"
-    if capture_status in {"not_started", "not_ready", "failed"} and seed_count:
-        next_action = "start_capture"
-    elif capture_status == "in_progress":
-        next_action = "wait_for_capture"
-    elif isinstance(pages, list) and reviewed_count < pages_count:
-        next_action = "complete_review"
-    elif reviewed_count >= pages_count and not isinstance(rules, list):
-        next_action = "save_annotation_rules"
-    elif isinstance(rules, list) and not isinstance(dataset, list):
-        next_action = "generate_eligible_dataset"
-    elif isinstance(dataset, list) and not isinstance(issues, list):
-        next_action = "generate_issues"
-    elif isinstance(issues, list):
-        next_action = "review_issues"
-
-    first_issue_id = ""
-    if isinstance(issues, list) and issues:
-        first_issue_id = str(sorted([row for row in issues if isinstance(row, dict)], key=_issue_sort_key)[0].get("id", ""))
-
-    run_en_standard_display_name = str((run_meta or {}).get("en_standard_display_name", "")).strip()
-    eligible_has_artifact = isinstance(dataset, list)
-    eligible_status = _workflow_section_status(has_artifact=eligible_has_artifact, count=dataset_count, pending_on=isinstance(rules, list))
-    phase3_job = _latest_phase3_job(domain, run_id)
-    phase3_generation_status = str((phase3_job or {}).get("status", "")).strip().lower()
-    phase3_generation_error = str((phase3_job or {}).get("error", "")).strip()
-
-    return {
-        "state_enum": ["not_started", "in_progress", "ready", "empty", "not_ready", "partial", "failed", "out_of_scope"],
-        "seed_urls": {"status": "ready" if seed_count else "empty", "configured": bool(seed_count), "count": seed_count},
-        "run": {
-            "status": run_status,
-            "run_id": run_id,
-            "display_name": _normalize_optional_string((run_meta or {}).get("display_name")),
-            "domain": domain,
-            "jobs_total": len(jobs),
-            "jobs_running": len(running),
-            "jobs_failed": len(failed),
-            "en_standard_display_name": run_en_standard_display_name,
-        },
-        "capture": {
-            "status": capture_status,
-            "contexts": pages_count,
-            "items": items_count,
-            "artifacts_present": isinstance(pages, list),
-            "error": str((capture_last_failure or {}).get("error", "")),
-            "remediation": [
-                "check capture runner prerequisites",
-                "see logs",
-                "verify env config",
-            ] if capture_status == "failed" else [],
-        },
-        "review": {"status": review_status, "total": pages_count, "reviewed": reviewed_count},
-        "annotation": {"status": annotation_status, "rules_count": rules_count},
-        "eligible_dataset": {
-            "status": eligible_status,
-            "ready": eligible_has_artifact,
-            "record_count": dataset_count,
-            "en_standard_display_name": run_en_standard_display_name,
-            "generation_status": phase3_generation_status,
-            "generation_error": phase3_generation_error,
-        },
-        "issues": {"status": _workflow_section_status(has_artifact=isinstance(issues, list), count=issues_count, pending_on=isinstance(dataset, list)), "count": issues_count, "first_issue_id": first_issue_id},
-        "next_recommended_action": next_action,
-    }
 
 
 
@@ -1598,9 +1286,43 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         cookie_token = self._get_cookie(CSRF_COOKIE)
         return bool(cookie_token and token and secrets.compare_digest(cookie_token, token))
 
+    def _require_query_or_bad_request(self, query: dict[str, list[str]], *params: str) -> dict[str, str] | None:
+        required, missing = _require_query_params(query, *params)
+        if missing:
+            self._json_response(_missing_required_query_params(*missing), status=HTTPStatus.BAD_REQUEST)
+            return None
+        return required
+
+    def _require_domain_and_run_or_bad_request(self, query: dict[str, list[str]], *, normalize_domain: bool = False) -> tuple[str, str] | None:
+        required = self._require_query_or_bad_request(query, "domain", "run_id")
+        if required is None:
+            return None
+        domain = required["domain"]
+        try:
+            if normalize_domain:
+                domain = validate_domain(_normalize_testsite_domain_key(domain))
+            run_id = _validate_run_id(required["run_id"])
+        except ValueError as exc:
+            self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return None
+        return domain, run_id
+
+    def _handle_artifact_exception(self, exc: Exception, *, missing_payload: dict | None = None) -> bool:
+        if isinstance(exc, FileNotFoundError):
+            self._json_response(missing_payload or {"status": "not_ready", "error": str(exc)}, status=HTTPStatus.NOT_FOUND)
+            return True
+        if isinstance(exc, ValueError):
+            self._json_response({"error": str(exc), "status": "artifact_invalid"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return True
+        return False
+
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
+        if _HTTP_ROUTER.dispatch(self, method="GET", parsed=parsed):
+            return
+        self._legacy_api_get(parsed)
 
+    def _legacy_api_get(self, parsed) -> None:
         # Health check — must be first to ensure it is always reachable.
         if parsed.path == "/healthz":
             self._json_response({"status": "ok"})
@@ -1932,8 +1654,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                 return
             try:
-                _require_artifact_exists(domain, run_id, "issues.json")
-                issues = _read_list_artifact_required(domain, run_id, "issues.json")
+                issues = issues_service.load_issues(domain, run_id)
             except FileNotFoundError:
                 self._json_response(_not_ready_payload("issues"), status=HTTPStatus.NOT_FOUND)
                 return
@@ -2048,7 +1769,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                 return
             try:
-                payload = read_seed_urls(valid_domain)
+                payload = seed_urls_service.get_seed_urls(domain=valid_domain)
             except Exception as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
                 return
@@ -2065,7 +1786,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             domain = parse_qs(parsed.query).get("domain", [""])[0]
             try:
                 valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
-                self._json_response({"recipes": list_recipes(valid_domain)})
+                self._json_response(recipes_service.get_recipes(valid_domain))
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -2149,16 +1870,10 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             if not self._require_auth(api=True):
                 return
             query = parse_qs(parsed.query)
-            required, missing = _require_query_params(query, "domain", "run_id")
-            if missing:
-                self._json_response(_missing_required_query_params(*missing), status=HTTPStatus.BAD_REQUEST)
+            validated = self._require_domain_and_run_or_bad_request(query)
+            if validated is None:
                 return
-            domain = required["domain"]
-            try:
-                run_id = _validate_run_id(required["run_id"])
-            except ValueError as exc:
-                self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
-                return
+            domain, run_id = validated
             language_filter = str(query.get("language", [""])[0]).strip()
             if not _artifact_exists_strict(domain, run_id, "page_screenshots.json"):
                 self._json_response({"status": "not_ready", "error": "page_screenshots artifact missing"}, status=HTTPStatus.NOT_FOUND)
@@ -2166,7 +1881,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             try:
                 pages = _read_list_artifact_required(domain, run_id, "page_screenshots.json")
             except ValueError as exc:
-                self._json_response({"error": str(exc), "status": "artifact_invalid"}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                self._handle_artifact_exception(exc)
                 return
             contexts = [
                 {
@@ -2184,12 +1899,12 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             if not self._require_auth(api=True):
                 return
             query = parse_qs(parsed.query)
-            required, missing = _require_query_params(query, "domain", "run_id")
-            if missing:
-                self._json_response(_missing_required_query_params(*missing), status=HTTPStatus.BAD_REQUEST)
+            validated = self._require_domain_and_run_or_bad_request(query)
+            if validated is None:
                 return
+            domain, run_id = validated
             try:
-                payload = _workflow_status_payload(required["domain"], _validate_run_id(required["run_id"]))
+                payload = _workflow_status_payload(domain, run_id)
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                 return
@@ -2209,6 +1924,12 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
 
     def do_PUT(self) -> None:  # noqa: N802
+        parsed = urlparse(self.path)
+        if _HTTP_ROUTER.dispatch(self, method="PUT", parsed=parsed):
+            return
+        self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
+
+    def _legacy_api_put(self, parsed) -> None:
         if not self._require_auth(api=True):
             return
         csrf_header = self.headers.get("X-CSRF-Token", "")
@@ -2216,15 +1937,13 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             self._json_response({"error": "csrf validation failed"}, status=HTTPStatus.FORBIDDEN)
             return
 
-        if self.path == "/api/seed-urls":
+        if parsed.path == "/api/seed-urls":
             payload = self._read_json_payload()
             domain = str(payload.get("domain", ""))
             urls_multiline = str(payload.get("urls_multiline", ""))
             try:
                 valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
-                parsed_urls = parse_seed_urls_with_errors(urls_multiline)
-                saved = write_seed_urls(valid_domain, parsed_urls["urls"])
-                saved["validation_errors"] = parsed_urls["errors"]
+                saved = seed_urls_service.put_seed_urls(domain=valid_domain, urls_multiline=urls_multiline)
                 _register_domain(valid_domain)
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -2238,12 +1957,18 @@ class SkeletonHandler(BaseHTTPRequestHandler):
         self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path == "/login":
+        parsed = urlparse(self.path)
+        if _HTTP_ROUTER.dispatch(self, method="POST", parsed=parsed):
+            return
+        self.send_error(HTTPStatus.NOT_FOUND, "Not Found")
+
+    def _legacy_api_post(self, parsed) -> None:
+        if parsed.path == "/login":
             if not self._auth_enabled():
                 self.send_response(HTTPStatus.FOUND)
                 self.send_header("Location", "/")
                 self.end_headers()
-                return
+                return True
             form = self._read_form_payload()
             password = str(form.get("password", "")).strip()
             csrf_token = str(form.get("csrf_token", "")).strip()
@@ -2259,7 +1984,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                     },
                     extra_set_cookies=[self._build_cookie_header(CSRF_COOKIE, refreshed_csrf, max_age=SESSION_MAX_AGE_SECONDS, http_only=False)],
                 )
-                return
+                return True
 
             expected_password = self._login_password()
             signing_secret = self._session_signing_secret()
@@ -2272,7 +1997,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                     },
                     status=HTTPStatus.INTERNAL_SERVER_ERROR,
                 )
-                return
+                return True
 
             if secrets.compare_digest(password, expected_password):
                 session_token = self._generate_session_token()
@@ -2282,7 +2007,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self.send_header("Set-Cookie", self._build_cookie_header(SESSION_COOKIE, session_token, max_age=SESSION_MAX_AGE_SECONDS, http_only=True))
                 self.send_header("Set-Cookie", self._build_cookie_header(CSRF_COOKIE, new_csrf, max_age=SESSION_MAX_AGE_SECONDS, http_only=False))
                 self.end_headers()
-                return
+                return True
 
             refreshed_csrf = self._ensure_csrf_cookie()
             self._serve_template(
@@ -2294,14 +2019,14 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 },
                 extra_set_cookies=[self._build_cookie_header(CSRF_COOKIE, refreshed_csrf, max_age=SESSION_MAX_AGE_SECONDS, http_only=False)],
             )
-            return
+            return True
 
-        if self.path == "/logout":
+        if parsed.path == "/logout":
             if not self._auth_enabled():
                 self._json_response({"status": "auth disabled"})
-                return
+                return True
             if not self._require_auth(api=False):
-                return
+                return True
             csrf_header = self.headers.get("X-CSRF-Token", "")
             if not self._validate_csrf(csrf_header):
                 self._json_response({"error": "csrf validation failed"}, status=HTTPStatus.FORBIDDEN)
@@ -2311,37 +2036,32 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             self.send_header("Set-Cookie", self._expire_cookie_header(SESSION_COOKIE, http_only=True))
             self.send_header("Set-Cookie", self._expire_cookie_header(CSRF_COOKIE, http_only=False))
             self.end_headers()
-            return
+            return True
 
-        if self.path == "/check-languages":
+        if parsed.path == "/check-languages":
             if not self._require_auth(api=False):
                 return
             form = self._read_form_payload()
             if not self._validate_csrf(str(form.get("csrf_token", "")).strip()):
                 self._redirect_check_languages(form, message="Security error (CSRF). Please refresh and try again.", level="error")
-                return
+                return True
             self._start_check_languages(form)
-            return
+            return True
 
         if not self._require_auth(api=True):
-            return
+            return True
         csrf_header = self.headers.get("X-CSRF-Token", "")
         if not self._validate_csrf(csrf_header):
             self._json_response({"error": "csrf validation failed"}, status=HTTPStatus.FORBIDDEN)
-            return
+            return True
 
-        if self.path == "/api/seed-urls/add":
+        if parsed.path == "/api/seed-urls/add":
             payload = self._read_json_payload()
             domain = str(payload.get("domain", ""))
             urls_multiline = str(payload.get("urls_multiline", ""))
             try:
                 valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
-                parsed_urls = parse_seed_urls_with_errors(urls_multiline)
-                incoming = parsed_urls["urls"]
-                existing = read_seed_urls(valid_domain)
-                existing_urls = {str(row.get("url", "")) for row in existing.get("urls", []) if isinstance(row, dict) and row.get("url")}
-                merged = sorted(existing_urls | set(incoming))
-                saved = write_seed_urls(valid_domain, merged)
+                saved = seed_urls_service.add_seed_urls(domain=valid_domain, urls_multiline=urls_multiline)
                 _register_domain(valid_domain)
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -2349,7 +2069,6 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
                 return
-            saved["validation_errors"] = parsed_urls["errors"]
             self._json_response(saved)
             return
 
@@ -2358,16 +2077,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             domain = str(payload.get("domain", ""))
             try:
                 valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
-                normalized = normalize_seed_url(str(payload.get("url", "")))
-                if normalized is None:
-                    raise ValueError("url is required")
-                existing = read_seed_urls(valid_domain)
-                remaining = [
-                    str(row.get("url"))
-                    for row in existing.get("urls", [])
-                    if isinstance(row, dict) and row.get("url") and str(row.get("url")) != normalized
-                ]
-                saved = write_seed_urls(valid_domain, remaining)
+                saved = seed_urls_service.delete_seed_url(domain=valid_domain, url=str(payload.get("url", "")))
                 _register_domain(valid_domain)
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -2383,7 +2093,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             domain = str(payload.get("domain", ""))
             try:
                 valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
-                saved = write_seed_urls(valid_domain, [])
+                saved = seed_urls_service.clear_seed_urls(domain=valid_domain)
                 _register_domain(valid_domain)
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -2403,9 +2113,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
                 if not isinstance(recipe, dict):
                     raise ValueError("recipe object is required")
-                saved = upsert_recipe(valid_domain, recipe)
                 _register_domain(valid_domain)
-                self._json_response({"recipe": saved, "recipes": list_recipes(valid_domain)})
+                self._json_response(recipes_service.upsert_recipe_for_domain(valid_domain, recipe))
             except ValueError as exc:
                 self._json_response(
                     {
@@ -2468,29 +2177,10 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 updated_rows: list[dict] = []
                 attach_changed = False
                 if attach_to_url:
-                    normalized_url = normalize_seed_url(raw_url)
-                    if not normalized_url:
-                        raise ValueError("url is required when attach_to_url=true")
-                    seed_payload = read_seed_urls(valid_domain)
-                    rows = [row for row in seed_payload.get("urls", []) if isinstance(row, dict)]
-                    match = next((row for row in rows if str(row.get("url", "")) == normalized_url), None)
-                    if match is None:
-                        raise ValueError("url not found in seed_urls")
-                    current_ids = match.get("recipe_ids", [])
-                    normalized_ids = list(current_ids) if isinstance(current_ids, list) else []
-                    recipe_ids = sorted({str(item).strip() for item in normalized_ids if str(item).strip()} | {recipe_id})
-                    updated_rows = [dict(row) for row in rows]
-                    for row in updated_rows:
-                        if str(row.get("url", "")) == normalized_url:
-                            existing_ids = row.get("recipe_ids", [])
-                            normalized_existing = list(existing_ids) if isinstance(existing_ids, list) else []
-                            canonical_existing = sorted({str(item).strip() for item in normalized_existing if str(item).strip()})
-                            if recipe_ids != canonical_existing:
-                                attach_changed = True
-                            row["recipe_ids"] = recipe_ids
+                    updated_rows, attach_changed = recipes_service.attach_recipe_to_seed_url(valid_domain, recipe_id, raw_url)
                 saved_recipe = upsert_recipe(valid_domain, _compat_recipe_for_storage(recipe))
                 if attach_to_url and attach_changed:
-                    _write_seed_rows_preserve_order(valid_domain, updated_rows)
+                    recipes_service.write_seed_rows_preserve_order(valid_domain, updated_rows)
                 if attach_to_url:
                     attached = True
                 _register_domain(valid_domain)
@@ -2519,22 +2209,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
                 if not recipe_id:
                     raise ValueError("recipe_id is required")
-                recipes = delete_recipe(valid_domain, recipe_id)
-                seed_payload = read_seed_urls(valid_domain)
-                rows = [row for row in seed_payload.get("urls", []) if isinstance(row, dict)]
-                merged_rows: list[dict] = []
-                changed = False
-                for row in rows:
-                    next_row = dict(row)
-                    current_ids = row.get("recipe_ids", [])
-                    normalized_ids = list(current_ids) if isinstance(current_ids, list) else []
-                    filtered_ids = [rid for rid in normalized_ids if str(rid).strip() and str(rid).strip() != recipe_id]
-                    if filtered_ids != normalized_ids:
-                        changed = True
-                    next_row["recipe_ids"] = filtered_ids
-                    merged_rows.append(next_row)
-                saved = _write_seed_rows_preserve_order(valid_domain, merged_rows) if changed else seed_payload
-                self._json_response({"status": "ok", "error": "", "recipe_id": recipe_id, "recipes": recipes, "seed_urls": saved})
+                self._json_response(recipes_service.delete_recipe_for_domain(valid_domain, recipe_id))
             except ValueError as exc:
                 self._json_response({"status": "failed", "error": str(exc), "recipe_id": recipe_id}, status=HTTPStatus.BAD_REQUEST)
             except Exception as exc:
@@ -2549,19 +2224,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
                 if not isinstance(row, dict):
                     raise ValueError("row object is required")
-                existing = read_seed_urls(valid_domain)
-                rows = [r for r in existing.get("urls", []) if isinstance(r, dict)]
-                normalized_url = normalize_seed_url(str(row.get("url", "")))
-                if normalized_url is None:
-                    raise ValueError("row.url is required")
-                merged = [r for r in rows if str(r.get("url")) != normalized_url]
-                merged.append({
-                    "url": normalized_url,
-                    "description": row.get("description"),
-                    "recipe_ids": row.get("recipe_ids", []),
-                    "active": bool(row.get("active", True)),
-                })
-                saved = write_seed_rows(valid_domain, merged)
+                saved = seed_urls_service.upsert_seed_row(domain=valid_domain, row=row)
                 _register_domain(valid_domain)
                 self._json_response(saved)
             except ValueError as exc:
@@ -3218,7 +2881,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 "target_language": target_language,
                 "target_url": generated_target_url,
             })
-            t = threading.Thread(target=_prepare_check_languages_async, args=(job_id, run_domain, en_run_id, target_language, target_run_id, generated_target_url), daemon=True)
+            t = threading.Thread(target=_run_check_languages_async, args=(job_id, run_domain, en_run_id, target_language, target_run_id, generated_target_url), daemon=True)
             t.start()
             ok_message = "Language check payload preparation started."
 
