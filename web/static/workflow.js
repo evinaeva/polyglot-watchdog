@@ -2,15 +2,11 @@ const wfDomain = document.getElementById('wfDomain');
 const wfRefreshUrls = document.getElementById('wfRefreshUrls');
 const wfSavedUrls = document.getElementById('wfSavedUrls');
 const wfStartCapture = document.getElementById('wfStartCapture');
-const wfGenerateDataset = document.getElementById('wfGenerateDataset');
 const wfContinuePulls = document.getElementById('wfContinuePulls');
 const wfStatus = document.getElementById('wfStatus');
 const wfStatusSummary = document.getElementById('wfStatusSummary');
-const wfPayload = document.getElementById('wfPayload');
-const wfTransition = document.getElementById('wfTransition');
 const wfExistingRuns = document.getElementById('wfExistingRuns');
 const wfUseExistingRun = document.getElementById('wfUseExistingRun');
-const wfRefreshRuns = document.getElementById('wfRefreshRuns');
 const wfRunsStatus = document.getElementById('wfRunsStatus');
 const wfContextsStatus = document.getElementById('wfContextsStatus');
 const wfContextsTable = document.getElementById('wfContextsTable');
@@ -168,9 +164,6 @@ function renderStatus(payload) {
   wfStatusSummary.innerHTML = rows.map(([label, value]) => `<dt>${label}</dt><dd>${value}</dd>`).join('');
 }
 
-function renderTechnicalDetails(payload) {
-  wfPayload.textContent = JSON.stringify(payload || {}, null, 2);
-}
 
 function setContinueLink(domain, runId, enabled) {
   if (!domain || !runId || !enabled) {
@@ -186,7 +179,6 @@ function setActionAvailability(payload) {
   const captureStatus = readCaptureStatus(payload);
   const captureReady = captureStatus === 'ready' || captureStatus === 'empty';
 
-  wfGenerateDataset.disabled = !captureReady;
   setContinueLink(wfDomain.value.trim(), activeRunId, captureReady);
 }
 
@@ -432,7 +424,6 @@ async function loadWorkflowStatus() {
   if (!domain || !runId) {
     setStatus('Not started', 'warning');
     wfStatusSummary.innerHTML = '';
-    renderTechnicalDetails({});
     setActionAvailability({});
     await loadContexts();
     return;
@@ -444,7 +435,6 @@ async function loadWorkflowStatus() {
 
   lastPayload = payload;
   renderStatus(payload);
-  renderTechnicalDetails(payload);
   setActionAvailability(payload);
   await loadContexts();
 }
@@ -452,7 +442,6 @@ async function loadWorkflowStatus() {
 async function postAction(path, payload) {
   const response = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
   const data = await safeReadPayload(response);
-  wfTransition.textContent = JSON.stringify(data, null, 2);
   if (!response.ok) {
     const detail = data.error || data.message || `${path} failed (${response.status})`;
     throw new Error(detail);
@@ -480,7 +469,6 @@ async function initWorkflow() {
   });
 
   wfRefreshUrls.addEventListener('click', loadSavedUrls);
-  wfRefreshRuns.addEventListener('click', loadExistingRuns);
 
   wfExistingRuns.addEventListener('change', () => {
     wfUseExistingRun.disabled = !wfExistingRuns.value;
@@ -512,16 +500,6 @@ async function initWorkflow() {
     startPolling();
   });
 
-  wfGenerateDataset.addEventListener('click', async () => {
-    const domain = wfDomain.value.trim();
-    if (!domain || !activeRunId) {
-      setStatus('Start capture first.', 'warning');
-      return;
-    }
-    setStatus('Preparing captured data…', 'warning');
-    await postAction('/api/workflow/generate-eligible-dataset', { domain, run_id: activeRunId });
-    await loadWorkflowStatus();
-  });
 
   const currentCapture = readCaptureStatus(lastPayload || {});
   if (activeRunId && !isCaptureTerminal(currentCapture)) startPolling();

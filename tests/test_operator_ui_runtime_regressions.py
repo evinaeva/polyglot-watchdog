@@ -160,7 +160,7 @@ def test_workflow_runtime_uses_canonical_screenshot_view_url_and_safe_empty_stat
           return el;
         }
 
-        const ids = ['wfDomain','wfRefreshUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
+        const ids = ['wfDomain','wfRefreshUrls','wfStartCapture','wfContinuePulls','wfStatus','wfStatusSummary','wfExistingRuns','wfUseExistingRun','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         els.wfContextsBody.children = [];
 
@@ -409,7 +409,7 @@ def test_workflow_runtime_formats_utc_timestamps_in_tallinn_with_dst():
           };
         }
 
-        const ids = ['wfDomain','wfRefreshUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
+        const ids = ['wfDomain','wfRefreshUrls','wfStartCapture','wfContinuePulls','wfStatus','wfStatusSummary','wfExistingRuns','wfUseExistingRun','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         const sandbox = {
           console,
@@ -449,7 +449,7 @@ def test_workflow_runtime_sorting_uses_raw_utc_timestamp_not_display_value():
             querySelector(){ return makeElement('qs'); },
           };
         }
-        const ids = ['wfDomain','wfRefreshUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
+        const ids = ['wfDomain','wfRefreshUrls','wfStartCapture','wfContinuePulls','wfStatus','wfStatusSummary','wfExistingRuns','wfUseExistingRun','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         const sandbox = {
           console,
@@ -518,7 +518,7 @@ def test_workflow_existing_runs_default_selection_prefers_newest_and_handles_emp
           return el;
         }
 
-        const ids = ['wfDomain','wfRefreshUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
+        const ids = ['wfDomain','wfRefreshUrls','wfStartCapture','wfContinuePulls','wfStatus','wfStatusSummary','wfExistingRuns','wfUseExistingRun','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         els.wfDomain.value = 'example.com';
 
@@ -647,7 +647,7 @@ def test_workflow_existing_runs_preserves_explicit_non_first_query_selection_wit
           };
         }
 
-        const ids = ['wfDomain','wfRefreshUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
+        const ids = ['wfDomain','wfRefreshUrls','wfStartCapture','wfContinuePulls','wfStatus','wfStatusSummary','wfExistingRuns','wfUseExistingRun','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         els.wfDomain.value = 'example.com';
 
@@ -752,7 +752,7 @@ def test_workflow_existing_runs_option_labels_use_human_first_run_format_only():
           };
         }
 
-        const ids = ['wfDomain','wfRefreshUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
+        const ids = ['wfDomain','wfRefreshUrls','wfStartCapture','wfContinuePulls','wfStatus','wfStatusSummary','wfExistingRuns','wfUseExistingRun','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         els.wfDomain.value = 'example.com';
 
@@ -851,7 +851,7 @@ def test_workflow_existing_runs_preserves_active_selected_run_on_reload():
           return el;
         }
 
-        const ids = ['wfDomain','wfRefreshUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
+        const ids = ['wfDomain','wfRefreshUrls','wfStartCapture','wfContinuePulls','wfStatus','wfStatusSummary','wfExistingRuns','wfUseExistingRun','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
 
         const runPayload = {
@@ -936,96 +936,6 @@ def test_upsert_job_status_keeps_utc_storage_timestamps(monkeypatch):
     assert job["updated_at"] == "2026-01-15T10:00:00Z"
 
 
-def test_en_standard_helper_and_pulls_success_message_runtime_flow():
-    repo_root = Path(__file__).resolve().parents[1]
-    if str(repo_root) not in sys.path:
-        sys.path.insert(0, str(repo_root))
-    sys.modules.setdefault(
-        "jsonschema",
-        types.SimpleNamespace(validate=lambda *_a, **_k: None, ValidationError=Exception, Draft7Validator=object),
-    )
-    from app.skeleton_server import _en_standard_display_name_today
-
-    label = _en_standard_display_name_today()
-    assert re.fullmatch(r"EN_standard_\d{2}:\d{2}\|\d{2}\.\d{2}\.\d{4}", label)
-
-    script = textwrap.dedent(
-        r"""
-        const fs = require('fs');
-        const vm = require('vm');
-
-        function makeElement(id='') {
-          const listeners = {};
-          const el = {
-            id,
-            value: '',
-            href: '',
-            innerHTML: '',
-            textContent: '',
-            className: '',
-            dataset: {},
-            disabled: false,
-            children: [],
-            classList: { add(){}, remove(){}, toggle(){} },
-            setAttribute(){},
-            appendChild(child){ this.children.push(child); return child; },
-            append(...nodes){ this.children.push(...nodes); },
-            addEventListener(type, cb){ listeners[type] = cb; },
-            click(){ if (listeners.click) return listeners.click({ target: this }); },
-            querySelector(){ return makeElement('qs'); },
-          };
-          return el;
-        }
-
-        const ids = ['pullsStatus','pullsTable','pullsUrlSearch','pullsElementTypeFilter','pullsLanguageSummary','pullsWorkflowContextSummary','pullsWhitelistInput','pullsWhitelistAdd','pullsWhitelistStatus','pullsWhitelistChips','pullsPrepareCapturedData','pullsPrepareCapturedDataStatus','pullsPreviewModal','pullsPreviewOverlay','pullsPreviewClose','pullsPreviewStatus','pullsPreviewImage','pullsPreviewBbox','pullsPreviewDetails','pullsScreenshotViewport','pullsScreenshotCanvas','pullsZoomIn','pullsZoomOut','pullsCenterElement','pullsImageAssetSection','pullsImageAsset','pullsImageAssetFallback','pullsImageAssetMeta','pullsBackToRunHub','continueCheckLanguages','continueCheckLanguagesBottom','pullsOpenContexts','pullsOpenIssues'];
-        const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
-        els.pullsTable.querySelector = () => ({ innerHTML: '', appendChild(){}, children: [] });
-
-        const sandbox = {
-          console,
-          URL,
-          URLSearchParams,
-          window: { location: { search: '?domain=example.com&run_id=run-1' }, addEventListener(){} },
-          document: {
-            getElementById: (id) => els[id],
-            createElement: () => makeElement('created'),
-            addEventListener() {},
-          },
-          safeReadPayload: async (response) => response.json(),
-          setTimeout: (fn) => { fn(); return 1; },
-          clearTimeout: () => {},
-          ResizeObserver: function(){ this.observe = () => {}; this.disconnect = () => {}; },
-          fetch: async (url, init = {}) => {
-            if (url.startsWith('/api/pulls?')) return { ok: true, status: 200, json: async () => ({ rows: [] }) };
-            if (url.startsWith('/api/element-type-whitelist?')) return { ok: true, status: 200, json: async () => ({ entries: [] }) };
-            if (url === '/api/workflow/generate-eligible-dataset') return { ok: true, status: 200, json: async () => ({ status: 'started' }) };
-            if (url.startsWith('/api/workflow/status?')) {
-              return {
-                ok: true,
-                status: 200,
-                json: async () => ({
-                  eligible_dataset: { status: 'ready', en_standard_display_name: 'EN_standard_18:31|24.03.2026' },
-                  run: { en_standard_display_name: '' },
-                }),
-              };
-            }
-            return { ok: true, status: 200, json: async () => ({}) };
-          },
-        };
-
-        vm.createContext(sandbox);
-        vm.runInContext(fs.readFileSync('web/static/pulls.js', 'utf8'), sandbox);
-
-        (async () => {
-          await sandbox.triggerEligibleDatasetGeneration('example.com', 'run-1');
-          console.log(JSON.stringify({ statusMessage: els.pullsPrepareCapturedDataStatus.textContent }));
-        })().catch((err) => { console.error(err); process.exit(1); });
-        """
-    )
-    out = _run_node_json(script)
-    assert out["statusMessage"] == "Captured data prepared successfully: EN_standard_18:31|24.03.2026."
-
-
 def test_pulls_top_and_bottom_next_step_links_receive_same_runtime_href():
     script = textwrap.dedent(
         r"""
@@ -1054,7 +964,7 @@ def test_pulls_top_and_bottom_next_step_links_receive_same_runtime_href():
           };
         }
 
-        const ids = ['pullsStatus','pullsTable','pullsUrlSearch','pullsElementTypeFilter','pullsLanguageSummary','pullsWorkflowContextSummary','pullsWhitelistInput','pullsWhitelistAdd','pullsWhitelistStatus','pullsWhitelistChips','pullsPrepareCapturedData','pullsPrepareCapturedDataStatus','pullsPreviewModal','pullsPreviewOverlay','pullsPreviewClose','pullsPreviewStatus','pullsPreviewImage','pullsPreviewBbox','pullsPreviewDetails','pullsScreenshotViewport','pullsScreenshotCanvas','pullsZoomIn','pullsZoomOut','pullsCenterElement','pullsImageAssetSection','pullsImageAsset','pullsImageAssetFallback','pullsImageAssetMeta','pullsBackToRunHub','continueCheckLanguages','continueCheckLanguagesBottom','pullsOpenContexts','pullsOpenIssues'];
+        const ids = ['pullsStatus','pullsTable','pullsUrlSearch','pullsElementTypeFilter','pullsLanguageSummary','pullsWorkflowContextSummary','pullsWhitelistInput','pullsWhitelistAdd','pullsWhitelistStatus','pullsWhitelistChips','pullsPreviewModal','pullsPreviewOverlay','pullsPreviewClose','pullsPreviewStatus','pullsPreviewImage','pullsPreviewBbox','pullsPreviewDetails','pullsScreenshotViewport','pullsScreenshotCanvas','pullsZoomIn','pullsZoomOut','pullsCenterElement','pullsImageAssetSection','pullsImageAsset','pullsImageAssetFallback','pullsImageAssetMeta','pullsBackToRunHub','continueCheckLanguages','continueCheckLanguagesBottom','pullsOpenContexts','pullsOpenIssues'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
 
         const sandbox = {
@@ -1120,7 +1030,7 @@ def test_workflow_defaults_to_latest_run_by_timestamp_and_preserves_manual_selec
           return el;
         }
 
-        const ids = ['wfDomain','wfRefreshUrls','wfStartCapture','wfGenerateDataset','wfContinuePulls','wfStatus','wfStatusSummary','wfPayload','wfTransition','wfExistingRuns','wfUseExistingRun','wfRefreshRuns','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
+        const ids = ['wfDomain','wfRefreshUrls','wfStartCapture','wfContinuePulls','wfStatus','wfStatusSummary','wfExistingRuns','wfUseExistingRun','wfRunsStatus','wfContextsStatus','wfContextsTable','wfContextsBody'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         els.wfDomain.value = 'example.com';
         els.wfExistingRuns.options = [];
@@ -1216,12 +1126,11 @@ def test_pulls_respects_explicit_run_and_uses_latest_timestamp_when_missing_and_
             };
           }
 
-          const ids = ['pullsStatus','pullsTable','pullsUrlSearch','pullsElementTypeFilter','pullsLanguageSummary','pullsWorkflowContextSummary','pullsWhitelistInput','pullsWhitelistAdd','pullsWhitelistStatus','pullsWhitelistChips','pullsPrepareCapturedData','pullsPrepareCapturedDataStatus','pullsPreviewModal','pullsPreviewOverlay','pullsPreviewClose','pullsPreviewStatus','pullsPreviewImage','pullsPreviewBbox','pullsPreviewDetails','pullsScreenshotViewport','pullsScreenshotCanvas','pullsZoomIn','pullsZoomOut','pullsCenterElement','pullsImageAssetSection','pullsImageAsset','pullsImageAssetFallback','pullsImageAssetMeta','pullsBackToRunHub','continueCheckLanguages','continueCheckLanguagesBottom','pullsOpenContexts','pullsOpenIssues'];
+          const ids = ['pullsStatus','pullsTable','pullsUrlSearch','pullsElementTypeFilter','pullsLanguageSummary','pullsWorkflowContextSummary','pullsWhitelistInput','pullsWhitelistAdd','pullsWhitelistStatus','pullsWhitelistChips','pullsPreviewModal','pullsPreviewOverlay','pullsPreviewClose','pullsPreviewStatus','pullsPreviewImage','pullsPreviewBbox','pullsPreviewDetails','pullsScreenshotViewport','pullsScreenshotCanvas','pullsZoomIn','pullsZoomOut','pullsCenterElement','pullsImageAssetSection','pullsImageAsset','pullsImageAssetFallback','pullsImageAssetMeta','pullsBackToRunHub','continueCheckLanguages','continueCheckLanguagesBottom','pullsOpenContexts','pullsOpenIssues'];
           const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
           const pullCalls = [];
           const runsCalls = [];
           const replaced = [];
-          const generatedRunIds = [];
 
           const sandbox = {
             console,
@@ -1254,23 +1163,6 @@ def test_pulls_respects_explicit_run_and_uses_latest_timestamp_when_missing_and_
               if (url.startsWith('/api/workflow/status?')) {
                 return { ok: true, status: 200, json: async () => ({ eligible_dataset: { status: 'ready', en_standard_display_name: 'EN_standard_10:00|29.03.2026' }, run: {} }) };
               }
-              if (url === '/api/workflow/generate-eligible-dataset') {
-                if (init?.body) {
-                  const parsed = JSON.parse(init.body);
-                  generatedRunIds.push(parsed.run_id || '');
-                }
-                return {
-                  ok: true,
-                  status: 200,
-                  json: async () => ({ status: 'started' }),
-                  text: async () => '',
-                  body: {
-                    getReader: () => ({
-                      read: async () => ({ done: true, value: null }),
-                    }),
-                  },
-                };
-              }
               return { ok: true, status: 200, json: async () => ({}) };
             },
           };
@@ -1279,7 +1171,6 @@ def test_pulls_respects_explicit_run_and_uses_latest_timestamp_when_missing_and_
           vm.runInContext(fs.readFileSync('web/static/pulls.js', 'utf8'), sandbox);
           return new Promise((resolve) => setTimeout(async () => {
             if (mutateSearchAfterInit) sandbox.window.location.search = mutateSearchAfterInit;
-            await els.pullsPrepareCapturedData.dispatch('click');
             resolve({
               pullCalls,
               runsCalls,
@@ -1288,8 +1179,6 @@ def test_pulls_respects_explicit_run_and_uses_latest_timestamp_when_missing_and_
               contextHref: els.pullsOpenContexts.href,
               issuesHref: els.pullsOpenIssues.href,
               nextHref: els.continueCheckLanguages.href,
-              prepareStatus: els.pullsPrepareCapturedDataStatus.textContent,
-              generatedRunIds,
             });
           }, 0));
         }
@@ -1308,12 +1197,9 @@ def test_pulls_respects_explicit_run_and_uses_latest_timestamp_when_missing_and_
     assert out["explicit"]["contextHref"].endswith("domain=example.com&run_id=run-zzz")
     assert out["explicit"]["issuesHref"].endswith("domain=example.com&run_id=run-zzz")
     assert out["explicit"]["nextHref"].endswith("domain=example.com&en_run_id=run-zzz")
-    assert out["explicit"]["prepareStatus"] == "Captured data prepared successfully: EN_standard_10:00|29.03.2026."
-    assert out["explicit"]["generatedRunIds"] == ["run-zzz"]
     assert any("run_id=run-aaa" in call for call in out["inferred"]["pullCalls"])
     assert len(out["inferred"]["runsCalls"]) == 1
     assert any("run_id=run-aaa" in url for url in out["inferred"]["replaced"])
-    assert out["inferred"]["generatedRunIds"] == ["run-aaa"]
 
 
 def test_urls_saved_domain_menu_filters_malformed_values_and_supports_selection():
@@ -1447,7 +1333,7 @@ def test_pulls_advanced_primary_labels_are_readable_and_user_tier_defaults_to_fr
           };
         }
 
-        const ids = ['pullsStatus','pullsTable','pullsUrlSearch','pullsElementTypeFilter','pullsLanguageSummary','pullsWorkflowContextSummary','pullsWhitelistInput','pullsWhitelistAdd','pullsWhitelistStatus','pullsWhitelistChips','pullsPrepareCapturedData','pullsPrepareCapturedDataStatus','pullsPreviewModal','pullsPreviewOverlay','pullsPreviewClose','pullsPreviewStatus','pullsPreviewImage','pullsPreviewBbox','pullsPreviewDetails','pullsScreenshotViewport','pullsScreenshotCanvas','pullsZoomIn','pullsZoomOut','pullsCenterElement','pullsImageAssetSection','pullsImageAsset','pullsImageAssetFallback','pullsImageAssetMeta','pullsBackToRunHub','continueCheckLanguages','continueCheckLanguagesBottom','pullsOpenContexts','pullsOpenIssues'];
+        const ids = ['pullsStatus','pullsTable','pullsUrlSearch','pullsElementTypeFilter','pullsLanguageSummary','pullsWorkflowContextSummary','pullsWhitelistInput','pullsWhitelistAdd','pullsWhitelistStatus','pullsWhitelistChips','pullsPreviewModal','pullsPreviewOverlay','pullsPreviewClose','pullsPreviewStatus','pullsPreviewImage','pullsPreviewBbox','pullsPreviewDetails','pullsScreenshotViewport','pullsScreenshotCanvas','pullsZoomIn','pullsZoomOut','pullsCenterElement','pullsImageAssetSection','pullsImageAsset','pullsImageAssetFallback','pullsImageAssetMeta','pullsBackToRunHub','continueCheckLanguages','continueCheckLanguagesBottom','pullsOpenContexts','pullsOpenIssues'];
         const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
         els.pullsTable.querySelector = () => ({ innerHTML: '', appendChild(){}, children: [] });
 

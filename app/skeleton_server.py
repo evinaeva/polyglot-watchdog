@@ -3715,7 +3715,6 @@ class SkeletonHandler(BaseHTTPRequestHandler):
 
         run_query = urlencode({"domain": domain, "run_id": target_run_id}) if domain and target_run_id else ""
         issues_link = f"/?{run_query}" if run_query else "#"
-        issues_api_link = f"/api/issues?{run_query}" if run_query else "#"
 
         notices: list[str] = []
         if message:
@@ -3936,7 +3935,6 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 "{{llm_review}}": llm_review_block,
                 "{{llm_launch_status}}": llm_launch_status_block,
                 "{{issues_link}}": _h(issues_link),
-                "{{issues_api_link}}": _h(issues_api_link),
                 "{{prepare_disabled}}": prepare_disabled_attr,
                 "{{run_llm_disabled}}": llm_disabled_attr,
                 "{{payload_preview}}": payload_preview_block,
