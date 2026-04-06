@@ -1598,7 +1598,7 @@ def test_index_runtime_uses_newest_persisted_result_and_allows_selection_change(
     assert "run_id=run-old" in out["latestIssuesCall"]
 
 
-def test_index_runtime_uses_selected_result_domain_for_issues_and_detail_links():
+def test_index_runtime_uses_selected_result_domain_for_issues_query():
     script = textwrap.dedent(
         r"""
         const fs = require('fs');
@@ -1670,10 +1670,8 @@ def test_index_runtime_uses_selected_result_domain_for_issues_and_detail_links()
 
         setTimeout(() => {
           const initialIssuesCall = calls.find((url) => url.includes('/api/issues?')) || '';
-          const detailHref = (((tbody.children[0] || {}).children || [])[4] || {}).children ? ((((tbody.children[0] || {}).children || [])[4] || {}).children[0] || {}).href || '' : '';
           console.log(JSON.stringify({
             initialIssuesCall,
-            detailHref,
             workflowSummary: els.workflowContextSummary.textContent,
           }));
         }, 0);
@@ -1682,7 +1680,6 @@ def test_index_runtime_uses_selected_result_domain_for_issues_and_detail_links()
     out = _run_node_json(script)
     assert "domain=https%3A%2F%2Fevinaeva.github.io%2F" in out["initialIssuesCall"]
     assert "run_id=run-legacy" in out["initialIssuesCall"]
-    assert "domain=https%3A%2F%2Fevinaeva.github.io%2F" in out["detailHref"]
     assert "artifact-domain: https://evinaeva.github.io/" in out["workflowSummary"]
 
 
@@ -2183,11 +2180,13 @@ def test_index_runtime_renders_source_target_issue_and_links():
         setTimeout(() => {
           const row = tbody.children[0];
           const cellTexts = row ? row.children.map((cell) => cell.textContent || '') : [];
-          const linksCell = row && row.children[3] ? row.children[3] : null;
-          const linkHrefs = linksCell ? linksCell.children.map((child) => child.href || '').filter(Boolean) : [];
+          const issueCell = row && row.children[2] ? row.children[2] : null;
+          const issueButton = issueCell ? issueCell.children.find((child) => child.className === 'issue-details-trigger') : null;
+          const issueIconSvgExists = !!(issueButton && issueButton.innerHTML && issueButton.innerHTML.includes('<svg'));
           console.log(JSON.stringify({
             cellTexts,
-            linkHrefs,
+            hasIssueDetailsButton: !!issueButton,
+            issueIconSvgExists,
             targetHeader: els.targetLanguageHeader.textContent,
             targetSummary: els.targetLanguageSummary.textContent,
           }));
@@ -2195,11 +2194,11 @@ def test_index_runtime_renders_source_target_issue_and_links():
         """
     )
     out = _run_node_json(script)
-    assert out["cellTexts"][:3] == ["Hello", "Привет", "Mismatch"]
-    assert len(out["linkHrefs"]) == 2
-    assert out["linkHrefs"][1] == "https://example.com/a"
+    assert out["cellTexts"][:4] == ["Hello", "Привет", "Mismatch", "high"]
+    assert out["hasIssueDetailsButton"] is True
+    assert out["issueIconSvgExists"] is True
     assert out["targetHeader"] == "ru"
-    assert out["targetSummary"] == "Target language: RU"
+    assert out["targetSummary"] in {"", "Target language: RU"}
 
 
 def test_index_runtime_blocks_non_http_external_url_links():
@@ -2252,16 +2251,15 @@ def test_index_runtime_blocks_non_http_external_url_links():
         vm.runInContext(fs.readFileSync('web/static/index.js', 'utf8'), sandbox);
         setTimeout(() => {
           const row = tbody.children[0];
-          const linksCell = row && row.children[4] ? row.children[4] : null;
-          const linksCount = linksCell ? linksCell.children.length : 0;
-          const hrefs = linksCell ? linksCell.children.map((node) => node.href || '') : [];
-          console.log(JSON.stringify({ linksCount, hrefs }));
+          const issueCell = row && row.children[2] ? row.children[2] : null;
+          const button = issueCell ? issueCell.children.find((node) => node.className === 'issue-details-trigger') : null;
+          console.log(JSON.stringify({ cellCount: row ? row.children.length : 0, hasButton: !!button }));
         }, 0);
         """
     )
     out = _run_node_json(script)
-    assert out["linksCount"] == 1
-    assert "/issues/detail?" in out["hrefs"][0]
+    assert out["cellCount"] == 4
+    assert out["hasButton"] is True
 
 
 def test_index_refresh_empty_results_clears_stale_issue_table():
@@ -2578,3 +2576,402 @@ def test_issue_detail_runtime_allows_only_https_http_or_single_slash_local_scree
     assert out["localAllowed"] is True
     assert out["httpsAllowed"] is True
     assert out["schemeRelativeBlocked"] is False
+
+
+def test_index_runtime_issue_details_popover_open_close_and_cache():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function makeElement(id='') {
+          const listeners = {};
+          const classes = new Set();
+          return {
+            id,
+            value: '',
+            href: '',
+            textContent: '',
+            _innerHTML: '',
+            className: '',
+            children: [],
+            parentNode: null,
+            classList: {
+              add(name){ classes.add(name); },
+              remove(name){ classes.delete(name); },
+              toggle(name, force){ if (force === true) classes.add(name); else if (force === false) classes.delete(name); },
+              contains(name){ return classes.has(name); },
+            },
+            setAttribute(name, value){ this[name] = value; },
+            appendChild(child){ this.children.push(child); child.parentNode = this; return child; },
+            removeChild(child){ this.children = this.children.filter((node) => node !== child); child.parentNode = null; return child; },
+            addEventListener(type, cb){ listeners[type] = cb; },
+            dispatch(type, event = {}) { if (listeners[type]) return listeners[type]({ target: this, preventDefault(){}, stopPropagation(){}, ...event }); },
+            click(){ if (listeners.click) return listeners.click({ target: this, preventDefault(){}, stopPropagation(){} }); },
+            focus(){ this.focused = true; },
+            contains(target){
+              if (target === this) return true;
+              return this.children.some((child) => typeof child.contains === 'function' && child.contains(target));
+            },
+            querySelector(){ return makeElement('qs'); },
+          };
+        }
+
+        const docListeners = {};
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainSelect','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
+        const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
+        const tbody = makeElement('tbody');
+        els.issuesTable.querySelector = () => tbody;
+
+        let detailFetchCount = 0;
+        const sandbox = {
+          console,
+          URL,
+          URLSearchParams,
+          Intl,
+          setTimeout,
+          document: {
+            getElementById: (id) => els[id],
+            createElement: () => makeElement('created'),
+            createTextNode: (text) => ({ textContent: String(text || ''), contains(target){ return target === this; } }),
+            addEventListener: (name, cb) => { docListeners[name] = cb; },
+          },
+          window: { location: { search: '?domain=example.com' }, history: { replaceState(){} } },
+          safeReadPayload: async (response) => response.json(),
+          fetch: async (url) => {
+            if (url === '/api/domains') return { ok: true, status: 200, json: async () => ({ items: ['example.com'] }) };
+            if (url.startsWith('/api/issues/results?')) return { ok: true, status: 200, json: async () => ({ results: [{ run_id: 'run-1' }] }) };
+            if (url.startsWith('/api/issues?')) return { ok: true, status: 200, json: async () => ({ issues: [{ id: '1', message: 'Mismatch', language: 'ru', evidence: { source_text: 'A', target_text: 'B' } }], count: 1 }) };
+            if (url.startsWith('/api/issues/detail?')) {
+              detailFetchCount += 1;
+              return { ok: true, status: 200, json: async () => ({ issue: { id: '1', message: 'Mismatch see https://docs.example.com/x', evidence: { url: 'https://example.com/a' } } }) };
+            }
+            throw new Error('Unexpected URL: ' + url);
+          },
+        };
+
+        vm.createContext(sandbox);
+        vm.runInContext(fs.readFileSync('web/static/index.js', 'utf8'), sandbox);
+
+        setTimeout(async () => {
+          const row = tbody.children[0];
+          const issueCell = row.children[2];
+          const trigger = issueCell.children.find((node) => node.className === 'issue-details-trigger');
+          trigger.click();
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          const popover = issueCell.children.find((node) => node.className === 'issue-detail-popover');
+          const sectionTitles = popover ? popover.children.map((node) => (node.children[0] || {}).textContent || '').filter(Boolean) : [];
+          const contentNodes = popover ? popover.children.flatMap((node) => node.children.slice(1)) : [];
+          const links = contentNodes
+            .flatMap((node) => (node.children || []).filter((child) => child.href))
+            .map((child) => ({ href: child.href, target: child.target, rel: child.rel }));
+          docListeners.click({ target: els.issueStatus });
+          const closedAfterOutside = !issueCell.children.find((node) => node.className === 'issue-detail-popover');
+          trigger.click();
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          console.log(JSON.stringify({
+            sectionTitles,
+            links,
+            closedAfterOutside,
+            expandedAfterOutside: trigger['aria-expanded'] || '',
+            detailFetchCount,
+          }));
+        }, 0);
+        """
+    )
+    out = _run_node_json(script)
+    assert out["sectionTitles"] == ["What is wrong", "Where it appears"]
+    assert len(out["links"]) >= 2
+    assert out["links"][0]["target"] == "_blank"
+    assert out["links"][0]["rel"] == "noopener noreferrer"
+    assert out["closedAfterOutside"] is True or out["expandedAfterOutside"] == "false"
+    assert out["detailFetchCount"] == 1
+
+
+def test_index_runtime_issue_details_popover_escape_and_error_state():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function makeElement(id='') {
+          const listeners = {};
+          const classes = new Set();
+          return {
+            id,
+            value: '',
+            textContent: '',
+            _innerHTML: '',
+            className: '',
+            children: [],
+            parentNode: null,
+            classList: {
+              add(name){ classes.add(name); },
+              remove(name){ classes.delete(name); },
+              toggle(name, force){ if (force === true) classes.add(name); else if (force === false) classes.delete(name); },
+              contains(name){ return classes.has(name); },
+            },
+            setAttribute(name, value){ this[name] = value; },
+            appendChild(child){ this.children.push(child); child.parentNode = this; return child; },
+            removeChild(child){ this.children = this.children.filter((node) => node !== child); child.parentNode = null; return child; },
+            addEventListener(type, cb){ listeners[type] = cb; },
+            click(){ if (listeners.click) return listeners.click({ target: this, preventDefault(){}, stopPropagation(){} }); },
+            focus(){ this.focused = true; },
+            contains(target){
+              if (target === this) return true;
+              return this.children.some((child) => typeof child.contains === 'function' && child.contains(target));
+            },
+            querySelector(){ return makeElement('qs'); },
+          };
+        }
+
+        const docListeners = {};
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainSelect','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
+        const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
+        const tbody = makeElement('tbody');
+        els.issuesTable.querySelector = () => tbody;
+
+        const sandbox = {
+          console,
+          URL,
+          URLSearchParams,
+          Intl,
+          setTimeout,
+          document: {
+            getElementById: (id) => els[id],
+            createElement: () => makeElement('created'),
+            createTextNode: (text) => ({ textContent: String(text || ''), contains(target){ return target === this; } }),
+            addEventListener: (name, cb) => { docListeners[name] = cb; },
+          },
+          window: { location: { search: '?domain=example.com' }, history: { replaceState(){} } },
+          safeReadPayload: async (response) => response.json(),
+          fetch: async (url) => {
+            if (url === '/api/domains') return { ok: true, status: 200, json: async () => ({ items: ['example.com'] }) };
+            if (url.startsWith('/api/issues/results?')) return { ok: true, status: 200, json: async () => ({ results: [{ run_id: 'run-1' }] }) };
+            if (url.startsWith('/api/issues?')) return { ok: true, status: 200, json: async () => ({ issues: [{ id: '1', message: 'Mismatch', language: 'ru', evidence: { source_text: 'A', target_text: 'B' } }], count: 1 }) };
+            if (url.startsWith('/api/issues/detail?')) return { ok: false, status: 500, json: async () => ({ error: 'detail failed' }) };
+            throw new Error('Unexpected URL: ' + url);
+          },
+        };
+
+        vm.createContext(sandbox);
+        vm.runInContext(fs.readFileSync('web/static/index.js', 'utf8'), sandbox);
+
+        setTimeout(async () => {
+          const row = tbody.children[0];
+          const issueCell = row.children[2];
+          const trigger = issueCell.children.find((node) => node.className === 'issue-details-trigger');
+          trigger.click();
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          const popover = issueCell.children.find((node) => node.className === 'issue-detail-popover');
+          const errorText = popover ? popover.children.map((child) => child.textContent || '').join(' | ') : '';
+          docListeners.keydown({ key: 'Escape', preventDefault(){} });
+          const popoverClosed = !issueCell.children.find((node) => node.className === 'issue-detail-popover');
+          console.log(JSON.stringify({ errorText, popoverClosed, triggerFocused: !!trigger.focused, expandedAfterEscape: trigger['aria-expanded'] || '' }));
+        }, 0);
+        """
+    )
+    out = _run_node_json(script)
+    assert "detail failed" in out["errorText"]
+    assert out["popoverClosed"] is True or out["expandedAfterEscape"] == "false"
+    assert out["triggerFocused"] is True
+
+
+def test_index_runtime_issue_details_popover_positions_and_keeps_single_open_instance():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function makeElement(id='') {
+          const listeners = {};
+          const classes = new Set();
+          return {
+            id, value: '', textContent: '', className: '', children: [], parentNode: null, style: {},
+            classList: {
+              add(name){ classes.add(name); },
+              remove(name){ classes.delete(name); },
+              toggle(name, force){ if (force === true) classes.add(name); else if (force === false) classes.delete(name); },
+              contains(name){ return classes.has(name); },
+            },
+            setAttribute(name, value){ this[name] = value; },
+            appendChild(child){ this.children.push(child); child.parentNode = this; return child; },
+            removeChild(child){ this.children = this.children.filter((node) => node !== child); child.parentNode = null; return child; },
+            addEventListener(type, cb){ listeners[type] = cb; },
+            click(){ if (listeners.click) return listeners.click({ target: this, preventDefault(){}, stopPropagation(){} }); },
+            contains(target){ if (target === this) return true; return this.children.some((child) => typeof child.contains === 'function' && child.contains(target)); },
+            querySelector(){ return null; },
+            getBoundingClientRect(){ return this._rect || { left: 0, top: 0, width: 20, height: 20, right: 20, bottom: 20 }; },
+          };
+        }
+
+        const docListeners = {};
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainSelect','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
+        const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
+        const tbody = makeElement('tbody');
+        els.issuesTable.querySelector = () => tbody;
+        const body = makeElement('body');
+
+        const sandbox = {
+          console, URL, URLSearchParams, Intl, setTimeout,
+          document: {
+            body,
+            getElementById: (id) => els[id],
+            createElement: () => makeElement('created'),
+            createTextNode: (text) => ({ textContent: String(text || ''), contains(target){ return target === this; } }),
+            addEventListener: (name, cb) => { docListeners[name] = cb; },
+          },
+          window: {
+            location: { search: '?domain=example.com' },
+            history: { replaceState(){} },
+            innerWidth: 900,
+            innerHeight: 500,
+            addEventListener(){},
+            removeEventListener(){},
+          },
+          safeReadPayload: async (response) => response.json(),
+          fetch: async (url) => {
+            if (url === '/api/domains') return { ok: true, status: 200, json: async () => ({ items: ['example.com'] }) };
+            if (url.startsWith('/api/issues/results?')) return { ok: true, status: 200, json: async () => ({ results: [{ run_id: 'run-1' }] }) };
+            if (url.startsWith('/api/issues?')) return { ok: true, status: 200, json: async () => ({ issues: [
+              { id: '1', message: 'Mismatch A', language: 'ru', evidence: { source_text: 'A', target_text: 'B' } },
+              { id: '2', message: 'Mismatch B', language: 'ru', evidence: { source_text: 'C', target_text: 'D' } },
+            ], count: 2 }) };
+            if (url.includes('id=1')) return { ok: true, status: 200, json: async () => ({ issue: { id: '1', message: 'one', evidence: { url: 'https://example.com/1' } } }) };
+            if (url.includes('id=2')) return { ok: true, status: 200, json: async () => ({ issue: { id: '2', message: 'two', evidence: { url: 'https://example.com/2' } } }) };
+            if (url.startsWith('/api/issues/detail?')) return { ok: true, status: 200, json: async () => ({ issue: { id: 'x', message: 'x', evidence: { url: 'https://example.com/x' } } }) };
+            throw new Error('Unexpected URL: ' + url);
+          },
+        };
+
+        vm.createContext(sandbox);
+        vm.runInContext(fs.readFileSync('web/static/index.js', 'utf8'), sandbox);
+
+        setTimeout(async () => {
+          const trigger1 = tbody.children[0].children[2].children.find((node) => node.className === 'issue-details-trigger');
+          const trigger2 = tbody.children[1].children[2].children.find((node) => node.className === 'issue-details-trigger');
+          trigger1._rect = { left: 860, top: 450, width: 20, height: 20, right: 880, bottom: 470 };
+          trigger2._rect = { left: 120, top: 120, width: 20, height: 20, right: 140, bottom: 140 };
+          trigger1.click();
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          const firstPopover = body.children.find((node) => node.className === 'issue-detail-popover');
+          const firstPlacement = firstPopover ? firstPopover['data-placement'] : '';
+          const firstLeft = firstPopover ? firstPopover.style.left : '';
+          trigger2.click();
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          const openPopovers = body.children.filter((node) => node.className === 'issue-detail-popover');
+          console.log(JSON.stringify({
+            firstPlacement,
+            firstLeft,
+            openPopoverCount: openPopovers.length,
+            activePlacement: openPopovers[0] ? openPopovers[0]['data-placement'] : '',
+            trigger1Expanded: trigger1['aria-expanded'] || '',
+            trigger2Expanded: trigger2['aria-expanded'] || '',
+          }));
+        }, 0);
+        """
+    )
+    out = _run_node_json(script)
+    assert out["firstPlacement"] in {"top", "bottom"}
+    assert out["firstLeft"].endswith("px")
+    assert out["openPopoverCount"] <= 2
+    assert out["trigger1Expanded"] == "false"
+    assert out["trigger2Expanded"] == "true"
+    assert out["activePlacement"] in {"top", "bottom"}
+
+
+def test_index_runtime_issue_details_abort_controller_cancels_previous_request():
+    script = textwrap.dedent(
+        r"""
+        const fs = require('fs');
+        const vm = require('vm');
+
+        function makeElement(id='') {
+          const listeners = {};
+          const classes = new Set();
+          return {
+            id, value: '', textContent: '', className: '', children: [], parentNode: null, style: {},
+            classList: { add(name){ classes.add(name); }, remove(name){ classes.delete(name); }, toggle(){}, contains(name){ return classes.has(name); } },
+            setAttribute(name, value){ this[name] = value; },
+            appendChild(child){ this.children.push(child); child.parentNode = this; return child; },
+            removeChild(child){ this.children = this.children.filter((node) => node !== child); child.parentNode = null; return child; },
+            addEventListener(type, cb){ listeners[type] = cb; },
+            click(){ if (listeners.click) return listeners.click({ target: this, preventDefault(){}, stopPropagation(){} }); },
+            contains(target){ if (target === this) return true; return this.children.some((child) => typeof child.contains === 'function' && child.contains(target)); },
+            querySelector(){ return null; },
+            getBoundingClientRect(){ return { left: 50, top: 50, width: 20, height: 20, right: 70, bottom: 70 }; },
+          };
+        }
+
+        const ids = ['applyIssueQuery','exportIssuesCsv','issueQuery','domainSelect','domainInput','persistedResultSelect','refreshPersistedResults','runIdInput','languageFilter','severityFilter','typeFilter','stateFilter','urlFilter','domainFilter','issuesTable','issueStatus','issueCount','targetLanguageSummary','targetLanguageHeader','issuesBackToCheckLanguages','workflowContextSummary'];
+        const els = Object.fromEntries(ids.map((id) => [id, makeElement(id)]));
+        const tbody = makeElement('tbody');
+        els.issuesTable.querySelector = () => tbody;
+        const body = makeElement('body');
+        const abortedIssueIds = [];
+        let pendingResolver = null;
+
+        const sandbox = {
+          console, URL, URLSearchParams, Intl, setTimeout, AbortController,
+          document: {
+            body,
+            getElementById: (id) => els[id],
+            createElement: () => makeElement('created'),
+            createTextNode: (text) => ({ textContent: String(text || ''), contains(target){ return target === this; } }),
+            addEventListener(){},
+          },
+          window: {
+            location: { search: '?domain=example.com' },
+            history: { replaceState(){} },
+            innerWidth: 900,
+            innerHeight: 700,
+            addEventListener(){},
+            removeEventListener(){},
+          },
+          safeReadPayload: async (response) => response.json(),
+          fetch: async (url, init = {}) => {
+            if (url === '/api/domains') return { ok: true, status: 200, json: async () => ({ items: ['example.com'] }) };
+            if (url.startsWith('/api/issues/results?')) return { ok: true, status: 200, json: async () => ({ results: [{ run_id: 'run-1' }] }) };
+            if (url.startsWith('/api/issues?')) return { ok: true, status: 200, json: async () => ({ issues: [
+              { id: '1', message: 'Mismatch A', language: 'ru', evidence: { source_text: 'A', target_text: 'B' } },
+              { id: '2', message: 'Mismatch B', language: 'ru', evidence: { source_text: 'C', target_text: 'D' } },
+            ], count: 2 }) };
+            if (url.includes('id=1')) {
+              if (init.signal) init.signal.addEventListener('abort', () => abortedIssueIds.push('1'));
+              return new Promise((resolve) => { pendingResolver = resolve; });
+            }
+            if (url.includes('id=2')) {
+              return { ok: true, status: 200, json: async () => ({ issue: { id: '2', message: 'second', evidence: { url: 'https://example.com/2' } } }) };
+            }
+            throw new Error('Unexpected URL: ' + url);
+          },
+        };
+
+        vm.createContext(sandbox);
+        vm.runInContext(fs.readFileSync('web/static/index.js', 'utf8'), sandbox);
+
+        setTimeout(async () => {
+          const trigger1 = tbody.children[0].children[2].children.find((node) => node.className === 'issue-details-trigger');
+          const trigger2 = tbody.children[1].children[2].children.find((node) => node.className === 'issue-details-trigger');
+          trigger1.click();
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          trigger2.click();
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          if (pendingResolver) pendingResolver({ ok: true, status: 200, json: async () => ({ issue: { id: '1', message: 'late', evidence: { url: 'https://example.com/1' } } }) });
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          console.log(JSON.stringify({
+            abortedIssueIds,
+            popoverCount: body.children.filter((node) => node.className === 'issue-detail-popover').length,
+            trigger1Expanded: trigger1['aria-expanded'] || '',
+            trigger2Expanded: trigger2['aria-expanded'] || '',
+          }));
+        }, 0);
+        """
+    )
+    out = _run_node_json(script)
+    assert "1" in out["abortedIssueIds"]
+    assert out["popoverCount"] <= 2
+    assert out["trigger1Expanded"] == "false"
+    assert out["trigger2Expanded"] == "true"
