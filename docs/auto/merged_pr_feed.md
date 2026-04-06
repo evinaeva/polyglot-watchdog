@@ -4576,3 +4576,31 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69cd2caadb18832c95efa7a380d59bba)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #237 — 2026-04-06T07:54:54Z
+
+- Title: remove severity from UI, filters, CSV export and backend summary
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/237
+- Author: evinaeva
+- Base branch: main
+- Head branch: remove-severity
+- Merge commit: 31706dd554b50943353040794912fd3799a0c23f
+- Changed files:
+  - app/issues_utils.py
+  - tests/test_issues_explorer_api.py
+  - web/static/index.js
+  - web/static/issues-detail.js
+  - web/templates/index.html
+- Description:
+  Severity was a derived characteristic (computed from confidence) that added no actionable signal. This commit removes it from:
+  - issues table column (index.html + index.js)
+  - issues detail page (issues-detail.js)
+  - filter panel in advanced filters (index.html + index.js)
+  - severity query param handling in _filter_issues (issues_utils.py)
+  - by_severity grouping in _summarize_issues_payload (issues_utils.py)
+  - CSV export column (issues_utils.py)
+  
+  _estimate_severity is kept as dead code because skeleton_server.py imports it from issues_utils; removing the import from that 200KB+ file is a separate cleanup step.
+  
+  Tests updated: CSV header assertion and filter-by-severity test case.
+- Notes: Auto-generated from merged PR metadata.
