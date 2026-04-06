@@ -7,7 +7,6 @@
     "/pulls": "/pulls",
     "/check-languages": "/check-languages",
     "/about": "/about",
-    "/issues/detail": "/",
   };
   const activePath = routeToNavPath[pathname] ?? null;
   if (!activePath) return;

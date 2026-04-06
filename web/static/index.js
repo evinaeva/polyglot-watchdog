@@ -825,11 +825,6 @@ function renderIssues() {
   setStatus(`Issues loaded.${countSuffix}`, 'ok');
   for (const issue of issues) {
     const tr = document.createElement('tr');
-    const detailHref = `/issues/detail?${new URLSearchParams({
-      domain: activeArtifactDomain(),
-      run_id: activeRunId(),
-      id: String(issue.id || ''),
-    }).toString()}`;
 
     const sourceTd = document.createElement('td');
     sourceTd.textContent = deriveSourceText(issue);
@@ -848,25 +843,17 @@ function renderIssues() {
     const detailsButton = document.createElement('button');
     detailsButton.type = 'button';
     detailsButton.className = 'issue-details-trigger';
+    detailsButton.setAttribute('data-button-fx', 'off');
     setElementAttribute(detailsButton, 'aria-label', 'Open issue details');
     setElementAttribute(detailsButton, 'aria-haspopup', 'dialog');
     setElementAttribute(detailsButton, 'aria-expanded', 'false');
-    detailsButton.innerHTML = `
-      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false">
-        <path d="M12 2a10 10 0 1 0 10 10A10.011 10.011 0 0 0 12 2Zm1 16h-2v-2h2Zm2.07-7.75-.9.92A3.49 3.49 0 0 0 13 14h-2v-.5a3.5 3.5 0 0 1 1.03-2.47l1.24-1.26a1.5 1.5 0 1 0-2.56-1.06H8.71a3.5 3.5 0 1 1 6.36 2.54Z" fill="currentColor"></path>
-      </svg>
-    `;
+    detailsButton.innerHTML = '<span aria-hidden="true">?</span>';
     detailsButton.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
       openIssueDetailsPopover(issue, detailsButton, issueTd);
     });
-    const detailLink = document.createElement('a');
-    detailLink.className = 'issue-details-link';
-    detailLink.href = detailHref;
-    detailLink.textContent = 'Open detail page';
     issueTd.appendChild(issueText);
-    issueTd.appendChild(detailLink);
     issueTd.appendChild(detailsButton);
     tr.appendChild(issueTd);
 
