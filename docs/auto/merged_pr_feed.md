@@ -4668,3 +4668,34 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69d36865382c832c8cde92d59ae82635)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #240 — 2026-04-06T09:07:24Z
+
+- Title: Implement issue-details popover with caching, positioning, and tests
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/240
+- Author: evinaeva
+- Base branch: main
+- Head branch: lekulv-codex/update-see-errors-page-behavior
+- Merge commit: 5b084a0198f97db3b0e1624ccffb867f96b7836e
+- Changed files:
+  - tests/test_operator_ui_runtime_regressions.py
+  - web/static/index.js
+  - web/static/styles.css
+  - web/templates/index.html
+- Description:
+  ### Motivation
+  - Provide an in-page issue details UI so users can open a lightweight popover with rich, linkified detail without navigating away from the issues table. 
+  - Improve UX by caching detail fetches, cancelling stale fetches, and ensuring a single popover instance is positioned and closed consistently.
+  
+  ### Description
+  - Add popover implementation in `web/static/index.js` including normalize/linkify helpers, positioning (`positionIssueDetailsPopover`), open/close lifecycle, caching (`issueDetailsCache`), pending request tracking (`pendingDetailRequest`) and abort handling. 
+  - Replace the previous external/detail link column with an inline issue details trigger button, update persisted result selection to sync `runIdInput`, and clear detail cache when issues are cleared. 
+  - Add global document listeners to close popovers on outside click and Escape, and add corresponding styles in `web/static/styles.css` and adjust table header in `web/templates/index.html`. 
+  - Update and extend runtime tests in `tests/test_operator_ui_runtime_regressions.py` to assert the presence of the details button and to add comprehensive popover tests (open/close/cache, error handling, positioning, and abort behaviour). 
+  
+  ### Testing
+  - Ran the updated runtime test module with `pytest tests/test_operator_ui_runtime_regressions.py` which includes the new popover tests such as `test_index_runtime_issue_details_popover_open_close_and_cache`, `test_index_runtime_issue_details_popover_escape_and_error_state`, `test_index_runtime_issue_details_popover_positions_and_keeps_single_open_instance`, and `test_index_runtime_issue_details_abort_controller_cancels_previous_request`; all tests passed.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69d365d42108832c8063eb0cafda4107)
+- Notes: Auto-generated from merged PR metadata.
