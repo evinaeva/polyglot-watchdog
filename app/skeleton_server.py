@@ -138,6 +138,7 @@ from app.check_languages_service import (
     _target_capture_url_from_reference_url,
 )
 from app.check_languages_presenter import _h, _llm_review_display
+from app.services import issues_service, recipes_service, seed_urls_service, workflow_service
 from app.testbench import get_modules, run_module_test
 from pipeline import storage
 from pipeline.runtime_config import validate_seed_urls_payload, load_phase1_runtime_config
@@ -659,28 +660,15 @@ def _upsert_run_metadata(domain: str, run_id: str, metadata: dict) -> None:
 
 
 def _upsert_job_status(domain: str, run_id: str, job_record: dict) -> None:
-    runs_payload = _load_runs(domain)
-    runs = runs_payload["runs"]
-    run = next((r for r in runs if r.get("run_id") == run_id), None)
-    if run is None:
-        run = {"run_id": run_id, "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "jobs": []}
-        runs.append(run)
-    display_name = _normalize_optional_string(job_record.get("display_name"))
-    if display_name is not None:
-        run["display_name"] = display_name
-    elif "display_name" not in run and "display_name" in job_record:
-        run["display_name"] = None
-    prior_job = next((j for j in run.get("jobs", []) if j.get("job_id") == job_record.get("job_id")), None)
-    normalized_job = dict(job_record)
-    normalized_job.pop("display_name", None)
-    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    normalized_job["updated_at"] = now
-    normalized_job["created_at"] = str((prior_job or {}).get("created_at") or now)
-    jobs = [j for j in run.get("jobs", []) if j.get("job_id") != normalized_job.get("job_id")]
-    jobs.append(normalized_job)
-    jobs.sort(key=lambda r: r.get("job_id", ""))
-    run["jobs"] = jobs
-    _save_runs(domain, {"runs": _sort_runs_newest_first(runs)})
+    workflow_service.upsert_job_status(
+        domain,
+        run_id,
+        job_record,
+        load_runs=_load_runs,
+        save_runs=_save_runs,
+        sort_runs_newest_first=_sort_runs_newest_first,
+        normalize_optional_string=_normalize_optional_string,
+    )
 
 
 def _is_stale_running_job(job: dict) -> bool:
@@ -1354,143 +1342,18 @@ def _workflow_section_status(*, has_artifact: bool, count: int | None = None, pe
 
 
 def _workflow_status_payload(domain: str, run_id: str) -> dict:
-    seed_payload = _read_json_safe(domain, "manual", "seed_urls.json", {"urls": []})
-    seed_urls = seed_payload.get("urls") if isinstance(seed_payload, dict) else []
-    seed_count = len([row for row in seed_urls if isinstance(row, dict) and str(row.get("url", "")).strip() and bool(row.get("active", True))])
-
-    pages = _read_json_safe(domain, run_id, "page_screenshots.json", None)
-    items = _read_json_safe(domain, run_id, "collected_items.json", None)
-    rules = _read_json_safe(domain, run_id, "template_rules.json", None)
-    dataset = _read_json_safe(domain, run_id, "eligible_dataset.json", None)
-    issues = _read_json_safe(domain, run_id, "issues.json", None)
-
-    pages_count = len(pages) if isinstance(pages, list) else 0
-    items_count = len(items) if isinstance(items, list) else 0
-    rules_count = len(rules) if isinstance(rules, list) else 0
-    dataset_count = len(dataset) if isinstance(dataset, list) else 0
-    issues_count = len(issues) if isinstance(issues, list) else 0
-
-    contexts = [{"capture_context_id": _capture_context_id_from_page(domain, row), "language": str(row.get("language", ""))} for row in (pages or []) if isinstance(row, dict)]
-    reviews = list(_load_review_statuses_for_contexts(domain, contexts).values()) if contexts else []
-    reviewed_count = len(reviews)
-
-    run_meta = next((row for row in _load_runs(domain).get("runs", []) if str(row.get("run_id", "")) == run_id), None)
-    jobs = run_meta.get("jobs", []) if isinstance(run_meta, dict) else []
-    effective_jobs = [_as_stale_failed_job(j) if _is_stale_running_job(j) else j for j in jobs]
-    running = [j for j in effective_jobs if str(j.get("status", "")).lower() in {"running", "queued"}]
-    failed = [j for j in effective_jobs if str(j.get("status", "")).lower() in {"failed", "error"}]
-    capture_jobs = [
-        j for j in effective_jobs
-        if str(j.get("type", "")).lower() == "capture" or str(j.get("phase", "")).lower() == "1" or str(j.get("job_id", "")).startswith("phase1-")
-    ]
-    capture_attempted = bool(capture_jobs)
-    capture_running = any(str(j.get("status", "")).lower() in {"running", "queued"} for j in capture_jobs)
-    capture_failed_jobs = [j for j in capture_jobs if str(j.get("status", "")).lower() in {"failed", "error"}]
-    capture_last_failure = capture_failed_jobs[-1] if capture_failed_jobs else None
-
-    capture_status = "not_started"
-    if capture_running:
-        capture_status = "in_progress"
-    elif isinstance(pages, list):
-        capture_status = "ready" if pages_count > 0 else "empty"
-    elif capture_last_failure is not None:
-        capture_status = "failed"
-    elif capture_attempted:
-        capture_status = "not_ready"
-    elif seed_count:
-        capture_status = "not_ready"
-    review_status = "not_started"
-    if isinstance(pages, list):
-        if pages_count == 0:
-            review_status = "empty"
-        elif reviewed_count == 0:
-            review_status = "not_ready"
-        elif reviewed_count < pages_count:
-            review_status = "in_progress"
-        else:
-            review_status = "ready"
-
-    annotation_status = _workflow_section_status(
-        has_artifact=isinstance(rules, list),
-        count=rules_count,
-        pending_on=reviewed_count >= pages_count and pages_count > 0,
+    return workflow_service.workflow_status_payload(
+        domain,
+        run_id,
+        load_runs=_load_runs,
+        capture_context_id_from_page=_capture_context_id_from_page,
+        load_review_statuses_for_contexts=_load_review_statuses_for_contexts,
+        issue_sort_key=_issue_sort_key,
+        latest_phase3_job=_latest_phase3_job,
+        normalize_optional_string=_normalize_optional_string,
+        parse_utc_timestamp=_parse_utc_timestamp,
+        workflow_section_status=_workflow_section_status,
     )
-    if isinstance(rules, list) and rules_count < items_count and items_count > 0:
-        annotation_status = "partial"
-
-    run_status = "not_started"
-    if running:
-        run_status = "in_progress"
-    elif failed:
-        run_status = "failed"
-    elif isinstance(pages, list):
-        run_status = "ready"
-
-    next_action = "configure_seed_urls"
-    if capture_status in {"not_started", "not_ready", "failed"} and seed_count:
-        next_action = "start_capture"
-    elif capture_status == "in_progress":
-        next_action = "wait_for_capture"
-    elif isinstance(pages, list) and reviewed_count < pages_count:
-        next_action = "complete_review"
-    elif reviewed_count >= pages_count and not isinstance(rules, list):
-        next_action = "save_annotation_rules"
-    elif isinstance(rules, list) and not isinstance(dataset, list):
-        next_action = "generate_eligible_dataset"
-    elif isinstance(dataset, list) and not isinstance(issues, list):
-        next_action = "generate_issues"
-    elif isinstance(issues, list):
-        next_action = "review_issues"
-
-    first_issue_id = ""
-    if isinstance(issues, list) and issues:
-        first_issue_id = str(sorted([row for row in issues if isinstance(row, dict)], key=_issue_sort_key)[0].get("id", ""))
-
-    run_en_standard_display_name = str((run_meta or {}).get("en_standard_display_name", "")).strip()
-    eligible_has_artifact = isinstance(dataset, list)
-    eligible_status = _workflow_section_status(has_artifact=eligible_has_artifact, count=dataset_count, pending_on=isinstance(rules, list))
-    phase3_job = _latest_phase3_job(domain, run_id)
-    phase3_generation_status = str((phase3_job or {}).get("status", "")).strip().lower()
-    phase3_generation_error = str((phase3_job or {}).get("error", "")).strip()
-
-    return {
-        "state_enum": ["not_started", "in_progress", "ready", "empty", "not_ready", "partial", "failed", "out_of_scope"],
-        "seed_urls": {"status": "ready" if seed_count else "empty", "configured": bool(seed_count), "count": seed_count},
-        "run": {
-            "status": run_status,
-            "run_id": run_id,
-            "display_name": _normalize_optional_string((run_meta or {}).get("display_name")),
-            "domain": domain,
-            "jobs_total": len(jobs),
-            "jobs_running": len(running),
-            "jobs_failed": len(failed),
-            "en_standard_display_name": run_en_standard_display_name,
-        },
-        "capture": {
-            "status": capture_status,
-            "contexts": pages_count,
-            "items": items_count,
-            "artifacts_present": isinstance(pages, list),
-            "error": str((capture_last_failure or {}).get("error", "")),
-            "remediation": [
-                "check capture runner prerequisites",
-                "see logs",
-                "verify env config",
-            ] if capture_status == "failed" else [],
-        },
-        "review": {"status": review_status, "total": pages_count, "reviewed": reviewed_count},
-        "annotation": {"status": annotation_status, "rules_count": rules_count},
-        "eligible_dataset": {
-            "status": eligible_status,
-            "ready": eligible_has_artifact,
-            "record_count": dataset_count,
-            "en_standard_display_name": run_en_standard_display_name,
-            "generation_status": phase3_generation_status,
-            "generation_error": phase3_generation_error,
-        },
-        "issues": {"status": _workflow_section_status(has_artifact=isinstance(issues, list), count=issues_count, pending_on=isinstance(dataset, list)), "count": issues_count, "first_issue_id": first_issue_id},
-        "next_recommended_action": next_action,
-    }
 
 
 
@@ -1932,8 +1795,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                 return
             try:
-                _require_artifact_exists(domain, run_id, "issues.json")
-                issues = _read_list_artifact_required(domain, run_id, "issues.json")
+                issues = issues_service.load_issues(domain, run_id)
             except FileNotFoundError:
                 self._json_response(_not_ready_payload("issues"), status=HTTPStatus.NOT_FOUND)
                 return
@@ -2048,7 +1910,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                 return
             try:
-                payload = read_seed_urls(valid_domain)
+                payload = seed_urls_service.get_seed_urls(domain=valid_domain)
             except Exception as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
                 return
@@ -2065,7 +1927,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             domain = parse_qs(parsed.query).get("domain", [""])[0]
             try:
                 valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
-                self._json_response({"recipes": list_recipes(valid_domain)})
+                self._json_response(recipes_service.get_recipes(valid_domain))
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -2222,9 +2084,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             urls_multiline = str(payload.get("urls_multiline", ""))
             try:
                 valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
-                parsed_urls = parse_seed_urls_with_errors(urls_multiline)
-                saved = write_seed_urls(valid_domain, parsed_urls["urls"])
-                saved["validation_errors"] = parsed_urls["errors"]
+                saved = seed_urls_service.put_seed_urls(domain=valid_domain, urls_multiline=urls_multiline)
                 _register_domain(valid_domain)
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -2336,12 +2196,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             urls_multiline = str(payload.get("urls_multiline", ""))
             try:
                 valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
-                parsed_urls = parse_seed_urls_with_errors(urls_multiline)
-                incoming = parsed_urls["urls"]
-                existing = read_seed_urls(valid_domain)
-                existing_urls = {str(row.get("url", "")) for row in existing.get("urls", []) if isinstance(row, dict) and row.get("url")}
-                merged = sorted(existing_urls | set(incoming))
-                saved = write_seed_urls(valid_domain, merged)
+                saved = seed_urls_service.add_seed_urls(domain=valid_domain, urls_multiline=urls_multiline)
                 _register_domain(valid_domain)
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -2349,7 +2204,6 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
                 return
-            saved["validation_errors"] = parsed_urls["errors"]
             self._json_response(saved)
             return
 
@@ -2358,16 +2212,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             domain = str(payload.get("domain", ""))
             try:
                 valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
-                normalized = normalize_seed_url(str(payload.get("url", "")))
-                if normalized is None:
-                    raise ValueError("url is required")
-                existing = read_seed_urls(valid_domain)
-                remaining = [
-                    str(row.get("url"))
-                    for row in existing.get("urls", [])
-                    if isinstance(row, dict) and row.get("url") and str(row.get("url")) != normalized
-                ]
-                saved = write_seed_urls(valid_domain, remaining)
+                saved = seed_urls_service.delete_seed_url(domain=valid_domain, url=str(payload.get("url", "")))
                 _register_domain(valid_domain)
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -2383,7 +2228,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             domain = str(payload.get("domain", ""))
             try:
                 valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
-                saved = write_seed_urls(valid_domain, [])
+                saved = seed_urls_service.clear_seed_urls(domain=valid_domain)
                 _register_domain(valid_domain)
             except ValueError as exc:
                 self._json_response({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -2403,9 +2248,8 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
                 if not isinstance(recipe, dict):
                     raise ValueError("recipe object is required")
-                saved = upsert_recipe(valid_domain, recipe)
                 _register_domain(valid_domain)
-                self._json_response({"recipe": saved, "recipes": list_recipes(valid_domain)})
+                self._json_response(recipes_service.upsert_recipe_for_domain(valid_domain, recipe))
             except ValueError as exc:
                 self._json_response(
                     {
@@ -2468,29 +2312,10 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 updated_rows: list[dict] = []
                 attach_changed = False
                 if attach_to_url:
-                    normalized_url = normalize_seed_url(raw_url)
-                    if not normalized_url:
-                        raise ValueError("url is required when attach_to_url=true")
-                    seed_payload = read_seed_urls(valid_domain)
-                    rows = [row for row in seed_payload.get("urls", []) if isinstance(row, dict)]
-                    match = next((row for row in rows if str(row.get("url", "")) == normalized_url), None)
-                    if match is None:
-                        raise ValueError("url not found in seed_urls")
-                    current_ids = match.get("recipe_ids", [])
-                    normalized_ids = list(current_ids) if isinstance(current_ids, list) else []
-                    recipe_ids = sorted({str(item).strip() for item in normalized_ids if str(item).strip()} | {recipe_id})
-                    updated_rows = [dict(row) for row in rows]
-                    for row in updated_rows:
-                        if str(row.get("url", "")) == normalized_url:
-                            existing_ids = row.get("recipe_ids", [])
-                            normalized_existing = list(existing_ids) if isinstance(existing_ids, list) else []
-                            canonical_existing = sorted({str(item).strip() for item in normalized_existing if str(item).strip()})
-                            if recipe_ids != canonical_existing:
-                                attach_changed = True
-                            row["recipe_ids"] = recipe_ids
+                    updated_rows, attach_changed = recipes_service.attach_recipe_to_seed_url(valid_domain, recipe_id, raw_url)
                 saved_recipe = upsert_recipe(valid_domain, _compat_recipe_for_storage(recipe))
                 if attach_to_url and attach_changed:
-                    _write_seed_rows_preserve_order(valid_domain, updated_rows)
+                    recipes_service.write_seed_rows_preserve_order(valid_domain, updated_rows)
                 if attach_to_url:
                     attached = True
                 _register_domain(valid_domain)
@@ -2519,22 +2344,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
                 if not recipe_id:
                     raise ValueError("recipe_id is required")
-                recipes = delete_recipe(valid_domain, recipe_id)
-                seed_payload = read_seed_urls(valid_domain)
-                rows = [row for row in seed_payload.get("urls", []) if isinstance(row, dict)]
-                merged_rows: list[dict] = []
-                changed = False
-                for row in rows:
-                    next_row = dict(row)
-                    current_ids = row.get("recipe_ids", [])
-                    normalized_ids = list(current_ids) if isinstance(current_ids, list) else []
-                    filtered_ids = [rid for rid in normalized_ids if str(rid).strip() and str(rid).strip() != recipe_id]
-                    if filtered_ids != normalized_ids:
-                        changed = True
-                    next_row["recipe_ids"] = filtered_ids
-                    merged_rows.append(next_row)
-                saved = _write_seed_rows_preserve_order(valid_domain, merged_rows) if changed else seed_payload
-                self._json_response({"status": "ok", "error": "", "recipe_id": recipe_id, "recipes": recipes, "seed_urls": saved})
+                self._json_response(recipes_service.delete_recipe_for_domain(valid_domain, recipe_id))
             except ValueError as exc:
                 self._json_response({"status": "failed", "error": str(exc), "recipe_id": recipe_id}, status=HTTPStatus.BAD_REQUEST)
             except Exception as exc:
@@ -2549,19 +2359,7 @@ class SkeletonHandler(BaseHTTPRequestHandler):
                 valid_domain = validate_domain(_normalize_testsite_domain_key(domain))
                 if not isinstance(row, dict):
                     raise ValueError("row object is required")
-                existing = read_seed_urls(valid_domain)
-                rows = [r for r in existing.get("urls", []) if isinstance(r, dict)]
-                normalized_url = normalize_seed_url(str(row.get("url", "")))
-                if normalized_url is None:
-                    raise ValueError("row.url is required")
-                merged = [r for r in rows if str(r.get("url")) != normalized_url]
-                merged.append({
-                    "url": normalized_url,
-                    "description": row.get("description"),
-                    "recipe_ids": row.get("recipe_ids", []),
-                    "active": bool(row.get("active", True)),
-                })
-                saved = write_seed_rows(valid_domain, merged)
+                saved = seed_urls_service.upsert_seed_row(domain=valid_domain, row=row)
                 _register_domain(valid_domain)
                 self._json_response(saved)
             except ValueError as exc:
