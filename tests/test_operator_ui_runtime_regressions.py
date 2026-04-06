@@ -2656,6 +2656,7 @@ def test_index_runtime_issue_details_popover_open_close_and_cache():
         setTimeout(async () => {
           const row = tbody.children[0];
           const issueCell = row.children[2];
+          const detailLink = issueCell.children.find((node) => node.className === 'issue-details-link');
           const trigger = issueCell.children.find((node) => node.className === 'issue-details-trigger');
           trigger.click();
           await new Promise((resolve) => setTimeout(resolve, 0));
@@ -2676,6 +2677,7 @@ def test_index_runtime_issue_details_popover_open_close_and_cache():
             closedAfterOutside,
             expandedAfterOutside: trigger['aria-expanded'] || '',
             detailFetchCount,
+            detailHref: detailLink ? detailLink.href : '',
           }));
         }, 0);
         """
@@ -2687,6 +2689,7 @@ def test_index_runtime_issue_details_popover_open_close_and_cache():
     assert out["links"][0]["rel"] == "noopener noreferrer"
     assert out["closedAfterOutside"] is True or out["expandedAfterOutside"] == "false"
     assert out["detailFetchCount"] == 1
+    assert out["detailHref"] == "/issues/detail?domain=example.com&run_id=run-1&id=1"
 
 
 def test_index_runtime_issue_details_popover_escape_and_error_state():

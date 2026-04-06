@@ -825,6 +825,11 @@ function renderIssues() {
   setStatus(`Issues loaded.${countSuffix}`, 'ok');
   for (const issue of issues) {
     const tr = document.createElement('tr');
+    const detailHref = `/issues/detail?${new URLSearchParams({
+      domain: activeArtifactDomain(),
+      run_id: activeRunId(),
+      id: String(issue.id || ''),
+    }).toString()}`;
 
     const sourceTd = document.createElement('td');
     sourceTd.textContent = deriveSourceText(issue);
@@ -856,13 +861,14 @@ function renderIssues() {
       event.stopPropagation();
       openIssueDetailsPopover(issue, detailsButton, issueTd);
     });
+    const detailLink = document.createElement('a');
+    detailLink.className = 'issue-details-link';
+    detailLink.href = detailHref;
+    detailLink.textContent = 'Open detail page';
     issueTd.appendChild(issueText);
+    issueTd.appendChild(detailLink);
     issueTd.appendChild(detailsButton);
     tr.appendChild(issueTd);
-
-    const severityTd = document.createElement('td');
-    severityTd.textContent = deriveSeverity(issue);
-    tr.appendChild(severityTd);
 
     tbody.appendChild(tr);
   }
