@@ -248,6 +248,8 @@ def test_get_check_languages_renders_new_inputs(api_env):
     assert '<option value="https://bongacash.com/"' in body
     assert '<option value="https://evinaeva.github.io/polyglot-watchdog-testsite/en/index.html"' in body
     assert 'name="run_id"' not in body
+    assert "Open issue explorer" in body
+    assert "Open issues API" not in body
 
 
 @pytest.mark.parametrize(

@@ -30,7 +30,6 @@
             <option value="">No runs found</option>
           </select>
           <button id="wfUseExistingRun" type="button" disabled>Use selected run</button>
-          <button id="wfRefreshRuns" type="button">Refresh runs</button>
         </div>
         <p id="wfRunsStatus" class="muted"></p>
       </div>
@@ -55,20 +54,6 @@
         <div class="controls">
           <a id="wfContinuePulls" class="ui-action-button" data-button-fx="on" href="#" aria-disabled="true">Continue to Choose Needed &gt;</a>
         </div>
-        <details>
-          <summary>Technical details</summary>
-          <h3>Status payload</h3>
-          <pre id="wfPayload"></pre>
-          <h3>Last action response</h3>
-          <pre id="wfTransition"></pre>
-        </details>
-        <details>
-          <summary>Advanced: dataset generation</summary>
-          <p>Use this only when you need to rebuild eligible dataset internals for diagnostics or reprocessing.</p>
-          <div class="controls">
-            <button id="wfGenerateDataset" type="button" disabled>Prepare captured data</button>
-          </div>
-        </details>
       </div>
     </section>
   </main>
