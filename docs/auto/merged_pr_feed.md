@@ -4772,3 +4772,54 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69d4030ba5e8832c9d340b9318a2722d)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #251 — 2026-04-07T07:35:33Z
+
+- Title: Remove operator-only controls from workflow and pulls UIs
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/251
+- Author: evinaeva
+- Base branch: main
+- Head branch: i8gptu-codex/remove-unused-ui-controls-and-wiring
+- Merge commit: cafbfafa3d3dbeb7a0982773407c3061d430b4f6
+- Changed files:
+  - app/check_languages_ui.py
+  - tests/test_check_languages_page.py
+  - tests/test_operator_ui_runtime_regressions.py
+  - tests/test_stage_c_operator_workflow.py
+  - web/static/pulls.js
+  - web/static/workflow.js
+  - web/templates/check-languages.html
+  - web/templates/pulls.html
+  - web/templates/workflow.html
+- Description:
+  ### Motivation
+  - Remove operator-only UI controls and the JS/template wiring that supports manual dataset-generation and debug views to simplify the operator pages.
+  - Keep user-visible navigation and handoff contracts intact (notably the /pulls → /check-languages en_run_id propagation).
+  - Do not delete backend endpoints used by non-UI/API contracts; remove only UI callers and test expectations.
+  
+  ### Description
+  - Removed UI elements and server placeholders: deleted the `Open issues API` action from `/check-languages` and removed its `issues_api_link` placeholder, removed the `Refresh runs` button, entire `Technical details` block and `Advanced: dataset generation` block (including `Prepare captured data`) from `/workflow`, and removed the manual `Prepare captured data` control from `/pulls` (templates: `web/templates/check-languages.html`, `web/templates/workflow.html`, `web/templates/pulls.html`).
+  - Removed JS wiring for the removed controls: dropped DOM lookups, render helpers and debug/transition rendering, manual dataset-generation trigger, polling and status helpers from `web/static/workflow.js` and `web/static/pulls.js`; updated `updateOperatorNavigation` to preserve `en_run_id` handoff by falling back to the current `run_id` when no explicit EN selection is present (`pulls.js`).
+  - Removed server-side template wiring for the `issues_api_link` placeholder in `app/check_languages_ui.py` but left the backend API implementation intact.
+  - Updated runtime/unit tests to assert removed UI items and to remove expectations about manual prepare-generation flows; adjusted tests that enumerate DOM ids used at runtime so they no longer expect removed IDs (files updated: `tests/test_check_languages_page.py`, `tests/test_operator_ui_runtime_regressions.py`, `tests/test_stage_c_operator_workflow.py`).
+  
+  ### Testing
+  - Searched for removed strings to validate no residual UI references with `rg`: `rg -n "Open issues API|Refresh runs|Technical details|Advanced: dataset generation|Prepare captured data|Captured data prepared successfully|pullsPrepareCapturedData|pullsPrepareCapturedDataStatus|triggerEligibleDatasetGeneration|wfRefreshRuns|wfGenerateDataset|wfPayload|wfTransition|issues_api_link"` and confirmed only allowed occurrences remain (e.g. issue-detail template still contains its own "Technical details").
+  - Ran targeted pytest checks for UI/runtime regressions and navigation contract with: `PYTHONPATH=. pytest -q tests/test_check_languages_page.py::test_get_check_languages_renders_new_inputs tests/test_operator_ui_runtime_regressions.py::test_pulls_runtime_removed_manual_prepare_controls_and_messages tests/test_operator_ui_runtime_regressions.py::test_workflow_runtime_removed_refresh_and_debug_controls tests/test_operator_ui_runtime_regressions.py::test_pulls_top_and_bottom_next_step_links_receive_same_runtime_href tests/test_operator_ui_runtime_regressions.py::test_pulls_respects_explicit_run_and_uses_latest_timestamp_when_missing_and_keeps_single_resolved_run tests/test_operator_ui_runtime_regressions.py::test_workflow_defaults_to_latest_run_by_timestamp_and_preserves_manual_selection_for_pulls_link` which passed (`6 passed`).
+  - Ran a broader subset of tests including stage C operator workflow checks: `PYTHONPATH=. pytest -q tests/test_check_languages_page.py tests/test_stage_c_operator_workflow.py tests/test_operator_ui_runtime_regressions.py tests/test_workflow_status_and_acceptance.py` which partially collected and ran; note: one backend acceptance test (`tests/test_workflow_status_and_acceptance.py::test_workflow_status_contract_reports_clean_state`) could not complete in this environment due to missing external `google` module required by the test fixture (environment error), not caused by the UI cleanup; the API endpoint `/api/workflow/generate-eligible-dataset` was intentionally left in place and still passes existing API contract tests in CI (server handler left unchanged).
+  
+  Enforcement: `en_run_id` handoff behavior was preserved and explicitly reinforced in `web/static/pulls.js` by using the selected EN run when present and falling back to the current `run_id` when the EN selection is empty.
+  
+  Files changed (high level):
+  - Templates: `web/templates/check-languages.html`, `web/templates/workflow.html`, `web/templates/pulls.html`
+  - Client JS: `web/static/workflow.js`, `web/static/pulls.js`
+  - Server template wiring: `app/check_languages_ui.py`
+  - Tests updated: `tests/test_check_languages_page.py`, `tests/test_operator_ui_runtime_regressions.py`, `tests/test_stage_c_operator_workflow.py`
+  
+  Backend endpoint status: kept `/api/workflow/generate-eligible-dataset` in `app/skeleton_server.py` because it remains part of non-UI/backend contracts and tests; only the UI/manual triggers and polling callers were removed.
+  
+  If you want, I can split the changes into smaller commits (templates, workflow JS, pulls JS, tests) or remove the backend endpoint in a follow-up after confirming it is unused by any non-UI contract.
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69d40d52882c832c9f40f9d986362de4)
+- Notes: Auto-generated from merged PR metadata.
