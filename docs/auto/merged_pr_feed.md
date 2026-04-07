@@ -4863,3 +4863,38 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69d4090f2be0832cb0a8315696af957d)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #252 — 2026-04-07T07:59:35Z
+
+- Title: Refactor run/job/workflow orchestration out of skeleton_server
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/252
+- Author: evinaeva
+- Base branch: main
+- Head branch: l97eu8-codex/refactor-skeleton_server.py-for-module-extraction
+- Merge commit: 0f770b5c1638ffbfa999e639a517cd8f039916a8
+- Changed files:
+  - app/background_runners.py
+  - app/runs_service.py
+  - app/skeleton_server.py
+  - app/workflow_service.py
+- Description:
+  ## Summary
+  - extracted run/job manifest persistence and job lookup helpers into `app/runs_service.py`
+  - extracted background phase runner implementations into `app/background_runners.py`
+  - extracted workflow aggregation logic into `app/workflow_service.py`
+  - kept backward-compatible function symbols in `app/skeleton_server.py` as thin wrappers delegating to new modules
+  
+  ## Behavior preservation
+  - preserved existing route/handler behavior and endpoint signatures
+  - preserved persisted run/job JSON shapes and status semantics
+  - preserved stale-job detection and stale failure conversion behavior
+  - preserved phase 0/1/rerun/3/6 runner exception handling and status/error updates
+  - preserved workflow payload structure and next-action logic
+  
+  ## Validation
+  - `python -m py_compile app/skeleton_server.py app/runs_service.py app/background_runners.py app/workflow_service.py`
+  - verified compatibility wrapper function names still exist in `app/skeleton_server.py`
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69d4b3f7f090832cb14c4bc9822ef76d)
+- Notes: Auto-generated from merged PR metadata.
