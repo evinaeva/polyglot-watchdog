@@ -1430,7 +1430,6 @@ class SkeletonHandler(BaseHTTPRequestHandler):
             "/runs": "runs.html",
             "/workflow": "workflow.html",
             "/contexts": "contexts.html",
-            "/issues/detail": "issues/detail.html",
         }
         if parsed.path == "/pulls":
             if not self._require_auth(api=False):

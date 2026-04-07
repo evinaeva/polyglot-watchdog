@@ -8,6 +8,6 @@ A typical operator flow is:
 4. Apply annotation/template-rule decisions from `/pulls`.
 5. Build the English eligible dataset (Phase 3) and generate issues (Phase 6) from `/workflow`.
 6. Run target-language checks from `/check-languages`.
-7. Search issues from `/` and open `/issues/detail` for evidence drilldown.
+7. Search issues from `/` and use the `?` tooltip in each issue row for evidence drilldown.
 
 Note: several phase triggers exist as backend APIs even when a page remains pre-production or internal-operator-oriented.

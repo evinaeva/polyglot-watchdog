@@ -526,6 +526,10 @@ pre { background: #0f172a; color: #e2e8f0; padding: 10px; border-radius: 4px; ov
   color: #dff8ff;
   vertical-align: text-top;
   cursor: pointer;
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 .issue-details-trigger:hover,

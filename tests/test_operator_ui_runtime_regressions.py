@@ -2355,129 +2355,6 @@ def test_index_runtime_uses_schema_aliases_for_source_target():
     assert out["cells"][:3] == ["Hello", "Привет", "legacy"]
 
 
-def test_issue_detail_runtime_escapes_untrusted_fields_and_blocks_unsafe_screenshot_href():
-    script = textwrap.dedent(
-        r"""
-        const fs = require('fs');
-        const vm = require('vm');
-        function makeElement(id='') {
-          const listeners = {};
-          const el = {
-            id, value: '', href: '', textContent: '', className: '', children: [],
-            appendChild(child){ this.children.push(child); return child; },
-            append(...nodes){ this.children.push(...nodes); },
-            addEventListener(type, cb){ listeners[type] = cb; },
-          };
-          return el;
-        }
-        const els = {
-          issueDetailStatus: makeElement('issueDetailStatus'),
-          issueCore: makeElement('issueCore'),
-          issueEvidence: makeElement('issueEvidence'),
-          detailBackToIssues: makeElement('detailBackToIssues'),
-          detailOpenContexts: makeElement('detailOpenContexts'),
-          detailOpenPulls: makeElement('detailOpenPulls'),
-        };
-        const sandbox = {
-          console, URL, URLSearchParams,
-          window: { location: { search: '?domain=example.com&run_id=run-1&id=i1' } },
-          document: {
-            getElementById: (id) => els[id],
-            createElement: () => makeElement('created'),
-            createTextNode: (text) => ({ textContent: String(text || '') }),
-          },
-          safeReadPayload: async (response) => response.json(),
-          fetch: async () => ({ ok: true, status: 200, json: async () => ({
-            issue: {
-              id: 'i1',
-              message: '<img src=x onerror=alert(1)>',
-              evidence: { url: 'https://example.com/x', source_text: '<b>Hello</b>', target_text: '<script>x</script>' },
-            },
-            drilldown: {
-              screenshot_view_url: 'javascript:alert(1)',
-              page: { unsafe: '</pre><script>alert(1)</script>' },
-              element: { unsafe: '<img src=x onerror=1>' },
-            },
-          }) }),
-        };
-        vm.createContext(sandbox);
-        vm.runInContext(fs.readFileSync('web/static/issues-detail.js', 'utf8'), sandbox);
-        setTimeout(() => {
-          const evidenceLine = els.issueEvidence.children.find((node) => node.textContent === 'Screenshot: ');
-          const hasUnsafeHref = !!(evidenceLine && evidenceLine.children && evidenceLine.children.find((child) => String(child.href || '').startsWith('javascript:')));
-          const preNodes = els.issueEvidence.children.filter((node) => String(node.textContent || '').includes('unsafe'));
-          console.log(JSON.stringify({
-            hasUnsafeHref,
-            preNodeCount: preNodes.length,
-            status: els.issueDetailStatus.textContent,
-          }));
-        }, 0);
-        """
-    )
-    out = _run_node_json(script)
-    assert out["hasUnsafeHref"] is False
-    assert out["preNodeCount"] >= 2
-    assert out["status"] == "Issue detail loaded."
-
-
-def test_issue_detail_runtime_allows_only_https_http_or_single_slash_local_screenshot_links():
-    script = textwrap.dedent(
-        r"""
-        const fs = require('fs');
-        const vm = require('vm');
-        function makeElement(id='') {
-          const listeners = {};
-          return {
-            id, value: '', href: '', textContent: '', className: '', children: [],
-            appendChild(child){ this.children.push(child); return child; },
-            append(...nodes){ this.children.push(...nodes); },
-            addEventListener(type, cb){ listeners[type] = cb; },
-          };
-        }
-        async function runCase(screenshotHref) {
-          const els = {
-            issueDetailStatus: makeElement('issueDetailStatus'),
-            issueCore: makeElement('issueCore'),
-            issueEvidence: makeElement('issueEvidence'),
-            detailBackToIssues: makeElement('detailBackToIssues'),
-            detailOpenContexts: makeElement('detailOpenContexts'),
-            detailOpenPulls: makeElement('detailOpenPulls'),
-          };
-          const sandbox = {
-            console, URL, URLSearchParams,
-            window: { location: { search: '?domain=example.com&run_id=run-1&id=i1' } },
-            document: {
-              getElementById: (id) => els[id],
-              createElement: () => makeElement('created'),
-              createTextNode: (text) => ({ textContent: String(text || '') }),
-            },
-            safeReadPayload: async (response) => response.json(),
-            fetch: async () => ({ ok: true, status: 200, json: async () => ({
-              issue: { id: 'i1', message: 'ok', evidence: { url: 'https://example.com/x' } },
-              drilldown: { screenshot_view_url: screenshotHref, page: {}, element: {} },
-            }) }),
-          };
-          vm.createContext(sandbox);
-          vm.runInContext(fs.readFileSync('web/static/issues-detail.js', 'utf8'), sandbox);
-          await new Promise((resolve) => setTimeout(resolve, 0));
-          const line = els.issueEvidence.children.find((node) => node.textContent === 'Screenshot: ');
-          const hasLink = !!(line && line.children && line.children.some((child) => !!child.href));
-          return hasLink;
-        }
-        (async () => {
-          const localAllowed = await runCase('/api/page-screenshot?domain=example.com&run_id=run-1&page_id=p1');
-          const httpsAllowed = await runCase('https://cdn.example.com/shot.png');
-          const schemeRelativeBlocked = await runCase('//evil.example/x');
-          console.log(JSON.stringify({ localAllowed, httpsAllowed, schemeRelativeBlocked }));
-        })().catch((err) => { console.error(err); process.exit(1); });
-        """
-    )
-    out = _run_node_json(script)
-    assert out["localAllowed"] is True
-    assert out["httpsAllowed"] is True
-    assert out["schemeRelativeBlocked"] is False
-
-
 def test_index_runtime_issue_details_popover_open_close_and_cache():
     script = textwrap.dedent(
         r"""
@@ -2556,7 +2433,6 @@ def test_index_runtime_issue_details_popover_open_close_and_cache():
         setTimeout(async () => {
           const row = tbody.children[0];
           const issueCell = row.children[2];
-          const detailLink = issueCell.children.find((node) => node.className === 'issue-details-link');
           const trigger = issueCell.children.find((node) => node.className === 'issue-details-trigger');
           trigger.click();
           await new Promise((resolve) => setTimeout(resolve, 0));
@@ -2577,7 +2453,6 @@ def test_index_runtime_issue_details_popover_open_close_and_cache():
             closedAfterOutside,
             expandedAfterOutside: trigger['aria-expanded'] || '',
             detailFetchCount,
-            detailHref: detailLink ? detailLink.href : '',
           }));
         }, 0);
         """
@@ -2589,7 +2464,6 @@ def test_index_runtime_issue_details_popover_open_close_and_cache():
     assert out["links"][0]["rel"] == "noopener noreferrer"
     assert out["closedAfterOutside"] is True or out["expandedAfterOutside"] == "false"
     assert out["detailFetchCount"] == 1
-    assert out["detailHref"] == "/issues/detail?domain=example.com&run_id=run-1&id=1"
 
 
 def test_index_runtime_issue_details_popover_escape_and_error_state():

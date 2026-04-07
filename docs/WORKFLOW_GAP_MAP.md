@@ -11,13 +11,13 @@
 | Generate eligible dataset | `/workflow` | `POST /api/workflow/generate-eligible-dataset` | `_run_phase3_async` | real & complete | collected/review/rules artifacts | `eligible_dataset.json` | Generate issues | closed |
 | Generate issues/comparison | `/workflow` | `POST /api/workflow/generate-issues` | `_run_phase6_async` | real & complete | `eligible_dataset.json`, capture artifacts | `issues.json` | Explore issues | closed |
 | Explore issues | `/` | `GET /api/issues` | `SkeletonHandler.do_GET` | real & complete | `issues.json` | none | Issue detail | closed |
-| Issue → evidence drilldown | `/issues/detail` | `GET /api/issues/detail` | `SkeletonHandler.do_GET` | real & complete | `issues.json`, optional capture artifacts | none | Continue review/annotation | closed |
+| Issue → evidence drilldown | `/` (issue tooltip) | `GET /api/issues/detail` | `SkeletonHandler.do_GET` | real & complete | `issues.json`, optional capture artifacts | none | Continue review/annotation | closed |
 
 ## Summary
 
 Closed blocking gaps:
 - Added UI-first workflow hub with visible operator actions (no curl needed for required steps).
-- Added run-scoped links from hub to contexts/pulls/issues/detail.
+- Added run-scoped links from hub to contexts/pulls and inline issue drilldown tooltip on `/`.
 - Added visible review + annotation persistence actions on required pages.
 - Updated workflow status contract to expose standardized state values used by UI rendering.
 - Acceptance now enforces truthful failure when capture runner prerequisites are unavailable and blocks downstream workflow progression.

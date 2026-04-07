@@ -128,9 +128,8 @@ def test_stage_c_workflow_routes_and_artifact_endpoints(api_env):
     assert "Advanced: dataset generation" not in workflow_page_body
     assert "Prepare captured data" not in workflow_page_body
     assert _request("GET", api_env, f"/?domain={domain}&run_id={run_id}")[0] == HTTPStatus.OK
-    status_detail_page, body_detail_page = _request("GET", api_env, f"/issues/detail?domain={domain}&run_id={run_id}&id=1")
-    assert status_detail_page == HTTPStatus.OK
-    assert 'Issue Detail' in body_detail_page
+    status_detail_page, _ = _request("GET", api_env, f"/issues/detail?domain={domain}&run_id={run_id}&id=1")
+    assert status_detail_page == HTTPStatus.NOT_FOUND
 
     assert _request("GET", api_env, f"/api/capture/runs?domain={domain}")[1]["runs"][0]["run_id"] == run_id
     assert _request("GET", api_env, f"/api/capture/contexts?domain={domain}&run_id={run_id}")[1]["contexts"][0]["elements_count"] == 1
@@ -223,7 +222,6 @@ def test_stage_c_not_ready_states_for_contexts_and_issues(api_env):
 def test_stage_c_ui_not_ready_and_error_states_have_explicit_render_targets():
     contexts_js = Path("web/static/contexts.js").read_text(encoding="utf-8")
     issues_js = Path("web/static/index.js").read_text(encoding="utf-8")
-    detail_js = Path("web/static/issues-detail.js").read_text(encoding="utf-8")
     runs_js = Path("web/static/runs.js").read_text(encoding="utf-8")
     pulls_js = Path("web/static/pulls.js").read_text(encoding="utf-8")
     helper_js = Path("web/static/api-client.js").read_text(encoding="utf-8")
@@ -234,7 +232,6 @@ def test_stage_c_ui_not_ready_and_error_states_have_explicit_render_targets():
     assert "window.safeReadPayload" in helper_js
     assert "await safeReadPayload(response)" in contexts_js
     assert "await safeReadPayload(response)" in issues_js
-    assert "await safeReadPayload(response)" in detail_js
     assert "await safeReadPayload(response)" in runs_js
     assert "await safeReadPayload(response)" in pulls_js
     assert "Showing ${rows.length} of ${totalCount} items." in pulls_js
