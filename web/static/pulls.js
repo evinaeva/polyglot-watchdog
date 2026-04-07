@@ -9,8 +9,6 @@ const pullsWhitelistInput = document.getElementById('pullsWhitelistInput');
 const pullsWhitelistAdd = document.getElementById('pullsWhitelistAdd');
 const pullsWhitelistStatus = document.getElementById('pullsWhitelistStatus');
 const pullsWhitelistChips = document.getElementById('pullsWhitelistChips');
-const pullsPrepareCapturedData = document.getElementById('pullsPrepareCapturedData');
-const pullsPrepareCapturedDataStatus = document.getElementById('pullsPrepareCapturedDataStatus');
 const pullsFirstRunSelect = document.getElementById('pullsFirstRunSelect');
 const pullsDomainSelect = document.getElementById('pullsDomainSelect');
 const pullsEnRunSelect = document.getElementById('pullsEnRunSelect');
@@ -35,7 +33,6 @@ const pullsImageAssetMeta = document.getElementById('pullsImageAssetMeta');
 let allPullRows = [];
 let whitelistEntries = [];
 let previewResizeObserver = null;
-let eligiblePollingTimer = null;
 let currentPullsContext = { domain: '', runId: '' };
 let previewState = {
   isOpen: false,
@@ -104,88 +101,6 @@ function setPullsStatus(message, cls = '') {
   pullsStatus.textContent = message;
 }
 
-function formatEnStandardDisplayName(runOrEligibleSection) {
-  const value = String((runOrEligibleSection || {}).en_standard_display_name || '').trim();
-  return value;
-}
-
-async function fetchWorkflowStatus(domain, runId) {
-  const response = await fetch(`/api/workflow/status?${new URLSearchParams({ domain, run_id: runId }).toString()}`);
-  const payload = await safeReadPayload(response);
-  if (!response.ok) throw new Error(payload.error || `Failed to load workflow status (${response.status})`);
-  return payload;
-}
-
-function stopEligiblePolling() {
-  if (eligiblePollingTimer) {
-    clearTimeout(eligiblePollingTimer);
-    eligiblePollingTimer = null;
-  }
-}
-
-async function waitForEligibleDatasetReady(domain, runId, timeoutMs = 30000) {
-  const startedAt = Date.now();
-  stopEligiblePolling();
-  return new Promise((resolve, reject) => {
-    const poll = async () => {
-      try {
-        const payload = await fetchWorkflowStatus(domain, runId);
-        const eligible = payload.eligible_dataset || {};
-        const ready = eligible.ready === true || eligible.status === 'ready' || eligible.status === 'empty';
-        if (ready) {
-          resolve(payload);
-          return;
-        }
-
-        const generationStatus = String(eligible.generation_status || '').toLowerCase();
-        if (generationStatus === 'failed' || generationStatus === 'error') {
-          reject(new Error(eligible.generation_error || 'Eligible dataset generation failed.'));
-          return;
-        }
-
-        if ((Date.now() - startedAt) >= timeoutMs) {
-          reject(new Error('Eligible dataset readiness was not reached in time.'));
-          return;
-        }
-        eligiblePollingTimer = setTimeout(poll, 1000);
-      } catch (err) {
-        reject(err);
-      }
-    };
-    poll();
-  });
-}
-
-async function triggerEligibleDatasetGeneration(domain, runId) {
-  pullsPrepareCapturedData.disabled = true;
-  setPrepareCapturedDataStatus('Preparing captured data…', 'warning');
-  try {
-    const response = await fetch('/api/workflow/generate-eligible-dataset', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ domain, run_id: runId }),
-    });
-    const payload = await safeReadPayload(response);
-    if (!response.ok) {
-      throw new Error(payload.error || payload.message || 'Failed to start eligible dataset generation.');
-    }
-
-    const readyPayload = await waitForEligibleDatasetReady(domain, runId);
-    const eligible = readyPayload.eligible_dataset || {};
-    const label = formatEnStandardDisplayName(eligible) || formatEnStandardDisplayName(readyPayload.run);
-    if (label) {
-      setPrepareCapturedDataStatus(`Captured data prepared successfully: ${label}.`, 'ok');
-    } else {
-      setPrepareCapturedDataStatus('Captured data prepared successfully.', 'ok');
-    }
-  } catch (err) {
-    setPrepareCapturedDataStatus(err.message || 'Failed to prepare captured data.', 'error');
-  } finally {
-    pullsPrepareCapturedData.disabled = false;
-    stopEligiblePolling();
-  }
-}
-
 function setPreviewStatus(message) {
   pullsPreviewStatus.textContent = message;
 }
@@ -242,7 +157,7 @@ function updateWorkflowSummary(domain, runId) {
 }
 
 function updateOperatorNavigation(domain, runId) {
-  const selectedEnRunId = String((pullsEnRunSelect || {}).value || '').trim();
+  const selectedEnRunId = String((pullsEnRunSelect || {}).value || '').trim() || String(runId || '').trim();
   const query = new URLSearchParams({ domain, run_id: runId }).toString();
   const checkLanguagesParams = new URLSearchParams({ domain });
   if (selectedEnRunId) checkLanguagesParams.set('en_run_id', selectedEnRunId);
@@ -299,11 +214,6 @@ function normalizeElementType(value) {
 function setWhitelistStatus(message, cls = '') {
   pullsWhitelistStatus.className = `muted ${cls}`.trim();
   pullsWhitelistStatus.textContent = message;
-}
-
-function setPrepareCapturedDataStatus(message, cls = '') {
-  pullsPrepareCapturedDataStatus.className = cls;
-  pullsPrepareCapturedDataStatus.textContent = message;
 }
 
 function renderWhitelist() {
@@ -842,7 +752,6 @@ async function loadPulls() {
     pullsTable.classList.add('hidden');
     pullsLanguageSummary.classList.add('hidden');
     setPullsStatus('Missing required query params: domain and run_id.', 'error');
-    pullsPrepareCapturedData.disabled = true;
     return;
   }
 
@@ -864,10 +773,8 @@ async function loadPulls() {
     pullsTable.classList.add('hidden');
     pullsLanguageSummary.classList.add('hidden');
     setPullsStatus('Missing required query params: domain and run_id.', 'error');
-    pullsPrepareCapturedData.disabled = true;
     return;
   }
-  pullsPrepareCapturedData.disabled = false;
 
   setPullsStatus('Loading items…');
   const loaded = await reloadPullRows(domain, runId);
@@ -923,15 +830,6 @@ if (pullsEnRunSelect) {
 
 pullsWhitelistAdd.addEventListener('click', async () => {
   setWhitelistStatus('Manual add by type is disabled. Use "Add to whitelist" on a concrete row.', 'warning');
-});
-
-pullsPrepareCapturedData.addEventListener('click', async () => {
-  const { domain, runId } = getCurrentPullsContext();
-  if (!domain || !runId) {
-    setPrepareCapturedDataStatus('Missing required query params: domain and run_id.', 'error');
-    return;
-  }
-  await triggerEligibleDatasetGeneration(domain, runId);
 });
 
 pullsPreviewClose.addEventListener('click', closePreview);

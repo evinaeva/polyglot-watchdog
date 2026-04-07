@@ -119,9 +119,14 @@ def test_stage_c_workflow_routes_and_artifact_endpoints(api_env):
     assert pulls_page_status == HTTPStatus.OK
     assert 'id="pullsElementTypeFilter"' in pulls_page_body
     assert '<th>Language</th>' not in pulls_page_body
+    assert "Prepare captured data" not in pulls_page_body
     workflow_page_status, workflow_page_body = _request("GET", api_env, f"/workflow?domain={domain}&run_id={run_id}")
     assert workflow_page_status == HTTPStatus.OK
     assert 'id="wfExistingRuns"' in workflow_page_body
+    assert "Refresh runs" not in workflow_page_body
+    assert "Technical details" not in workflow_page_body
+    assert "Advanced: dataset generation" not in workflow_page_body
+    assert "Prepare captured data" not in workflow_page_body
     assert _request("GET", api_env, f"/?domain={domain}&run_id={run_id}")[0] == HTTPStatus.OK
     status_detail_page, body_detail_page = _request("GET", api_env, f"/issues/detail?domain={domain}&run_id={run_id}&id=1")
     assert status_detail_page == HTTPStatus.OK
