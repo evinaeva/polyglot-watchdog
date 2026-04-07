@@ -139,6 +139,7 @@ from app.check_languages_service import (
 )
 from app.check_languages_presenter import _h, _llm_review_display
 from app import check_languages_ui
+from app import background_runners, runs_service, workflow_service
 from app.testbench import get_modules, run_module_test
 from pipeline import storage
 from pipeline.runtime_config import validate_seed_urls_payload, load_phase1_runtime_config
@@ -331,41 +332,23 @@ def _latest_check_languages_job(domain: str, run_id: str) -> dict | None:
 
 
 def _latest_phase6_job(domain: str, run_id: str) -> dict | None:
-    runs_payload = _load_runs(domain)
-    runs = runs_payload.get("runs", []) if isinstance(runs_payload, dict) else []
-    run = next((r for r in runs if isinstance(r, dict) and str(r.get("run_id", "")) == run_id), None)
-    if not isinstance(run, dict):
-        return None
-    jobs = run.get("jobs", []) if isinstance(run.get("jobs", []), list) else []
-    phase6_jobs: list[dict] = []
-    for job in jobs:
-        if not isinstance(job, dict):
-            continue
-        if str(job.get("phase", "")).strip() == "6" or str(job.get("type", "")).strip() == "issues" or str(job.get("job_id", "")).startswith("phase6-"):
-            phase6_jobs.append(_as_stale_failed_job(job) if _is_stale_running_job(job) else dict(job))
-    if not phase6_jobs:
-        return None
-    phase6_jobs.sort(key=lambda row: (str(row.get("updated_at", "")), str(row.get("created_at", "")), str(row.get("job_id", ""))))
-    return phase6_jobs[-1]
+    return runs_service.latest_phase6_job(
+        domain,
+        run_id,
+        load_runs_fn=_load_runs,
+        as_stale_failed_job_fn=_as_stale_failed_job,
+        is_stale_running_job_fn=_is_stale_running_job,
+    )
 
 
 def _latest_phase3_job(domain: str, run_id: str) -> dict | None:
-    runs_payload = _load_runs(domain)
-    runs = runs_payload.get("runs", []) if isinstance(runs_payload, dict) else []
-    run = next((r for r in runs if isinstance(r, dict) and str(r.get("run_id", "")) == run_id), None)
-    if not isinstance(run, dict):
-        return None
-    jobs = run.get("jobs", []) if isinstance(run.get("jobs", []), list) else []
-    phase3_jobs: list[dict] = []
-    for job in jobs:
-        if not isinstance(job, dict):
-            continue
-        if str(job.get("phase", "")).strip() == "3" or str(job.get("type", "")).strip() == "eligible_dataset" or str(job.get("job_id", "")).startswith("phase3-"):
-            phase3_jobs.append(_as_stale_failed_job(job) if _is_stale_running_job(job) else dict(job))
-    if not phase3_jobs:
-        return None
-    phase3_jobs.sort(key=lambda row: (str(row.get("updated_at", "")), str(row.get("created_at", "")), str(row.get("job_id", ""))))
-    return phase3_jobs[-1]
+    return runs_service.latest_phase3_job(
+        domain,
+        run_id,
+        load_runs_fn=_load_runs,
+        as_stale_failed_job_fn=_as_stale_failed_job,
+        is_stale_running_job_fn=_is_stale_running_job,
+    )
 
 
 def _capture_context_id_from_page(domain: str, page: dict) -> str:
@@ -451,23 +434,11 @@ def _set_last_used_first_run_domain(domain: str) -> None:
 
 
 def _load_runs(domain: str) -> dict:
-    payload = _read_json_safe(domain, "manual", "capture_runs.json", {"runs": []})
-    if not isinstance(payload, dict) or not isinstance(payload.get("runs"), list):
-        return {"runs": []}
-    return payload
+    return runs_service.load_runs(domain, read_json_safe=_read_json_safe)
 
 
 def _sort_runs_newest_first(runs: list[dict]) -> list[dict]:
-    def sort_key(run: dict) -> tuple[float, str]:
-        created_ts = _parse_utc_timestamp(str((run or {}).get("created_at", "")))
-        run_id = str((run or {}).get("run_id", ""))
-        return (created_ts if created_ts is not None else float("-inf"), run_id)
-
-    return sorted(
-        (row for row in runs if isinstance(row, dict)),
-        key=sort_key,
-        reverse=True,
-    )
+    return runs_service.sort_runs_newest_first(runs, parse_utc_timestamp=_parse_utc_timestamp)
 
 
 def _persisted_issue_results_payload(domain: str) -> dict[str, Any]:
@@ -631,7 +602,7 @@ def _result_file_artifact_status(domain: str, run_id: str, filename: str) -> dic
 def _save_runs(domain: str, payload: dict) -> None:
     from pipeline.storage import write_json_artifact
 
-    write_json_artifact(domain, "manual", "capture_runs.json", payload)
+    runs_service.save_runs(domain, payload, write_json_artifact=write_json_artifact)
 
 
 def _en_standard_display_name_today() -> str:
@@ -645,64 +616,34 @@ def _default_run_display_name() -> str:
 
 
 def _upsert_run_metadata(domain: str, run_id: str, metadata: dict) -> None:
-    normalized = {str(key).strip(): value for key, value in (metadata or {}).items() if str(key).strip()}
-    if not normalized:
-        return
-    runs_payload = _load_runs(domain)
-    runs = runs_payload["runs"]
-    run = next((r for r in runs if r.get("run_id") == run_id), None)
-    if run is None:
-        run = {"run_id": run_id, "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "jobs": []}
-        runs.append(run)
-    for key, value in normalized.items():
-        run[key] = value
-    _save_runs(domain, {"runs": _sort_runs_newest_first(runs)})
+    runs_service.upsert_run_metadata(
+        domain,
+        run_id,
+        metadata,
+        load_runs_fn=_load_runs,
+        save_runs_fn=_save_runs,
+        sort_runs_newest_first_fn=_sort_runs_newest_first,
+    )
 
 
 def _upsert_job_status(domain: str, run_id: str, job_record: dict) -> None:
-    runs_payload = _load_runs(domain)
-    runs = runs_payload["runs"]
-    run = next((r for r in runs if r.get("run_id") == run_id), None)
-    if run is None:
-        run = {"run_id": run_id, "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "jobs": []}
-        runs.append(run)
-    display_name = _normalize_optional_string(job_record.get("display_name"))
-    if display_name is not None:
-        run["display_name"] = display_name
-    elif "display_name" not in run and "display_name" in job_record:
-        run["display_name"] = None
-    prior_job = next((j for j in run.get("jobs", []) if j.get("job_id") == job_record.get("job_id")), None)
-    normalized_job = dict(job_record)
-    normalized_job.pop("display_name", None)
-    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    normalized_job["updated_at"] = now
-    normalized_job["created_at"] = str((prior_job or {}).get("created_at") or now)
-    jobs = [j for j in run.get("jobs", []) if j.get("job_id") != normalized_job.get("job_id")]
-    jobs.append(normalized_job)
-    jobs.sort(key=lambda r: r.get("job_id", ""))
-    run["jobs"] = jobs
-    _save_runs(domain, {"runs": _sort_runs_newest_first(runs)})
+    runs_service.upsert_job_status(
+        domain,
+        run_id,
+        job_record,
+        load_runs_fn=_load_runs,
+        save_runs_fn=_save_runs,
+        sort_runs_newest_first_fn=_sort_runs_newest_first,
+        normalize_optional_string=_normalize_optional_string,
+    )
 
 
 def _is_stale_running_job(job: dict) -> bool:
-    status = str(job.get("status", "")).strip().lower()
-    if status not in {"running", "queued"}:
-        return False
-    stale_after = max(int(os.environ.get("WORKFLOW_STALE_JOB_SECONDS", "180")), 30)
-    updated_at = _parse_utc_timestamp(str(job.get("updated_at", "")))
-    created_at = _parse_utc_timestamp(str(job.get("created_at", "")))
-    last_seen = updated_at or created_at
-    if last_seen is None:
-        return False
-    return (time.time() - last_seen) > stale_after
+    return runs_service.is_stale_running_job(job, parse_utc_timestamp=_parse_utc_timestamp)
 
 
 def _as_stale_failed_job(job: dict) -> dict:
-    out = dict(job)
-    out["status"] = "failed"
-    out["error"] = str(out.get("error") or "capture worker stale: no completion heartbeat")
-    out["stale"] = True
-    return out
+    return runs_service.as_stale_failed_job(job)
 
 
 
@@ -982,98 +923,38 @@ def _persist_capture_review(payload: dict) -> dict:
 
 
 def _run_phase0_async(job_id: str, domain: str, run_id: str) -> None:
-    """Run Phase 0 in a background thread."""
-    _jobs[job_id] = {"status": "running", "phase": "0", "domain": domain, "run_id": run_id}
-    try:
-        from pipeline.run_phase0 import run as phase0_run
-        phase0_run(domain=domain, run_id=run_id)
-        _jobs[job_id]["status"] = "done"
-        _upsert_job_status(domain, run_id, {"job_id": job_id, "status": "succeeded", "phase": "0"})
-    except Exception as exc:
-        _jobs[job_id]["status"] = "error"
-        _jobs[job_id]["error"] = str(exc)
-        _upsert_job_status(domain, run_id, {"job_id": job_id, "status": "failed", "error": str(exc), "phase": "0"})
+    background_runners.run_phase0_async(job_id, domain, run_id, jobs=_jobs, upsert_job_status=_upsert_job_status)
 
 
 def _run_phase1_async(job_id: str, runtime_payload: dict) -> None:
-    """Run Phase 1 in a background thread."""
-    _jobs[job_id] = {"status": "running", "phase": "1", "domain": runtime_payload.get("domain"), "run_id": runtime_payload.get("run_id")}
-    _upsert_job_status(str(runtime_payload.get("domain")), str(runtime_payload.get("run_id")), {"job_id": job_id, "status": "running", "context": runtime_payload})
-    try:
-        from pipeline.run_phase1 import run_with_config
-
-        config = load_phase1_runtime_config(runtime_payload)
-        run_with_config(config)
-        _jobs[job_id]["status"] = "done"
-        _upsert_job_status(str(runtime_payload.get("domain")), str(runtime_payload.get("run_id")), {"job_id": job_id, "status": "succeeded", "context": runtime_payload})
-    except Exception as exc:
-        _jobs[job_id]["status"] = "error"
-        _jobs[job_id]["error"] = str(exc)
-        _upsert_job_status(
-            str(runtime_payload.get("domain")),
-            str(runtime_payload.get("run_id")),
-            {"job_id": job_id, "status": "failed", "error": str(exc), "context": runtime_payload, "type": "capture"},
-        )
+    background_runners.run_phase1_async(
+        job_id,
+        runtime_payload,
+        jobs=_jobs,
+        upsert_job_status=_upsert_job_status,
+        load_phase1_runtime_config=load_phase1_runtime_config,
+    )
 
 
 def _run_rerun_async(job_id: str, runtime_payload: dict) -> None:
-    _jobs[job_id] = {"status": "running", "phase": "rerun", "domain": runtime_payload.get("domain"), "run_id": runtime_payload.get("run_id")}
-    _upsert_job_status(str(runtime_payload.get("domain")), str(runtime_payload.get("run_id")), {"job_id": job_id, "status": "running", "context": runtime_payload, "type": "rerun"})
-    try:
-        from pipeline.run_phase1 import run_exact_context
-
-        run_exact_context(
-            domain=str(runtime_payload.get("domain")),
-            run_id=str(runtime_payload.get("run_id")),
-            url=str(runtime_payload.get("url")),
-            viewport_kind=str(runtime_payload.get("viewport_kind")),
-            state=str(runtime_payload.get("state")),
-            user_tier=runtime_payload.get("user_tier"),
-            language=str(runtime_payload.get("language")),
-            original_context_id=runtime_payload.get("capture_context_id"),
-            recipe_id=runtime_payload.get("recipe_id"),
-            capture_point_id=runtime_payload.get("capture_point_id"),
-        )
-        _jobs[job_id]["status"] = "done"
-        _upsert_job_status(str(runtime_payload.get("domain")), str(runtime_payload.get("run_id")), {"job_id": job_id, "status": "succeeded", "context": runtime_payload, "type": "rerun"})
-    except Exception as exc:
-        _jobs[job_id]["status"] = "error"
-        _jobs[job_id]["error"] = str(exc)
-        _upsert_job_status(str(runtime_payload.get("domain")), str(runtime_payload.get("run_id")), {"job_id": job_id, "status": "failed", "error": str(exc), "context": runtime_payload, "type": "rerun"})
+    background_runners.run_rerun_async(job_id, runtime_payload, jobs=_jobs, upsert_job_status=_upsert_job_status)
 
 
 def _run_phase3_async(job_id: str, domain: str, run_id: str) -> None:
-    """Run Phase 3 in a background thread."""
-    _jobs[job_id] = {"status": "running", "phase": "3", "domain": domain, "run_id": run_id}
-    try:
-        from pipeline.run_phase3 import run as phase3_run
-        phase3_run(domain=domain, run_id=run_id)
-        _require_artifact_exists(domain, run_id, "eligible_dataset.json")
-        en_standard_display_name = _en_standard_display_name_today()
-        _jobs[job_id]["status"] = "done"
-        _upsert_job_status(domain, run_id, {"job_id": job_id, "status": "succeeded", "phase": "3"})
-        _upsert_run_metadata(domain, run_id, {"en_standard_display_name": en_standard_display_name})
-    except Exception as exc:
-        _jobs[job_id]["status"] = "error"
-        _jobs[job_id]["error"] = str(exc)
-        _upsert_job_status(domain, run_id, {"job_id": job_id, "status": "failed", "phase": "3", "error": str(exc)})
+    background_runners.run_phase3_async(
+        job_id,
+        domain,
+        run_id,
+        jobs=_jobs,
+        require_artifact_exists=_require_artifact_exists,
+        en_standard_display_name_today=_en_standard_display_name_today,
+        upsert_job_status=_upsert_job_status,
+        upsert_run_metadata=_upsert_run_metadata,
+    )
 
 
 def _run_phase6_async(job_id: str, domain: str, run_id: str, en_run_id: str) -> None:
-    _jobs[job_id] = {"status": "running", "phase": "6", "domain": domain, "run_id": run_id, "en_run_id": en_run_id}
-    try:
-        from pipeline.run_phase6 import run as phase6_run
-
-        review_mode = os.environ.get("PHASE6_REVIEW_PROVIDER", "").strip()
-        if not review_mode:
-            raise ValueError("PHASE6_REVIEW_PROVIDER is required for Phase 6 execution")
-        phase6_run(domain=domain, en_run_id=en_run_id, target_run_id=run_id, review_mode=review_mode)
-        _jobs[job_id]["status"] = "done"
-        _upsert_job_status(domain, run_id, {"job_id": job_id, "status": "succeeded", "phase": "6", "en_run_id": en_run_id})
-    except Exception as exc:
-        _jobs[job_id]["status"] = "error"
-        _jobs[job_id]["error"] = str(exc)
-        _upsert_job_status(domain, run_id, {"job_id": job_id, "status": "failed", "phase": "6", "en_run_id": en_run_id, "error": str(exc)})
+    background_runners.run_phase6_async(job_id, domain, run_id, en_run_id, jobs=_jobs, upsert_job_status=_upsert_job_status)
 
 
 
@@ -1132,153 +1013,24 @@ def _run_check_languages_async(job_id: str, domain: str, en_run_id: str, target_
 
 
 def _workflow_section_status(*, has_artifact: bool, count: int | None = None, pending_on: bool = False) -> str:
-    if has_artifact:
-        if count is not None and count == 0:
-            return "empty"
-        return "ready"
-    if pending_on:
-        return "not_ready"
-    return "not_started"
+    return workflow_service.workflow_section_status(has_artifact=has_artifact, count=count, pending_on=pending_on)
 
 
 def _workflow_status_payload(domain: str, run_id: str) -> dict:
-    seed_payload = _read_json_safe(domain, "manual", "seed_urls.json", {"urls": []})
-    seed_urls = seed_payload.get("urls") if isinstance(seed_payload, dict) else []
-    seed_count = len([row for row in seed_urls if isinstance(row, dict) and str(row.get("url", "")).strip() and bool(row.get("active", True))])
-
-    pages = _read_json_safe(domain, run_id, "page_screenshots.json", None)
-    items = _read_json_safe(domain, run_id, "collected_items.json", None)
-    rules = _read_json_safe(domain, run_id, "template_rules.json", None)
-    dataset = _read_json_safe(domain, run_id, "eligible_dataset.json", None)
-    issues = _read_json_safe(domain, run_id, "issues.json", None)
-
-    pages_count = len(pages) if isinstance(pages, list) else 0
-    items_count = len(items) if isinstance(items, list) else 0
-    rules_count = len(rules) if isinstance(rules, list) else 0
-    dataset_count = len(dataset) if isinstance(dataset, list) else 0
-    issues_count = len(issues) if isinstance(issues, list) else 0
-
-    contexts = [{"capture_context_id": _capture_context_id_from_page(domain, row), "language": str(row.get("language", ""))} for row in (pages or []) if isinstance(row, dict)]
-    reviews = list(_load_review_statuses_for_contexts(domain, contexts).values()) if contexts else []
-    reviewed_count = len(reviews)
-
-    run_meta = next((row for row in _load_runs(domain).get("runs", []) if str(row.get("run_id", "")) == run_id), None)
-    jobs = run_meta.get("jobs", []) if isinstance(run_meta, dict) else []
-    effective_jobs = [_as_stale_failed_job(j) if _is_stale_running_job(j) else j for j in jobs]
-    running = [j for j in effective_jobs if str(j.get("status", "")).lower() in {"running", "queued"}]
-    failed = [j for j in effective_jobs if str(j.get("status", "")).lower() in {"failed", "error"}]
-    capture_jobs = [
-        j for j in effective_jobs
-        if str(j.get("type", "")).lower() == "capture" or str(j.get("phase", "")).lower() == "1" or str(j.get("job_id", "")).startswith("phase1-")
-    ]
-    capture_attempted = bool(capture_jobs)
-    capture_running = any(str(j.get("status", "")).lower() in {"running", "queued"} for j in capture_jobs)
-    capture_failed_jobs = [j for j in capture_jobs if str(j.get("status", "")).lower() in {"failed", "error"}]
-    capture_last_failure = capture_failed_jobs[-1] if capture_failed_jobs else None
-
-    capture_status = "not_started"
-    if capture_running:
-        capture_status = "in_progress"
-    elif isinstance(pages, list):
-        capture_status = "ready" if pages_count > 0 else "empty"
-    elif capture_last_failure is not None:
-        capture_status = "failed"
-    elif capture_attempted:
-        capture_status = "not_ready"
-    elif seed_count:
-        capture_status = "not_ready"
-    review_status = "not_started"
-    if isinstance(pages, list):
-        if pages_count == 0:
-            review_status = "empty"
-        elif reviewed_count == 0:
-            review_status = "not_ready"
-        elif reviewed_count < pages_count:
-            review_status = "in_progress"
-        else:
-            review_status = "ready"
-
-    annotation_status = _workflow_section_status(
-        has_artifact=isinstance(rules, list),
-        count=rules_count,
-        pending_on=reviewed_count >= pages_count and pages_count > 0,
+    return workflow_service.workflow_status_payload(
+        domain,
+        run_id,
+        read_json_safe=_read_json_safe,
+        capture_context_id_from_page=_capture_context_id_from_page,
+        load_review_statuses_for_contexts=_load_review_statuses_for_contexts,
+        load_runs=_load_runs,
+        as_stale_failed_job=_as_stale_failed_job,
+        is_stale_running_job=_is_stale_running_job,
+        issue_sort_key=_issue_sort_key,
+        normalize_optional_string=_normalize_optional_string,
+        latest_phase3_job=_latest_phase3_job,
+        workflow_section_status_fn=_workflow_section_status,
     )
-    if isinstance(rules, list) and rules_count < items_count and items_count > 0:
-        annotation_status = "partial"
-
-    run_status = "not_started"
-    if running:
-        run_status = "in_progress"
-    elif failed:
-        run_status = "failed"
-    elif isinstance(pages, list):
-        run_status = "ready"
-
-    next_action = "configure_seed_urls"
-    if capture_status in {"not_started", "not_ready", "failed"} and seed_count:
-        next_action = "start_capture"
-    elif capture_status == "in_progress":
-        next_action = "wait_for_capture"
-    elif isinstance(pages, list) and reviewed_count < pages_count:
-        next_action = "complete_review"
-    elif reviewed_count >= pages_count and not isinstance(rules, list):
-        next_action = "save_annotation_rules"
-    elif isinstance(rules, list) and not isinstance(dataset, list):
-        next_action = "generate_eligible_dataset"
-    elif isinstance(dataset, list) and not isinstance(issues, list):
-        next_action = "generate_issues"
-    elif isinstance(issues, list):
-        next_action = "review_issues"
-
-    first_issue_id = ""
-    if isinstance(issues, list) and issues:
-        first_issue_id = str(sorted([row for row in issues if isinstance(row, dict)], key=_issue_sort_key)[0].get("id", ""))
-
-    run_en_standard_display_name = str((run_meta or {}).get("en_standard_display_name", "")).strip()
-    eligible_has_artifact = isinstance(dataset, list)
-    eligible_status = _workflow_section_status(has_artifact=eligible_has_artifact, count=dataset_count, pending_on=isinstance(rules, list))
-    phase3_job = _latest_phase3_job(domain, run_id)
-    phase3_generation_status = str((phase3_job or {}).get("status", "")).strip().lower()
-    phase3_generation_error = str((phase3_job or {}).get("error", "")).strip()
-
-    return {
-        "state_enum": ["not_started", "in_progress", "ready", "empty", "not_ready", "partial", "failed", "out_of_scope"],
-        "seed_urls": {"status": "ready" if seed_count else "empty", "configured": bool(seed_count), "count": seed_count},
-        "run": {
-            "status": run_status,
-            "run_id": run_id,
-            "display_name": _normalize_optional_string((run_meta or {}).get("display_name")),
-            "domain": domain,
-            "jobs_total": len(jobs),
-            "jobs_running": len(running),
-            "jobs_failed": len(failed),
-            "en_standard_display_name": run_en_standard_display_name,
-        },
-        "capture": {
-            "status": capture_status,
-            "contexts": pages_count,
-            "items": items_count,
-            "artifacts_present": isinstance(pages, list),
-            "error": str((capture_last_failure or {}).get("error", "")),
-            "remediation": [
-                "check capture runner prerequisites",
-                "see logs",
-                "verify env config",
-            ] if capture_status == "failed" else [],
-        },
-        "review": {"status": review_status, "total": pages_count, "reviewed": reviewed_count},
-        "annotation": {"status": annotation_status, "rules_count": rules_count},
-        "eligible_dataset": {
-            "status": eligible_status,
-            "ready": eligible_has_artifact,
-            "record_count": dataset_count,
-            "en_standard_display_name": run_en_standard_display_name,
-            "generation_status": phase3_generation_status,
-            "generation_error": phase3_generation_error,
-        },
-        "issues": {"status": _workflow_section_status(has_artifact=isinstance(issues, list), count=issues_count, pending_on=isinstance(dataset, list)), "count": issues_count, "first_issue_id": first_issue_id},
-        "next_recommended_action": next_action,
-    }
 
 
 
