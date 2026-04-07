@@ -4823,3 +4823,43 @@ This file is machine-updated by `.github/workflows/docs-pr-feed.yml` on branch `
   ------
   [Codex Task](https://chatgpt.com/codex/tasks/task_e_69d40d52882c832c9f40f9d986362de4)
 - Notes: Auto-generated from merged PR metadata.
+
+## PR #250 — 2026-04-07T07:35:56Z
+
+- Title: Remove deprecated issue detail page and keep inline tooltip drilldown
+- PR URL: https://github.com/evinaeva/polyglot-watchdog/pull/250
+- Author: evinaeva
+- Base branch: main
+- Head branch: 4wsyn5-codex/fix-issues-with-detail-page-removal
+- Merge commit: b51e954e99440d848e02294de81b71000542cc78
+- Changed files:
+  - app/skeleton_server.py
+  - docs/RELEASE_READINESS.md
+  - docs/WORKFLOW_GAP_MAP.md
+  - tests/test_operator_ui_runtime_regressions.py
+  - tests/test_stage_c_operator_workflow.py
+  - web/static/docs/quickstart.md
+  - web/static/index.js
+  - web/static/issues-detail.js
+  - web/static/nav-active.js
+  - web/static/styles.css
+  - web/templates/issues/detail.html
+- Description:
+  ### Motivation
+  - The standalone `/issues/detail` UI page was deprecated but remnants remained (link, template, script and navigation entry) causing inconsistent UX and visual drift. 
+  - The inline issue drilldown tooltip/popover on the main issues table should remain as the canonical evidence drilldown surface while the old page is removed. 
+  - Ensure the tooltip trigger has a clear visual affordance and does not get transformed by the global `button-fx` behavior.
+  
+  ### Description
+  - Removed the `/issues/detail` page route and deleted the legacy page files `web/templates/issues/detail.html` and `web/static/issues-detail.js`, while keeping the backend API `GET /api/issues/detail` intact. 
+  - Removed the row-level "Open detail page" link and instead keep a compact tooltip trigger; updated `web/static/index.js` to render a `?` marker and set `data-button-fx="off"` to opt the trigger out of the global button FX. 
+  - Adjusted styles in `web/static/styles.css` to make the `?` trigger visually clear, removed the `/issues/detail` mapping from `web/static/nav-active.js`, and updated docs in `web/static/docs/quickstart.md`, `docs/WORKFLOW_GAP_MAP.md`, and `docs/RELEASE_READINESS.md` to reference the tooltip drilldown. 
+  - Updated tests to match the new behavior (expect the detail page route to be gone and to exercise the tooltip/popover flows); removed or adapted assertions that depended on the deleted detail-page assets.
+  
+  ### Testing
+  - Ran `pytest -q tests/test_operator_ui_runtime_regressions.py::test_index_runtime_issue_details_popover_open_close_and_cache tests/test_operator_ui_runtime_regressions.py::test_index_runtime_issue_details_popover_escape_and_error_state` and both tests passed (`2 passed`).
+  - Attempted to run the targeted Stage C route test but importing the app modules in this environment failed due to a missing dependency (`jsonschema`), so the full stage route test run could not be executed here (import error before test execution).
+  
+  ------
+  [Codex Task](https://chatgpt.com/codex/tasks/task_e_69d4090f2be0832cb0a8315696af957d)
+- Notes: Auto-generated from merged PR metadata.
