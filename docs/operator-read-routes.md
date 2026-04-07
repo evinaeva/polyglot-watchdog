@@ -61,10 +61,10 @@ Corrupted Phase 2 artifact shape fails closed with `500 artifact_invalid`.
 
 ### `GET /api/issues`
 
-Query: `domain`, `run_id`, optional filters: `q`, `type`, `language`, `severity`, `state`, `url`, `domain_filter`.
+Query: `domain`, `run_id`, optional filters: `q`, `type`, `language`, `state`, `url`, `domain_filter`.
 
 Filter semantics:
-- exact match: `type` (matches `category`), `language`, `severity`, `state`
+- exact match: `type` (matches `category`), `language`, `state`
 - substring match: `q` (matches category/message/url), `url` (matches evidence.url), `domain_filter` (matches evidence.url)
 
 Returns deterministic sorted issues by `id` using numeric-first ordering (`"2"` before `"10"`; non-numeric ids sort lexicographically after numeric ids).
@@ -79,7 +79,7 @@ Returns deterministic sorted issues by `id` using numeric-first ordering (`"2"` 
 
 Uses the same filtered subset as `/api/issues` and exports stable CSV columns:
 
-`id,category,severity,language,state,url,message`
+`id,category,language,state,url,message`
 
 Content type: `text/csv; charset=utf-8`.
 
