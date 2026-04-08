@@ -49,12 +49,12 @@ The goal of the demo is to confirm that the operator can move through the intend
 
 ## 6) Issues exploration
 
-Open the issues explorer and issue detail pages.
+Open the issues explorer.
 
 Confirm that:
 - issues are readable from the operator UI,
 - filters (including domain selection and multi-selects) can be used to find specific issues,
-- issue detail pages expose persisted evidence,
+- issue detail evidence is available via an inline tooltip,
 - the operator can move from summary views to detail views through the UI.
 
 ## 7) Expected interpretation
